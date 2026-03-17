@@ -55,6 +55,14 @@ export interface SessionRecord {
 export class MultiUserAuthStore {
   private kv = new CloudflareKVStore();
 
+  /**
+   * In-memory map of sessionToken → timestamp of last KV write for touchSession.
+   * Prevents a KV PUT on every single authenticated request — we only persist
+   * `lastUsedAt` once per TOUCH_THROTTLE_MS (default: 1 hour).
+   */
+  private sessionTouchCache = new Map<string, number>();
+  private static readonly TOUCH_THROTTLE_MS = 60 * 60 * 1_000; // 1 hour
+
   private stateKey(state: string): string {
     return `oauth_state:${state}`;
   }
@@ -139,12 +147,24 @@ export class MultiUserAuthStore {
   }
 
   async touchSession(sessionToken: string): Promise<void> {
+    const now = Date.now();
+    const lastTouched = this.sessionTouchCache.get(sessionToken);
+
+    // Skip the KV write entirely if we touched this session recently.
+    // The in-memory cache in CloudflareKVStore already keeps reads free,
+    // so the only cost we're avoiding here is the unnecessary KV PUT.
+    if (lastTouched !== undefined && now - lastTouched < MultiUserAuthStore.TOUCH_THROTTLE_MS) {
+      return;
+    }
+
     const record = await this.getSession(sessionToken);
     if (!record || record.revokedAt) {
       return;
     }
-    record.lastUsedAt = new Date().toISOString();
+
+    record.lastUsedAt = new Date(now).toISOString();
     await this.kv.put(this.sessionKey(sessionToken), record);
+    this.sessionTouchCache.set(sessionToken, now);
   }
 
   async revokeSession(sessionToken: string): Promise<void> {
