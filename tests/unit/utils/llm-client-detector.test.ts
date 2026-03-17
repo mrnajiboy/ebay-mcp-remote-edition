@@ -211,6 +211,7 @@ describe('LLM Client Detector', () => {
     beforeEach(() => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       vi.mocked(fs.readFileSync).mockReturnValue('{}');
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       vi.mocked(fs.writeFileSync).mockImplementation(() => {});
       vi.mocked(fs.mkdirSync).mockImplementation(() => undefined);
     });

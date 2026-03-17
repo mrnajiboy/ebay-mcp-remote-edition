@@ -53,9 +53,8 @@ describe('Schema Validation', () => {
 
         const result = timeDurationSchema.safeParse(withExtra);
         expect(result.success).toBe(true);
-        if (result.success) {
-          expect(result.data).toHaveProperty('extraField');
-        }
+        if (!result.success) return;
+        expect(result.data).toHaveProperty('extraField');
       });
     });
 
@@ -392,10 +391,9 @@ describe('Schema Validation', () => {
       });
 
       expect(schemaWithExtra.success).toBe(true);
-      if (schemaWithExtra.success) {
-        expect(schemaWithExtra.data).toHaveProperty('metadata');
-        expect(schemaWithExtra.data).toHaveProperty('customField');
-      }
+      if (!schemaWithExtra.success) return;
+      expect(schemaWithExtra.data).toHaveProperty('metadata');
+      expect(schemaWithExtra.data).toHaveProperty('customField');
     });
   });
 });

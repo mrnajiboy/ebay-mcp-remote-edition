@@ -577,16 +577,18 @@ describe('Zod Schema Enum Validation', () => {
         value: 30,
       };
 
+      let caughtError: unknown;
       try {
         timeDurationSchema.parse(invalidData);
         expect.fail('Should have thrown validation error');
       } catch (error: unknown) {
-        // Zod v4 uses .issues instead of .errors
-        const zodError = error as { issues?: { path: (string | number)[] }[]; errors?: { path: (string | number)[] }[] };
-        const issues = zodError.issues ?? zodError.errors;
-        expect(issues).toBeDefined();
-        expect(issues![0].path).toContain('unit');
+        caughtError = error;
       }
+      // Zod v4 uses .issues instead of .errors
+      const zodError = caughtError as { issues?: { path: (string | number)[] }[]; errors?: { path: (string | number)[] }[] };
+      const issues = zodError.issues ?? zodError.errors;
+      expect(issues).toBeDefined();
+      expect(issues![0].path).toContain('unit');
     });
 
     it('should validate nested enum values', () => {
