@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v1.0.0...ebay-mcp-remote-edition-v2.0.0) (2026-03-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* updated all workflows
+* update Ouath token passthrough
+* update all workflows to use latest npm
+* massive cleanup and documentation, full fork departure
+
+### Features
+
+* massive cleanup and documentation, full fork departure ([f09852c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/f09852ccee196ec510cb99df0da7aeae3a098b93))
+* MCP OAuth 2.1 server, npm publish, Socket workflow, rename to ebay-mcp-remote-edition v1.0.0 ([b3fe6f4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b3fe6f47aaf8a32ce8109cbdfc415d1f675e428f))
+* update naming scheme to ebay-mcp-remote-edition ([47ed990](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/47ed990f00c732397d72d98f64117f2776b67ea5))
+* updated all workflows ([f3648f7](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/f3648f776c4c3801ff8eebb7166e68bab03d8994))
+
+
+### Bug Fixes
+
+* non-formatted files ([db280d4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/db280d401c5e94515b6ededa8720d962f0f31680))
+* ouath flow mcp call correction ([fa00899](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/fa00899eb5ab59843ee491dd92aeec44f30830ca))
+* release-please formatting. ([e6ca99e](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/e6ca99e17df329750dd8ac380d55683e7cf31de7))
+* resolve CI test failures, restore env-token loading, update README ([8defcce](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/8defcce8045bd6b86ed5b9a1a9db227a519ab4ef))
+* update all workflows to use latest npm ([68c923c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/68c923c5b1e2804af573761e05b643a1cceffaac))
+* update Ouath token passthrough ([f87597f](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/f87597f87427a98c0af98af28ddc1fb32458b668))
+
+
+### Documentation
+
+* overhaul .env.example with full variable coverage and section comments ([19017dd](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/19017dd77323e32a0f72822348dddc828bb6ae88))
+* removed original branch npm badges ([7df4d35](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7df4d3528daf51633a836c1211fca1956ec7b206))
+* update readme ([213b269](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/213b269a2a8894eb833b15bc4c12568e473bf4f3))
+* update readme.md ([873c452](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/873c452b95eaa133377b8c6c72b43d5e032ca45b))
+* update recommended render settings ([02f9402](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/02f940229619aa0137e52c7d891b0afb350665ea))
+* updated env example structure ([2836d6a](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/2836d6a2ee39b991ae4f51fb720246ed82f32465))
+
 ## [Unreleased]
 
 ### Added
