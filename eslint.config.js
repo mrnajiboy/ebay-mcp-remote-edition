@@ -223,6 +223,7 @@ export default tseslint.config(
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/await-thenable': 'off',
       'vitest/no-identical-title': 'warn',
+      'vitest/no-conditional-expect': 'warn',
       'no-console': 'off',
     },
   },

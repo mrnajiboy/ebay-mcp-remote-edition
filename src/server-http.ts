@@ -493,7 +493,7 @@ function createApp(): express.Application {
   });
 
   app.get('/admin/session/:sessionToken', requireAdmin, async (req, res) => {
-    const session = await authStore.getSession(req.params.sessionToken as string);
+    const session = await authStore.getSession(req.params.sessionToken);
     if (!session) {
       res.status(404).json({ error: 'not_found' });
       return;
@@ -523,12 +523,12 @@ function createApp(): express.Application {
   });
 
   app.post('/admin/session/:sessionToken/revoke', requireAdmin, async (req, res) => {
-    await authStore.revokeSession(req.params.sessionToken as string);
+    await authStore.revokeSession(req.params.sessionToken);
     res.json({ ok: true, revoked: true });
   });
 
   app.delete('/admin/session/:sessionToken', requireAdmin, async (req, res) => {
-    await authStore.deleteSession(req.params.sessionToken as string);
+    await authStore.deleteSession(req.params.sessionToken);
     res.json({ ok: true, deleted: true });
   });
 
