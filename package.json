@@ -1,12 +1,16 @@
 {
-  "name": "ebay-mcp",
-  "version": "1.7.5",
-  "description": "Local MCP server for eBay APIs - provides access to eBay developer functionality through MCP (Model Context Protocol)",
+  "name": "ebay-mcp-remote-edition",
+  "version": "1.0.0",
+  "description": "MCP server for eBay Sell APIs — 325+ tools for inventory, orders, marketing, analytics, and more. Supports local STDIO and hosted multi-user HTTP modes.",
   "type": "module",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "bin": {
-    "ebay-mcp": "build/index.js"
+    "ebay-mcp-remote-edition": "build/index.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "tsc && tsc-alias",
@@ -67,6 +71,7 @@
   "bugs": {
     "url": "https://github.com/mrnajiboy/ebay-mcp/issues"
   },
+  "npmLink": "https://www.npmjs.com/package/ebay-mcp-remote-edition",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "axios": "^1.13.6",

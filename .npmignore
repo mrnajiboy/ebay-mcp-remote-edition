@@ -89,10 +89,9 @@ DOCKER_MCP_REGISTRY_GUIDE.md
 LICENSE
 *.md.backup
 
-# Images and media
+# Images and media (exclude screenshots but NOT public/icons which are in files[])
+public/screenshot-guides/
 *.gif
-*.png
 *.jpg
 *.jpeg
 *.svg
-icons/

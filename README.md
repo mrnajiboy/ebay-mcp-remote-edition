@@ -1,10 +1,14 @@
-# eBay API MCP Server+
+# eBay API MCP Server+ (`ebay-mcp-remote-edition`)
 
 <div align="center">
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server providing AI assistants with comprehensive access to eBay's Sell APIs. Includes **325+ tools** for inventory management, order fulfillment, marketing campaigns, analytics, developer tools, and more.
 
 **API Coverage:** 100% (270+ unique eBay API endpoints)
+
+[![npm version](https://img.shields.io/npm/v/ebay-mcp-remote-edition.svg)](https://www.npmjs.com/package/ebay-mcp-remote-edition)
+[![Socket Badge](https://socket.dev/api/badge/npm/package/ebay-mcp-remote-edition)](https://socket.dev/npm/package/ebay-mcp-remote-edition)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
@@ -125,6 +129,22 @@ For official eBay API support, please refer to the [eBay Developer Program](http
 
 ### 2. Install
 
+**Option A — npm (easiest, no build step required):**
+
+```bash
+npm install -g ebay-mcp-remote-edition
+# or
+pnpm add -g ebay-mcp-remote-edition
+```
+
+Then run the setup wizard:
+
+```bash
+ebay-mcp-remote-edition --setup
+```
+
+**Option B — clone and build (for contributors or if you want to self-host the HTTP server):**
+
 ```bash
 git clone https://github.com/mrnajiboy/ebay-mcp.git
 cd ebay-mcp
@@ -134,7 +154,7 @@ pnpm run build
 
 ### 3. Run Local Setup Wizard
 
-For local/STDIO usage:
+For local/STDIO usage after cloning:
 
 ```bash
 pnpm run setup
@@ -148,14 +168,41 @@ For hosted Render usage, see the next section.
 
 ## Local MCP Client Configuration
 
-After running `pnpm run build` and `pnpm run setup`, add the server to your MCP client using the **STDIO** transport. Replace `/absolute/path/to/ebay-mcp` with the actual path where you cloned the repo.
+Two ways to configure your MCP client for local (STDIO) usage:
 
-> **Tip:** Run `pnpm run setup` first — it completes the OAuth flow and writes `EBAY_USER_REFRESH_TOKEN` to your `.env`. Copy the values from `.env` into the config below.
+- **Option A — `npx` (no clone needed):** Use `npx -y ebay-mcp-remote-edition` as the command. npm downloads and runs the latest published version automatically.
+- **Option B — local build:** Clone the repo, run `pnpm run build` and `pnpm run setup`, then point at `/absolute/path/to/ebay-mcp/build/index.js`.
+
+The configs below show both. Supply your eBay credentials either as `env` fields in the config or via a `.env` file in the working directory.
+
+> **Getting your credentials:** Run `pnpm run setup` in the cloned repo — it completes the OAuth flow and writes `EBAY_USER_REFRESH_TOKEN` to `.env`.
 
 ### Cline
 
 Config file location:  
 `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+
+**Using npx (no clone needed):**
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "command": "npx",
+      "args": ["-y", "ebay-mcp-remote-edition"],
+      "env": {
+        "EBAY_CLIENT_ID": "YOUR_CLIENT_ID",
+        "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",
+        "EBAY_ENVIRONMENT": "sandbox",
+        "EBAY_REDIRECT_URI": "YOUR_RUNAME",
+        "EBAY_USER_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+**Using local build:**
 
 ```json
 {
@@ -181,6 +228,28 @@ Config file location:
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
+**Using npx:**
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "command": "npx",
+      "args": ["-y", "ebay-mcp-remote-edition"],
+      "env": {
+        "EBAY_CLIENT_ID": "YOUR_CLIENT_ID",
+        "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",
+        "EBAY_ENVIRONMENT": "sandbox",
+        "EBAY_REDIRECT_URI": "YOUR_RUNAME",
+        "EBAY_USER_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+**Using local build:**
+
 ```json
 {
   "mcpServers": {
@@ -204,6 +273,28 @@ Config file location:
 Global config: `~/.cursor/mcp.json`  
 Project config: `.cursor/mcp.json` (in your project root)
 
+**Using npx:**
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "command": "npx",
+      "args": ["-y", "ebay-mcp-remote-edition"],
+      "env": {
+        "EBAY_CLIENT_ID": "YOUR_CLIENT_ID",
+        "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",
+        "EBAY_ENVIRONMENT": "sandbox",
+        "EBAY_REDIRECT_URI": "YOUR_RUNAME",
+        "EBAY_USER_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+**Using local build:**
+
 ```json
 {
   "mcpServers": {
@@ -224,14 +315,16 @@ Project config: `.cursor/mcp.json` (in your project root)
 
 ### Other STDIO clients (Zed, Windsurf, Continue.dev, Roo Code, Amazon Q)
 
-All STDIO-based clients use the same pattern — point `command` at `node`, pass `build/index.js` as the first arg, and supply the eBay env vars.
+All STDIO-based clients use the same pattern. Use `npx -y ebay-mcp-remote-edition` for zero-install, or point `command` at `node` with `build/index.js` for a local build.
+
+**Using npx:**
 
 ```json
 {
   "mcpServers": {
     "ebay": {
-      "command": "node",
-      "args": ["/absolute/path/to/ebay-mcp/build/index.js"],
+      "command": "npx",
+      "args": ["-y", "ebay-mcp-remote-edition"],
       "env": {
         "EBAY_CLIENT_ID": "YOUR_CLIENT_ID",
         "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",

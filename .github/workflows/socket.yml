@@ -1,0 +1,38 @@
+name: Socket Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write  # upload SARIF to GitHub Security tab
+  pull-requests: write    # post inline PR comments
+
+jobs:
+  socket-security:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'latest'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Socket Security Scan
+        uses: socketdev/action@v2
+        with:
+          api-key: ${{ secrets.SOCKET_API_KEY }}
