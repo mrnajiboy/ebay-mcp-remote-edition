@@ -1,0 +1,57 @@
+name: Weekly Cleanup
+
+on:
+  workflow_dispatch: # Manual trigger
+    inputs:
+      days_to_keep:
+        description: 'Number of days of workflow history to keep'
+        type: number
+        default: 0
+        required: true
+  schedule:
+    # Runs every Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
+
+jobs:
+  cleanup:
+    name: Clean old workflow runs
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write # Required to delete workflow runs
+      contents: read # Required to checkout the repo
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch all history to ensure we can see all runs
+          fetch-depth: 0
+
+      # GitHub CLI is pre-installed on ubuntu-latest runners
+      # No need to install it manually
+
+      - name: Delete old workflow runs
+        env:
+          DAYS_TO_KEEP: ${{ github.event.inputs.days_to_keep || 0 }} # Use input or default to 0 days
+        run: |
+          echo "Keeping workflow runs from the last $DAYS_TO_KEEP days."
+          echo "Repository: ${{ github.repository }}"
+
+          # Calculate cutoff date (DAYS_TO_KEEP days ago)
+          CUTOFF_DATE=$(date -u -d "$DAYS_TO_KEEP days ago" +%s)
+          echo "Cutoff date: $(date -u -d "@$CUTOFF_DATE" +%Y-%m-%d)"
+
+          # Get all workflow runs older than cutoff date
+          gh run list \
+            --repo ${{ github.repository }} \
+            --limit 100 \
+            --json databaseId,createdAt,status \
+            --jq ".[] | select(.createdAt | fromdateiso8601 < $CUTOFF_DATE) | .databaseId" \
+            | while read -r run_id; do
+              echo "Deleting workflow run: $run_id"
+              gh run delete $run_id --repo ${{ github.repository }} || echo "Failed to delete run $run_id"
+            done
+
+          echo "Cleanup completed."

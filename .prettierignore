@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+build/
+dist/
+
+# Coverage
+coverage/
+
+# Generated files
+src/types/sell_*.ts
+src/types/commerce_*.ts
+
+# Documentation
+docs/
+
+# Config files
+pnpm-lock.yaml
+package-lock.json
+
+# Environment
+.env
+.env.*
+!.env.example

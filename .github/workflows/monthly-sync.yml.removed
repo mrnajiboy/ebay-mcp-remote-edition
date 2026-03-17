@@ -1,0 +1,55 @@
+name: Monthly API Sync
+
+on:
+  schedule:
+    - cron: '0 9 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run sync
+        run: npm run sync
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Create Pull Request if changes exist
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: 'chore: monthly API sync'
+          branch: chore/monthly-api-sync
+          delete-branch: true
+          title: 'chore: monthly API sync'
+          body: |
+            Automated monthly sync of eBay API specs and generated artifacts.
+
+            This PR was created automatically by GitHub Actions after running:
+            - `npm run sync`
+            - `npm run typecheck`
+            - `npm run build`
+
+            Please review generated changes before merging.
+          labels: |
+            automation
+            api-sync
