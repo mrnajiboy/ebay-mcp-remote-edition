@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.0...ebay-mcp-remote-edition-v2.0.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* full format cleanup ([b3007e1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b3007e1cf4c298249257bbde7dfde94bffd436cc))
+* **lint:** remove unused zodToJsonSchema imports in tool definitions ([55420a4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/55420a4bd39844cad6f60217a041918d195d6bd5))
+* prettier formatting ([200ffb9](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/200ffb952946ae621d4775022d92000577481d5c))
+* **tests:** clear all EBAY_* env vars in beforeEach to prevent .env leakage ([8acaa9a](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/8acaa9ae93b36870801d11f140f0bde2546d565d))
+* update all naming schemes for package.json ([2b8bc2c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/2b8bc2c96d05ff6dedb9f060d9a0fe96dcd4d844))
+
+
+### Dependencies
+
+* **deps-dev:** bump the dev-dependencies group with 4 updates ([35a77c7](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/35a77c7df01f9af4c73fd4370f27435ae2f81b2d))
+* pnpm lock ([8d0e015](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/8d0e0158ef75fbc6405f21cbe3aec0b3b948bc2c))
+
+
+### Documentation
+
+* update README and versioning ([f31e937](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/f31e9372959c46cec862537dee792a981b08d9be))
+
 ## [2.0.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v1.0.0...ebay-mcp-remote-edition-v2.0.0) (2026-03-17)
 
 
