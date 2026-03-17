@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.6...ebay-mcp-remote-edition-v2.0.7) (2026-03-17)
+
+
+### Bug Fixes
+
+* AAAAHGHGHROGIHROHGI ([6609b91](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6609b9187e4cdcade834164b0f231683bfe5274b))
+* FOR FUCK'S SAKE ([57aea5f](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/57aea5f5617d63544c3d768b38fdfbd7dc2e5062))
+* OH MY GODDDDD ([175d63b](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/175d63b2fcc969348fe613ef5f252e8b9c4d42a2))
+* please ([c882571](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/c882571df01c4993bd70a62b19baa8795f332967))
+* TAKE IT ALL OUT FUCK ([a7db95e](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/a7db95e87e2f582a0e62e92fef1209f7ed7fb442))
+
 ## [2.0.6](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.5...ebay-mcp-remote-edition-v2.0.6) (2026-03-17)
 
 
