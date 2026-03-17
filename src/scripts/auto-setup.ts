@@ -286,7 +286,8 @@ function updateClientConfig(client: MCPClient, serverConfig: MCPServerConfig): b
 
         // Check if eBay server already exists and update/add
         const existingIndex = mcpServers.findIndex(
-          (server) => server.command === 'node' && server.args?.[0]?.includes('ebay-mcp-remote-edition')
+          (server) =>
+            server.command === 'node' && server.args?.[0]?.includes('ebay-mcp-remote-edition')
         );
         if (existingIndex >= 0) {
           mcpServers[existingIndex] = serverConfig;

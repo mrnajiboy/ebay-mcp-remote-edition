@@ -181,18 +181,25 @@ function createApp(): express.Application {
   app.get('/authorize', requireOauthStartKey, async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const { client_id, redirect_uri, response_type, state: mcpState,
-              code_challenge, code_challenge_method } = q;
-      const environment = (q.env === 'sandbox' || q.env === 'production'
-        ? q.env
-        : getConfiguredEnvironment()) as EbayEnvironment;
+      const {
+        client_id,
+        redirect_uri,
+        response_type,
+        state: mcpState,
+        code_challenge,
+        code_challenge_method,
+      } = q;
+      const environment =
+        q.env === 'sandbox' || q.env === 'production' ? q.env : getConfiguredEnvironment();
 
       if (response_type !== 'code') {
         res.status(400).json({ error: 'unsupported_response_type' });
         return;
       }
       if (!client_id) {
-        res.status(400).json({ error: 'invalid_request', error_description: 'client_id is required' });
+        res
+          .status(400)
+          .json({ error: 'invalid_request', error_description: 'client_id is required' });
         return;
       }
       const client = await authStore.getClient(client_id);
@@ -201,17 +208,32 @@ function createApp(): express.Application {
         return;
       }
       if (!redirect_uri || !client.redirectUris.includes(redirect_uri)) {
-        res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri not registered for this client' });
+        res
+          .status(400)
+          .json({
+            error: 'invalid_request',
+            error_description: 'redirect_uri not registered for this client',
+          });
         return;
       }
       if (!code_challenge || code_challenge_method !== 'S256') {
-        res.status(400).json({ error: 'invalid_request', error_description: 'PKCE with S256 code_challenge is required' });
+        res
+          .status(400)
+          .json({
+            error: 'invalid_request',
+            error_description: 'PKCE with S256 code_challenge is required',
+          });
         return;
       }
 
       const ebayConfig = getEbayConfig(environment);
       if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
-        res.status(500).json({ error: 'server_error', error_description: `Missing eBay configuration for ${environment}` });
+        res
+          .status(500)
+          .json({
+            error: 'server_error',
+            error_description: `Missing eBay configuration for ${environment}`,
+          });
         return;
       }
 
@@ -233,7 +255,12 @@ function createApp(): express.Application {
       );
       res.redirect(oauthUrl);
     } catch (error) {
-      res.status(500).json({ error: 'server_error', error_description: error instanceof Error ? error.message : String(error) });
+      res
+        .status(500)
+        .json({
+          error: 'server_error',
+          error_description: error instanceof Error ? error.message : String(error),
+        });
     }
   });
 
@@ -247,7 +274,8 @@ function createApp(): express.Application {
     if (!req.body || typeof req.body !== 'object') {
       res.status(400).json({
         error: 'invalid_request',
-        error_description: 'Request body is missing or unparseable. Use application/x-www-form-urlencoded or application/json.',
+        error_description:
+          'Request body is missing or unparseable. Use application/x-www-form-urlencoded or application/json.',
       });
       return;
     }
@@ -266,7 +294,12 @@ function createApp(): express.Application {
 
     const authCode = await authStore.consumeAuthCode(code);
     if (!authCode) {
-      res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid or expired authorization code' });
+      res
+        .status(400)
+        .json({
+          error: 'invalid_grant',
+          error_description: 'Invalid or expired authorization code',
+        });
       return;
     }
     if (authCode.clientId !== client_id) {
@@ -278,14 +311,18 @@ function createApp(): express.Application {
       return;
     }
     if (!code_verifier) {
-      res.status(400).json({ error: 'invalid_request', error_description: 'code_verifier is required' });
+      res
+        .status(400)
+        .json({ error: 'invalid_request', error_description: 'code_verifier is required' });
       return;
     }
 
     // Verify PKCE S256: BASE64URL(SHA256(code_verifier)) must equal code_challenge
     const expectedChallenge = createHash('sha256').update(code_verifier).digest('base64url');
     if (expectedChallenge !== authCode.codeChallenge) {
-      res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
+      res
+        .status(400)
+        .json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
       return;
     }
 

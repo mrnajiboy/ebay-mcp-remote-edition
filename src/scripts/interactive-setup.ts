@@ -112,7 +112,9 @@ function showHelp() {
   console.log(chalk.gray('  npx ebay-mcp-remote-edition                     # Interactive wizard'));
   console.log(chalk.gray('  npx ebay-mcp-remote-edition --first-time        # First-time guide'));
   console.log(chalk.gray('  npx ebay-mcp-remote-edition --diagnose          # Run diagnostics'));
-  console.log(chalk.gray('  npx ebay-mcp-remote-edition --env=production    # Setup for production\n'));
+  console.log(
+    chalk.gray('  npx ebay-mcp-remote-edition --env=production    # Setup for production\n')
+  );
   console.log(chalk.white('Learn more:'));
   console.log(chalk.blue('  https://github.com/mrnajiboy/ebay-mcp-remote-edition#readme\n'));
 }
