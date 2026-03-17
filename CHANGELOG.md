@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.0 (2026-03-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* update Ouath token passthrough
+* update all workflows to use latest npm
+* massive cleanup and documentation, full fork departure
+
+### Features
+
+* massive cleanup and documentation, full fork departure ([f09852c](https://github.com/mrnajiboy/ebay-mcp/commit/f09852ccee196ec510cb99df0da7aeae3a098b93))
+
+
+### Bug Fixes
+
+* non-formatted files ([db280d4](https://github.com/mrnajiboy/ebay-mcp/commit/db280d401c5e94515b6ededa8720d962f0f31680))
+* ouath flow mcp call correction ([fa00899](https://github.com/mrnajiboy/ebay-mcp/commit/fa00899eb5ab59843ee491dd92aeec44f30830ca))
+* release-please formatting. ([e6ca99e](https://github.com/mrnajiboy/ebay-mcp/commit/e6ca99e17df329750dd8ac380d55683e7cf31de7))
+* resolve CI test failures, restore env-token loading, update README ([8defcce](https://github.com/mrnajiboy/ebay-mcp/commit/8defcce8045bd6b86ed5b9a1a9db227a519ab4ef))
+* update all workflows to use latest npm ([68c923c](https://github.com/mrnajiboy/ebay-mcp/commit/68c923c5b1e2804af573761e05b643a1cceffaac))
+* update Ouath token passthrough ([f87597f](https://github.com/mrnajiboy/ebay-mcp/commit/f87597f87427a98c0af98af28ddc1fb32458b668))
+
 ## [Unreleased]
 
 ### Added
