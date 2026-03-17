@@ -208,32 +208,26 @@ function createApp(): express.Application {
         return;
       }
       if (!redirect_uri || !client.redirectUris.includes(redirect_uri)) {
-        res
-          .status(400)
-          .json({
-            error: 'invalid_request',
-            error_description: 'redirect_uri not registered for this client',
-          });
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'redirect_uri not registered for this client',
+        });
         return;
       }
       if (!code_challenge || code_challenge_method !== 'S256') {
-        res
-          .status(400)
-          .json({
-            error: 'invalid_request',
-            error_description: 'PKCE with S256 code_challenge is required',
-          });
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'PKCE with S256 code_challenge is required',
+        });
         return;
       }
 
       const ebayConfig = getEbayConfig(environment);
       if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
-        res
-          .status(500)
-          .json({
-            error: 'server_error',
-            error_description: `Missing eBay configuration for ${environment}`,
-          });
+        res.status(500).json({
+          error: 'server_error',
+          error_description: `Missing eBay configuration for ${environment}`,
+        });
         return;
       }
 
@@ -255,12 +249,10 @@ function createApp(): express.Application {
       );
       res.redirect(oauthUrl);
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          error: 'server_error',
-          error_description: error instanceof Error ? error.message : String(error),
-        });
+      res.status(500).json({
+        error: 'server_error',
+        error_description: error instanceof Error ? error.message : String(error),
+      });
     }
   });
 
@@ -294,12 +286,10 @@ function createApp(): express.Application {
 
     const authCode = await authStore.consumeAuthCode(code);
     if (!authCode) {
-      res
-        .status(400)
-        .json({
-          error: 'invalid_grant',
-          error_description: 'Invalid or expired authorization code',
-        });
+      res.status(400).json({
+        error: 'invalid_grant',
+        error_description: 'Invalid or expired authorization code',
+      });
       return;
     }
     if (authCode.clientId !== client_id) {
