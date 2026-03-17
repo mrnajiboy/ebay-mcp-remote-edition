@@ -10,11 +10,13 @@ describe('Environment Configuration', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    // Create a fresh copy of process.env for each test
+    // Create a fresh copy of process.env for each test with no EBAY_* vars,
+    // so real .env values (e.g. EBAY_PRODUCTION_CLIENT_ID, EBAY_DEFAULT_ENVIRONMENT)
+    // don't bleed into tests that expect a clean/empty environment.
     process.env = { ...originalEnv };
-    // Remove any .env-file-loaded EBAY_ENVIRONMENT so tests that expect the
-    // sandbox default are not affected by a production value in .env
-    delete process.env.EBAY_ENVIRONMENT;
+    Object.keys(process.env)
+      .filter((k) => k.startsWith('EBAY_'))
+      .forEach((k) => delete process.env[k]);
   });
 
   afterEach(() => {
