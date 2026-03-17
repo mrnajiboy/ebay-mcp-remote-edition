@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.13](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.12...ebay-mcp-remote-edition-v2.0.13) (2026-03-17)
+
+
+### Bug Fixes
+
+* add startup logging to kv-store factory and InMemoryKVStore backend ([0d252b9](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/0d252b9bee5d58b38ef300109662d703d69f8e86))
+* resolve 3 lint errors in test files (no-conditional-expect, no-empty-function) ([807817d](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/807817dfc3cb5e45db42e3525fd55e1a39b75131))
+
 ## [2.0.12](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.11...ebay-mcp-remote-edition-v2.0.12) (2026-03-17)
 
 
