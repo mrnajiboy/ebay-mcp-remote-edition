@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { EbayEnvironment } from '@/config/environment.js';
 import type { StoredTokenData } from '@/types/ebay.js';
-import { CloudflareKVStore } from '@/auth/kv-store.js';
+import { createKVStore, type KVStore } from '@/auth/kv-store.js';
 
 export interface OAuthStateRecord {
   state: string;
@@ -53,7 +53,7 @@ export interface SessionRecord {
 }
 
 export class MultiUserAuthStore {
-  private kv = new CloudflareKVStore();
+  private kv: KVStore = createKVStore();
 
   /**
    * In-memory map of sessionToken → timestamp of last KV write for touchSession.
