@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.11](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.10...ebay-mcp-remote-edition-v2.0.11) (2026-03-17)
+
+
+### Bug Fixes
+
+* change how KV stores are written and how often, added cache, and fix server-http bug. ([9ae45a6](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/9ae45a6f73f0af6bbc0b4c4d796b5c219badfdba))
+* prettier formatting ([3f35cd8](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/3f35cd88de8533487679f9fe6521336ac4c0911f))
+
 ## [2.0.10](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.9...ebay-mcp-remote-edition-v2.0.10) (2026-03-17)
 
 
