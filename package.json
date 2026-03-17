@@ -99,13 +99,8 @@
     "typescript-eslint": "^8.57.0",
     "vitest": "^4.1.0"
   },
-  "packageManager": "pnpm@10.14.0",
+  "packageManager": "npm@10.9.2",
   "engines": {
     "node": ">=18.0.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }

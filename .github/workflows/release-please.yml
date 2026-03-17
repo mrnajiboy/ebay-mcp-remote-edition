@@ -43,36 +43,37 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: latest
+          node-version: lts/*
           registry-url: 'https://registry.npmjs.org'
-          cache: pnpm
+          cache: npm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Typecheck
-        run: pnpm run typecheck
+        run: npm run typecheck
 
       - name: Run tests
-        run: pnpm run test
+        run: npm run test
 
       - name: Build
-        run: pnpm run build
+        run: npm run build
 
       - name: Publish to npm with provenance
         run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Upload build to release
+      - name: Create build archive
+        run: zip -r build.zip build/
+
+      - name: Upload build archive to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: |
-            build/**/*.js
+          files: build.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
