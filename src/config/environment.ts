@@ -219,7 +219,7 @@ export function validateEnvironmentConfig(): {
 
   const rawEnv = process.env.EBAY_ENVIRONMENT || process.env.EBAY_DEFAULT_ENVIRONMENT;
   if (!rawEnv) {
-    warnings.push('EBAY_ENVIRONMENT not set; defaulting to production');
+    warnings.push('EBAY_ENVIRONMENT not set; defaulting to sandbox');
   } else if (rawEnv !== 'production' && rawEnv !== 'sandbox') {
     errors.push(`EBAY_ENVIRONMENT "${rawEnv}" is invalid; must be "production" or "sandbox"`);
   }
