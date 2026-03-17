@@ -29,6 +29,10 @@ const CONFIG = {
 };
 
 const authStore = new MultiUserAuthStore();
+// Emit the concrete backend class so logs can never claim "memory" while
+// actually using Cloudflare (or vice-versa).  This fires once on startup,
+// after dotenv has already been loaded by the config/environment import.
+console.log(`[auth-store] Active KV backend: ${authStore.backendName}`);
 
 function getServerBaseUrl(): string {
   return CONFIG.publicBaseUrl || `http://localhost:${CONFIG.port}`;

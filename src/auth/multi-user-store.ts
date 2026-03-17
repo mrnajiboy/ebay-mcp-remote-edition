@@ -53,7 +53,21 @@ export interface SessionRecord {
 }
 
 export class MultiUserAuthStore {
-  private kv: KVStore = createKVStore();
+  private kv: KVStore;
+
+  /**
+   * @param kv  Optional KV store override. If omitted the process-wide singleton
+   *            returned by `createKVStore()` is used (the normal production path).
+   *            Pass an explicit store in unit tests to avoid touching env vars.
+   */
+  constructor(kv?: KVStore) {
+    this.kv = kv ?? createKVStore();
+  }
+
+  /** Returns the backend name of the underlying KV store (e.g. "InMemoryKVStore"). */
+  get backendName(): string {
+    return this.kv.backendName;
+  }
 
   /**
    * In-memory map of sessionToken → timestamp of last KV write for touchSession.

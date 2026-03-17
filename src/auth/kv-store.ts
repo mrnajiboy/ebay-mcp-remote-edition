@@ -4,6 +4,8 @@ import axios, { type AxiosInstance } from 'axios';
 
 /** Common contract for all KV store backends. */
 export interface KVStore {
+  /** Human-readable identifier for the backend (e.g. "InMemoryKVStore", "CloudflareKVStore"). */
+  readonly backendName: string;
   get<T>(key: string): Promise<T | null>;
   put(key: string, value: unknown, expirationTtl?: number): Promise<void>;
   delete(key: string): Promise<void>;
@@ -24,27 +26,30 @@ interface MemEntry {
  * All data is lost on process restart.
  */
 export class InMemoryKVStore implements KVStore {
+  readonly backendName = 'InMemoryKVStore';
   private store = new Map<string, MemEntry>();
 
-  async get<T>(key: string): Promise<T | null> {
+  get<T>(key: string): Promise<T | null> {
     const entry = this.store.get(key);
-    if (!entry) return null;
+    if (!entry) return Promise.resolve(null);
     if (entry.expiresAt !== undefined && Date.now() > entry.expiresAt) {
       this.store.delete(key);
-      return null;
+      return Promise.resolve(null);
     }
-    return entry.value as T;
+    return Promise.resolve(entry.value as T);
   }
 
-  async put(key: string, value: unknown, expirationTtl?: number): Promise<void> {
+  put(key: string, value: unknown, expirationTtl?: number): Promise<void> {
     this.store.set(key, {
       value,
       expiresAt: expirationTtl !== undefined ? Date.now() + expirationTtl * 1_000 : undefined,
     });
+    return Promise.resolve();
   }
 
-  async delete(key: string): Promise<void> {
+  delete(key: string): Promise<void> {
     this.store.delete(key);
+    return Promise.resolve();
   }
 }
 
@@ -60,6 +65,7 @@ interface CacheEntry<T> {
  * Used when EBAY_TOKEN_STORE_BACKEND=cloudflare-kv (the default for hosted deployments).
  */
 export class CloudflareKVStore implements KVStore {
+  readonly backendName = 'CloudflareKVStore';
   private client: AxiosInstance;
   private accountId: string;
   private namespaceId: string;
@@ -139,11 +145,27 @@ export class CloudflareKVStore implements KVStore {
   }
 }
 
-// ── Factory ───────────────────────────────────────────────────────────────────
+// ── Singleton factory ─────────────────────────────────────────────────────────
 
 /**
- * Returns the appropriate KV store backend based on the EBAY_TOKEN_STORE_BACKEND
- * environment variable:
+ * Process-level singleton KV store.
+ *
+ * All callers within the same Node.js process share one backend instance.
+ * This is the root cause guard: it makes it impossible for two different
+ * MultiUserAuthStore instances to accidentally resolve to different backends
+ * (e.g. one reading EBAY_TOKEN_STORE_BACKEND before dotenv runs and one after).
+ *
+ * The singleton is lazy: it is created on the first call to `createKVStore()`
+ * and reused for every subsequent call.
+ *
+ * For automated tests only, call `resetKVStoreSingleton()` between test cases
+ * that need to swap the backend.
+ */
+let _kvStoreSingleton: KVStore | null = null;
+
+/**
+ * Returns (or lazily creates) the process-wide KV store singleton based on the
+ * EBAY_TOKEN_STORE_BACKEND environment variable:
  *
  *   memory        → InMemoryKVStore  (no external dependencies, data lost on restart)
  *   cloudflare-kv → CloudflareKVStore (default; requires CLOUDFLARE_* env vars)
@@ -152,18 +174,22 @@ export class CloudflareKVStore implements KVStore {
  * existing hosted deployments continue to work without any config change.
  */
 export function createKVStore(): KVStore {
+  if (_kvStoreSingleton) {
+    return _kvStoreSingleton;
+  }
+
   const rawEnv = process.env.EBAY_TOKEN_STORE_BACKEND;
   const backend = (rawEnv ?? 'cloudflare-kv').toLowerCase().trim();
 
-  // Always log to stdout so the chosen backend is visible in server logs.
-  // This runs once at startup when MultiUserAuthStore is first instantiated.
+  // Log exactly once, at the point the singleton is first constructed.
   switch (backend) {
     case 'memory':
     case 'in-memory': {
       console.log(
         `[kv-store] EBAY_TOKEN_STORE_BACKEND="${rawEnv ?? ''}" → using InMemoryKVStore (no external KV calls)`
       );
-      return new InMemoryKVStore();
+      _kvStoreSingleton = new InMemoryKVStore();
+      break;
     }
     case 'cloudflare-kv':
     case 'cloudflare':
@@ -171,7 +197,24 @@ export function createKVStore(): KVStore {
       console.log(
         `[kv-store] EBAY_TOKEN_STORE_BACKEND="${rawEnv ?? '(unset)'}" → using CloudflareKVStore (accountId="${process.env.CLOUDFLARE_ACCOUNT_ID ?? '(unset)'}") — set EBAY_TOKEN_STORE_BACKEND=memory to disable`
       );
-      return new CloudflareKVStore();
+      _kvStoreSingleton = new CloudflareKVStore();
+      break;
     }
   }
+
+  return _kvStoreSingleton;
+}
+
+/**
+ * **TEST USE ONLY** – resets (or replaces) the process-wide KV store singleton.
+ *
+ * Call this in `afterEach`/`beforeEach` when a test needs to control which
+ * backend is in use without mutating `process.env.EBAY_TOKEN_STORE_BACKEND`.
+ *
+ * @param replacement  Optional KV store to install as the new singleton.
+ *                     Pass `null` (default) to clear the singleton so that the
+ *                     next `createKVStore()` call rebuilds it from env.
+ */
+export function resetKVStoreSingleton(replacement: KVStore | null = null): void {
+  _kvStoreSingleton = replacement;
 }
