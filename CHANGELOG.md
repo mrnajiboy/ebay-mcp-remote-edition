@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.15](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.14...ebay-mcp-remote-edition-v2.0.15) (2026-03-17)
+
+
+### Bug Fixes
+
+* server logic for MCP desktop clients ([3c9e174](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/3c9e174039ec16170af6f120ce65877933b2ff7d))
+
 ## [2.0.14](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.13...ebay-mcp-remote-edition-v2.0.14) (2026-03-17)
 
 
