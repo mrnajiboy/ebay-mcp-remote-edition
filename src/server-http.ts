@@ -40,10 +40,10 @@ function getServerBaseUrl(): string {
 
 function htmlEscape(value: string): string {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/&/g, '&')
+    .replace(/</g, '<')
+    .replace(/>/g, '>')
+    .replace(/"/g, '"')
     .replace(/'/g, '&#39;');
 }
 
@@ -201,6 +201,10 @@ function createApp(): express.Application {
 
     const uris = redirectUris as string[];
     const client = await authStore.registerClient(uris, clientName);
+    serverLogger.info('[register] MCP client registered', {
+      clientId: client.clientId,
+      redirectUris: client.redirectUris,
+    });
     res.status(201).json({
       client_id: client.clientId,
       redirect_uris: client.redirectUris,
@@ -230,16 +234,29 @@ function createApp(): express.Application {
       const environment =
         q.env === 'sandbox' || q.env === 'production' ? q.env : getConfiguredEnvironment();
 
+      serverLogger.info('[authorize] Request received', {
+        clientId,
+        redirectUri,
+        responseType,
+        hasPkce: !!codeChallenge,
+        pkceMethod: codeChallengeMethod,
+        environment,
+        hasMcpState: !!mcpState,
+      });
+
       if (responseType !== 'code') {
+        serverLogger.warn('[authorize] Rejected: unsupported_response_type', { responseType });
         res.status(400).json({ error: 'unsupported_response_type' });
         return;
       }
       if (!clientId) {
+        serverLogger.warn('[authorize] Rejected: missing client_id');
         res
           .status(400)
           .json({ error: 'invalid_request', error_description: 'client_id is required' });
         return;
       }
+
       // Look up the MCP client. If unknown, auto-register it for trusted desktop
       // redirect URIs (VS Code, Cursor, Windsurf, localhost) so that the flow
       // continues even when /register state was not persisted (e.g. memory backend)
@@ -253,11 +270,19 @@ function createApp(): express.Application {
           );
           client = await authStore.registerClientWithId(clientId, [redirectUri]);
         } else {
+          serverLogger.warn('[authorize] Rejected: unknown client_id (not a trusted desktop URI)', {
+            clientId,
+            redirectUri,
+          });
           res.status(400).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
           return;
         }
       }
       if (!redirectUri || !client.redirectUris.includes(redirectUri)) {
+        serverLogger.warn('[authorize] Rejected: redirect_uri mismatch', {
+          provided: redirectUri,
+          registered: client.redirectUris,
+        });
         res.status(400).json({
           error: 'invalid_request',
           error_description: 'redirect_uri not registered for this client',
@@ -265,6 +290,10 @@ function createApp(): express.Application {
         return;
       }
       if (!codeChallenge || codeChallengeMethod !== 'S256') {
+        serverLogger.warn('[authorize] Rejected: missing or invalid PKCE', {
+          hasPkce: !!codeChallenge,
+          method: codeChallengeMethod,
+        });
         res.status(400).json({
           error: 'invalid_request',
           error_description: 'PKCE with S256 code_challenge is required',
@@ -274,6 +303,12 @@ function createApp(): express.Application {
 
       const ebayConfig = getEbayConfig(environment);
       if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
+        serverLogger.error('[authorize] eBay app credentials missing in env', {
+          hasClientId: !!ebayConfig.clientId,
+          hasClientSecret: !!ebayConfig.clientSecret,
+          hasRedirectUri: !!ebayConfig.redirectUri,
+          environment,
+        });
         res.status(500).json({
           error: 'server_error',
           error_description: `Missing eBay configuration for ${environment}`,
@@ -297,8 +332,16 @@ function createApp(): express.Application {
         undefined,
         stateRecord.state
       );
+      serverLogger.info('[authorize] Redirecting to eBay OAuth', {
+        state: stateRecord.state,
+        environment,
+      });
       res.redirect(oauthUrl);
     } catch (error) {
+      serverLogger.error('[authorize] Unhandled error', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       res.status(500).json({
         error: 'server_error',
         error_description: error instanceof Error ? error.message : String(error),
@@ -311,9 +354,15 @@ function createApp(): express.Application {
    * Exchanges a short-lived MCP authorization code (+ PKCE verifier) for a session token.
    */
   app.post('/token', async (req, res) => {
+    serverLogger.info('[token] Request received', {
+      contentType: req.headers['content-type'],
+      hasBody: !!req.body,
+    });
+
     // Body may be form-encoded (RFC 6749 §4.1.3) or JSON — both are parsed by middleware.
     // Guard against unparsed bodies (missing Content-Type header etc.)
     if (!req.body || typeof req.body !== 'object') {
+      serverLogger.warn('[token] Rejected: missing or unparseable body');
       res.status(400).json({
         error: 'invalid_request',
         error_description:
@@ -331,32 +380,60 @@ function createApp(): express.Application {
       code_verifier: codeVerifier,
     } = body;
 
+    serverLogger.info('[token] Parsed fields', {
+      grantType,
+      hasCode: !!code,
+      redirectUri,
+      clientId,
+      hasCodeVerifier: !!codeVerifier,
+    });
+
     if (grantType !== 'authorization_code') {
+      serverLogger.warn('[token] Rejected: unsupported_grant_type', { grantType });
       res.status(400).json({ error: 'unsupported_grant_type' });
       return;
     }
     if (!code) {
+      serverLogger.warn('[token] Rejected: missing code');
       res.status(400).json({ error: 'invalid_request', error_description: 'code is required' });
       return;
     }
 
     const authCode = await authStore.consumeAuthCode(code);
     if (!authCode) {
+      serverLogger.warn('[token] Rejected: invalid or expired authorization code', {
+        codePrefix: code.substring(0, 8),
+      });
       res.status(400).json({
         error: 'invalid_grant',
         error_description: 'Invalid or expired authorization code',
       });
       return;
     }
+    serverLogger.info('[token] Auth code found', {
+      storedClientId: authCode.clientId,
+      providedClientId: clientId,
+      storedRedirectUri: authCode.redirectUri,
+      providedRedirectUri: redirectUri,
+    });
     if (authCode.clientId !== clientId) {
+      serverLogger.warn('[token] Rejected: client_id mismatch', {
+        stored: authCode.clientId,
+        provided: clientId,
+      });
       res.status(400).json({ error: 'invalid_client', error_description: 'client_id mismatch' });
       return;
     }
     if (authCode.redirectUri !== redirectUri) {
+      serverLogger.warn('[token] Rejected: redirect_uri mismatch', {
+        stored: authCode.redirectUri,
+        provided: redirectUri,
+      });
       res.status(400).json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' });
       return;
     }
     if (!codeVerifier) {
+      serverLogger.warn('[token] Rejected: missing code_verifier');
       res
         .status(400)
         .json({ error: 'invalid_request', error_description: 'code_verifier is required' });
@@ -366,6 +443,10 @@ function createApp(): express.Application {
     // Verify PKCE S256: BASE64URL(SHA256(code_verifier)) must equal code_challenge
     const expectedChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
     if (expectedChallenge !== authCode.codeChallenge) {
+      serverLogger.warn('[token] Rejected: PKCE verification failed', {
+        expected: authCode.codeChallenge,
+        computed: expectedChallenge,
+      });
       res
         .status(400)
         .json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
@@ -373,6 +454,11 @@ function createApp(): express.Application {
     }
 
     const session = await authStore.createSession(authCode.userId, authCode.environment);
+    serverLogger.info('[token] Session created, issuing access token', {
+      userId: authCode.userId,
+      environment: authCode.environment,
+      sessionTokenPrefix: session.sessionToken.substring(0, 8),
+    });
     res.json({
       access_token: session.sessionToken,
       token_type: 'bearer',
@@ -416,13 +502,24 @@ function createApp(): express.Application {
       const errorDescription =
         typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
 
+      serverLogger.info('[oauth/callback] Received', {
+        hasCode: !!code,
+        hasState: !!state,
+        oauthError,
+      });
+
       if (oauthError) {
+        serverLogger.warn('[oauth/callback] eBay returned OAuth error', {
+          oauthError,
+          errorDescription,
+        });
         res
           .status(400)
           .send(`<h1>OAuth failed</h1><p>${htmlEscape(errorDescription ?? oauthError)}</p>`);
         return;
       }
       if (!code) {
+        serverLogger.warn('[oauth/callback] Missing authorization code');
         res.status(400).send('<h1>Missing authorization code</h1>');
         return;
       }
@@ -432,10 +529,17 @@ function createApp(): express.Application {
       if (state) {
         stateRecord = await authStore.consumeOAuthState(state);
         if (!stateRecord) {
+          serverLogger.warn('[oauth/callback] OAuth state not found or expired', { state });
           res.status(400).send('<h1>Invalid or expired OAuth state</h1>');
           return;
         }
         environment = stateRecord.environment;
+        serverLogger.info('[oauth/callback] State resolved', {
+          environment,
+          isMcpFlow: !!(stateRecord.mcpClientId && stateRecord.mcpRedirectUri),
+          mcpClientId: stateRecord.mcpClientId,
+          mcpRedirectUri: stateRecord.mcpRedirectUri,
+        });
       } else {
         environment =
           envFromQuery === 'sandbox' || envFromQuery === 'production'
@@ -450,7 +554,12 @@ function createApp(): express.Application {
       const userId = randomUUID();
       const api = await createUserScopedApi(userId, environment);
       const oauthClient = api.getAuthClient().getOAuthClient();
+      serverLogger.info('[oauth/callback] Exchanging code for eBay tokens', { userId });
       const tokenData = await oauthClient.exchangeCodeForToken(code);
+      serverLogger.info('[oauth/callback] eBay token exchange successful', {
+        userId,
+        hasScope: !!tokenData.scope,
+      });
 
       // ── MCP OAuth flow: redirect back to the registered MCP client ─────────
       if (stateRecord?.mcpClientId && stateRecord.mcpRedirectUri && stateRecord.mcpCodeChallenge) {
@@ -467,16 +576,19 @@ function createApp(): express.Application {
         if (stateRecord.mcpState) {
           redirectUrl.searchParams.set('state', stateRecord.mcpState);
         }
-        serverLogger.info('MCP OAuth flow complete, redirecting to client', {
+        serverLogger.info('[oauth/callback] MCP OAuth flow complete, redirecting to client', {
           clientId: stateRecord.mcpClientId,
           redirectUri: stateRecord.mcpRedirectUri,
           userId,
+          authCodePrefix: authCodeRecord.code.substring(0, 8),
+          finalRedirectUrl: redirectUrl.toString().substring(0, 120),
         });
         res.redirect(redirectUrl.toString());
         return;
       }
       // ── End MCP OAuth flow ─────────────────────────────────────────────────
 
+      serverLogger.info('[oauth/callback] Non-MCP flow: creating hosted session', { userId });
       const session = await authStore.createSession(userId, environment);
 
       res.status(200).send(`<!doctype html>
@@ -540,6 +652,10 @@ function createApp(): express.Application {
   </body>
 </html>`);
     } catch (error) {
+      serverLogger.error('[oauth/callback] Unhandled error', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       res
         .status(500)
         .send(
