@@ -208,6 +208,44 @@ export class MultiUserAuthStore {
     return record;
   }
 
+  /**
+   * Upserts a client record using a **caller-supplied** `clientId`.
+   *
+   * Used by the `/authorize` endpoint to auto-register trusted desktop MCP
+   * clients (VS Code, Cursor, Windsurf, localhost loopback) that arrive at
+   * `/authorize` without a prior `/register` call (e.g. because the in-memory
+   * registration was lost between requests, or the client drives `/authorize`
+   * directly).
+   *
+   * An existing record for `clientId` is overwritten only if the supplied
+   * `redirectUri` is not already listed (additive merge otherwise).
+   */
+  async registerClientWithId(
+    clientId: string,
+    redirectUris: string[],
+    clientName?: string
+  ): Promise<ClientRecord> {
+    const existing = await this.kv.get<ClientRecord>(`client:${clientId}`);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      // Merge any new redirect URIs into the existing record
+      const merged = Array.from(new Set([...existing.redirectUris, ...redirectUris]));
+      const updated: ClientRecord = { ...existing, redirectUris: merged };
+      await this.kv.put(`client:${clientId}`, updated);
+      return updated;
+    }
+
+    const record: ClientRecord = {
+      clientId,
+      redirectUris,
+      clientName,
+      createdAt: now,
+    };
+    await this.kv.put(`client:${clientId}`, record);
+    return record;
+  }
+
   async getClient(clientId: string): Promise<ClientRecord | null> {
     return await this.kv.get<ClientRecord>(`client:${clientId}`);
   }

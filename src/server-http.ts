@@ -82,6 +82,40 @@ function requireOauthStartKey(
   next();
 }
 
+/**
+ * Returns true when a redirect URI belongs to a well-known desktop / IDE
+ * MCP client (VS Code, Cursor, Windsurf) or a localhost loopback.
+ *
+ * These clients drive the authorize flow directly and cannot always guarantee
+ * that their /register request was persisted before /authorize is called.
+ * We allow them to self-register on the fly so the flow doesn't hard-fail on
+ * a missing client_id when the user's eBay app credentials are already in env.
+ */
+function isTrustedDesktopRedirectUri(redirectUri: string): boolean {
+  try {
+    const u = new URL(redirectUri);
+    // Desktop IDE callback schemes
+    if (
+      u.protocol === 'vscode:' ||
+      u.protocol === 'cursor:' ||
+      u.protocol === 'windsurf:' ||
+      u.protocol === 'claude:'
+    ) {
+      return true;
+    }
+    // Localhost loopback (any port)
+    if (
+      (u.protocol === 'http:' || u.protocol === 'https:') &&
+      (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1')
+    ) {
+      return true;
+    }
+  } catch {
+    // Malformed URI – treat as untrusted
+  }
+  return false;
+}
+
 async function createUserScopedApi(
   userId: string,
   environment: EbayEnvironment
@@ -206,10 +240,22 @@ function createApp(): express.Application {
           .json({ error: 'invalid_request', error_description: 'client_id is required' });
         return;
       }
-      const client = await authStore.getClient(clientId);
+      // Look up the MCP client. If unknown, auto-register it for trusted desktop
+      // redirect URIs (VS Code, Cursor, Windsurf, localhost) so that the flow
+      // continues even when /register state was not persisted (e.g. memory backend)
+      // or when the IDE drives /authorize directly without a prior /register call.
+      let client = await authStore.getClient(clientId);
       if (!client) {
-        res.status(400).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
-        return;
+        if (redirectUri && isTrustedDesktopRedirectUri(redirectUri)) {
+          serverLogger.info(
+            '[authorize] Auto-registering trusted desktop MCP client (client_id not in store)',
+            { clientId, redirectUri }
+          );
+          client = await authStore.registerClientWithId(clientId, [redirectUri]);
+        } else {
+          res.status(400).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
+          return;
+        }
       }
       if (!redirectUri || !client.redirectUris.includes(redirectUri)) {
         res.status(400).json({
