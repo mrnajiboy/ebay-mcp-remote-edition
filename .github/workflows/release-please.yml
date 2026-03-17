@@ -55,6 +55,9 @@ jobs:
       - name: Run tests
         run: pnpm run test
 
+      - name: Check formatting
+        run: pnpm exec prettier --check "src/**/*.{ts,js}"
+
       - name: Build
         run: pnpm run build
 
