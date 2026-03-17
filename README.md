@@ -28,6 +28,7 @@ This fork preserves the original local/STDIO workflow while adding hosted multi-
 - Admin session inspection/revocation endpoints
 - `GET /whoami` endpoint for session-bound identity lookup
 - Optional `OAUTH_START_KEY` protection for `/oauth/start`
+- **MCP OAuth 2.1 authorization server** — Cline and other MCP clients that support OAuth discovery (`/.well-known/oauth-authorization-server`, `POST /register`, `GET /authorize`, `POST /token`) can authenticate fully automatically via browser eBay OAuth with no manual token pasting
 
 ---
 
@@ -89,7 +90,9 @@ For official eBay API support, please refer to the [eBay Developer Program](http
 - [⚠️ Disclaimer](#️-disclaimer)
 - [Features](#features)
 - [Quick Start](#quick-start)
+  - [Local MCP Client Configuration](#local-mcp-client-configuration)
 - [Hosted Render Deployment](#hosted-render-deployment)
+  - [Hosted MCP Client Configuration](#hosted-mcp-client-configuration)
 - [Configuration](#configuration)
 - [Available Tools](#available-tools)
 - [Development](#development)
@@ -140,6 +143,106 @@ pnpm run setup
 ### 4. Hosted Mode
 
 For hosted Render usage, see the next section.
+
+---
+
+## Local MCP Client Configuration
+
+After running `pnpm run build` and `pnpm run setup`, add the server to your MCP client using the **STDIO** transport. Replace `/absolute/path/to/ebay-mcp` with the actual path where you cloned the repo.
+
+> **Tip:** Run `pnpm run setup` first — it completes the OAuth flow and writes `EBAY_USER_REFRESH_TOKEN` to your `.env`. Copy the values from `.env` into the config below.
+
+### Cline
+
+Config file location:  
+`~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "command": "node",
+      "args": ["/absolute/path/to/ebay-mcp/build/index.js"],
+      "env": {
+        "EBAY_CLIENT_ID": "YOUR_CLIENT_ID",
+        "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",
+        "EBAY_ENVIRONMENT": "sandbox",
+        "EBAY_REDIRECT_URI": "YOUR_RUNAME",
+        "EBAY_USER_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Config file location:  
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "command": "node",
+      "args": ["/absolute/path/to/ebay-mcp/build/index.js"],
+      "env": {
+        "EBAY_CLIENT_ID": "YOUR_CLIENT_ID",
+        "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",
+        "EBAY_ENVIRONMENT": "sandbox",
+        "EBAY_REDIRECT_URI": "YOUR_RUNAME",
+        "EBAY_USER_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Cursor
+
+Global config: `~/.cursor/mcp.json`  
+Project config: `.cursor/mcp.json` (in your project root)
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "command": "node",
+      "args": ["/absolute/path/to/ebay-mcp/build/index.js"],
+      "env": {
+        "EBAY_CLIENT_ID": "YOUR_CLIENT_ID",
+        "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",
+        "EBAY_ENVIRONMENT": "sandbox",
+        "EBAY_REDIRECT_URI": "YOUR_RUNAME",
+        "EBAY_USER_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Other STDIO clients (Zed, Windsurf, Continue.dev, Roo Code, Amazon Q)
+
+All STDIO-based clients use the same pattern — point `command` at `node`, pass `build/index.js` as the first arg, and supply the eBay env vars.
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "command": "node",
+      "args": ["/absolute/path/to/ebay-mcp/build/index.js"],
+      "env": {
+        "EBAY_CLIENT_ID": "YOUR_CLIENT_ID",
+        "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",
+        "EBAY_ENVIRONMENT": "sandbox",
+        "EBAY_REDIRECT_URI": "YOUR_RUNAME",
+        "EBAY_USER_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN"
+      }
+    }
+  }
+}
+```
 
 ---
 
@@ -298,6 +401,82 @@ If you want the service URL to be less exposed:
 - keep `/oauth/callback` reachable by eBay
 - optionally place `/`, `/oauth/start`, and `/admin/*` behind Cloudflare Access
 - keep `/health` available if needed by Render health checks
+
+---
+
+## Hosted MCP Client Configuration
+
+The hosted server implements a full **MCP OAuth 2.1 authorization server** (RFC 8414 / RFC 7591 / RFC 6749 + PKCE). MCP clients that support OAuth discovery — such as Cline — will handle the full browser-based eBay login flow automatically with no manual token pasting required.
+
+Replace `https://your-server.com` with your actual `PUBLIC_BASE_URL`.
+
+### Cline (recommended — full OAuth auto-discovery)
+
+Cline supports OAuth 2.1 discovery natively. Just point it at the MCP endpoint and it handles everything:
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "url": "https://your-server.com/mcp"
+    }
+  }
+}
+```
+
+**What happens automatically:**
+1. Cline fetches `/.well-known/oauth-authorization-server` to discover the auth server.
+2. It registers itself at `POST /register` (Dynamic Client Registration).
+3. Your browser opens `GET /authorize`, which redirects to eBay's login page.
+4. After you grant access, eBay redirects to `/oauth/callback`, which issues an MCP auth code and sends it back to Cline.
+5. Cline exchanges the code at `POST /token` for a session token and stores it.
+6. All subsequent `/mcp` requests are authenticated automatically.
+
+> **`OAUTH_START_KEY` note:** If your server has `OAUTH_START_KEY` set, the `/authorize` endpoint also requires it. You can temporarily disable it for first-time client setup, or consult your server operator for the key.
+
+### Claude Desktop (HTTP remote with pre-obtained session token)
+
+Claude Desktop's remote MCP support requires an explicit `Authorization` header. Complete the browser OAuth flow at `https://your-server.com/oauth/start` first to get your session token, then configure:
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "url": "https://your-server.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_SESSION_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Cursor (HTTP remote with pre-obtained session token)
+
+```json
+{
+  "mcpServers": {
+    "ebay": {
+      "url": "https://your-server.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_SESSION_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Make / Zapier / TypingMind and similar platforms
+
+These platforms use a fixed token field. To connect:
+
+1. Open `https://your-server.com/oauth/start?env=production` in a browser.
+2. Complete the eBay login flow.
+3. Copy the session token from the confirmation page.
+4. Paste it as your **API Key / Bearer token** in the platform's MCP connector settings.
+5. Set the MCP endpoint URL to `https://your-server.com/mcp`.
+
+---
 
 ## Configuration
 

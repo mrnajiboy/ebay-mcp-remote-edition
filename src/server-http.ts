@@ -96,6 +96,8 @@ function createApp(): express.Application {
 
   app.use(cors({ origin: '*', exposedHeaders: ['Mcp-Session-Id'] }));
   app.use(express.json());
+  // OAuth token endpoint sends application/x-www-form-urlencoded per RFC 6749
+  app.use(express.urlencoded({ extended: false }));
   app.use(helmet({ xPoweredBy: false }));
   app.use('/icons', express.static(join(projectRoot, 'public', 'icons')));
 
@@ -240,6 +242,16 @@ function createApp(): express.Application {
    * Exchanges a short-lived MCP authorization code (+ PKCE verifier) for a session token.
    */
   app.post('/token', async (req, res) => {
+    // Body may be form-encoded (RFC 6749 §4.1.3) or JSON — both are parsed by middleware.
+    // Guard against unparsed bodies (missing Content-Type header etc.)
+    if (!req.body || typeof req.body !== 'object') {
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Request body is missing or unparseable. Use application/x-www-form-urlencoded or application/json.',
+      });
+      return;
+    }
+
     const body = req.body as Record<string, string>;
     const { grant_type, code, redirect_uri, client_id, code_verifier } = body;
 
