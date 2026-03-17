@@ -15,26 +15,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'latest'
-          cache: 'pnpm'
+          node-version: 'lts/*'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: pnpm install
+        run: npm ci
 
       - name: Typecheck
-        run: pnpm run typecheck
+        run: npm run typecheck
 
       - name: Lint
-        run: pnpm exec eslint . 2>&1 | tee eslint-output.txt; exit ${PIPESTATUS[0]}
+        run: npx eslint . 2>&1 | tee eslint-output.txt; exit ${PIPESTATUS[0]}
 
       - name: Check formatting
-        run: pnpm exec prettier --check "src/**/*.{ts,js}"
+        run: npx prettier --check "src/**/*.{ts,js}"
 
   test:
     name: Test (${{ matrix.os }})
@@ -48,20 +45,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'latest'
-          cache: 'pnpm'
+          node-version: 'lts/*'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: pnpm install
+        run: npm ci
 
       - name: Run tests
-        run: pnpm test
+        run: npm test
 
   build:
     name: Build
@@ -72,17 +66,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'latest'
-          cache: 'pnpm'
+          node-version: 'lts/*'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --frozen-lockfile
+        run: npm ci
 
       - name: Build
         run: npm run build

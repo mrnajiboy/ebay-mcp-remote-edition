@@ -17,24 +17,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'latest'
-          cache: 'pnpm'
+          node-version: 'lts/*'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Run API sync check
         id: sync
         run: |
-          pnpm run sync 2>&1 | tee sync-output.txt
+          npm run sync 2>&1 | tee sync-output.txt
 
           # Extract stats from the report
           if [ -f dev-sync-report.json ]; then
@@ -123,7 +120,7 @@ jobs:
 
             \`\`\`bash
             # Run sync locally to get full details
-            pnpm run sync
+            npm run sync
 
             # Check the report
             cat dev-sync-report.json
