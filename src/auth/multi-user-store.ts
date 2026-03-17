@@ -8,6 +8,32 @@ export interface OAuthStateRecord {
   environment: EbayEnvironment;
   createdAt: string;
   returnTo?: string;
+  /** Set when this state was initiated by an MCP OAuth 2.1 authorization request */
+  mcpClientId?: string;
+  mcpRedirectUri?: string;
+  mcpState?: string;
+  mcpCodeChallenge?: string;
+  mcpCodeChallengeMethod?: string;
+}
+
+/** RFC 7591 dynamically-registered client */
+export interface ClientRecord {
+  clientId: string;
+  redirectUris: string[];
+  clientName?: string;
+  createdAt: string;
+}
+
+/** Short-lived authorization code issued after eBay OAuth completes in MCP flow */
+export interface AuthCodeRecord {
+  code: string;
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  codeChallengeMethod: string;
+  userId: string;
+  environment: EbayEnvironment;
+  createdAt: string;
 }
 
 export interface UserTokenRecord {
@@ -43,7 +69,14 @@ export class MultiUserAuthStore {
 
   async createOAuthState(
     environment: EbayEnvironment,
-    returnTo?: string
+    returnTo?: string,
+    mcpContext?: {
+      mcpClientId: string;
+      mcpRedirectUri: string;
+      mcpState?: string;
+      mcpCodeChallenge: string;
+      mcpCodeChallengeMethod: string;
+    }
   ): Promise<OAuthStateRecord> {
     const state = randomUUID();
     const record: OAuthStateRecord = {
@@ -51,6 +84,7 @@ export class MultiUserAuthStore {
       environment,
       createdAt: new Date().toISOString(),
       returnTo,
+      ...mcpContext,
     };
     await this.kv.put(this.stateKey(state), record, 15 * 60);
     return record;
@@ -124,5 +158,57 @@ export class MultiUserAuthStore {
 
   async deleteSession(sessionToken: string): Promise<void> {
     await this.kv.delete(this.sessionKey(sessionToken));
+  }
+
+  // ── RFC 7591 Dynamic Client Registration ──────────────────────────────────
+
+  async registerClient(redirectUris: string[], clientName?: string): Promise<ClientRecord> {
+    const clientId = randomUUID();
+    const record: ClientRecord = {
+      clientId,
+      redirectUris,
+      clientName,
+      createdAt: new Date().toISOString(),
+    };
+    await this.kv.put(`client:${clientId}`, record);
+    return record;
+  }
+
+  async getClient(clientId: string): Promise<ClientRecord | null> {
+    return await this.kv.get<ClientRecord>(`client:${clientId}`);
+  }
+
+  // ── MCP Authorization Code (short-lived, PKCE-protected) ─────────────────
+
+  async createAuthCode(
+    clientId: string,
+    redirectUri: string,
+    codeChallenge: string,
+    codeChallengeMethod: string,
+    userId: string,
+    environment: EbayEnvironment
+  ): Promise<AuthCodeRecord> {
+    const code = randomUUID() + randomUUID();
+    const record: AuthCodeRecord = {
+      code,
+      clientId,
+      redirectUri,
+      codeChallenge,
+      codeChallengeMethod,
+      userId,
+      environment,
+      createdAt: new Date().toISOString(),
+    };
+    await this.kv.put(`auth_code:${code}`, record, 10 * 60); // 10 min TTL
+    return record;
+  }
+
+  async consumeAuthCode(code: string): Promise<AuthCodeRecord | null> {
+    const key = `auth_code:${code}`;
+    const record = await this.kv.get<AuthCodeRecord>(key);
+    if (record) {
+      await this.kv.delete(key);
+    }
+    return record;
   }
 }

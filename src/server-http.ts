@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
@@ -126,6 +126,167 @@ function createApp(): express.Application {
     res.json({ status: 'healthy', timestamp: new Date().toISOString(), version: getVersion() });
   });
 
+  // ── MCP OAuth 2.1 Authorization Server endpoints ─────────────────────────
+  // Required so MCP clients (e.g. Cline) can discover and use this server's
+  // built-in OAuth flow instead of hitting a 404 on /register.
+
+  /** RFC 8414 – Authorization Server Metadata */
+  app.get('/.well-known/oauth-authorization-server', (_req, res) => {
+    res.json({
+      issuer: serverUrl,
+      authorization_endpoint: `${serverUrl}/authorize`,
+      token_endpoint: `${serverUrl}/token`,
+      registration_endpoint: `${serverUrl}/register`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+      scopes_supported: ['mcp'],
+    });
+  });
+
+  /** RFC 7591 – Dynamic Client Registration */
+  app.post('/register', async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const redirectUris = body.redirect_uris;
+    const clientName = typeof body.client_name === 'string' ? body.client_name : undefined;
+
+    if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
+      res.status(400).json({
+        error: 'invalid_client_metadata',
+        error_description: 'redirect_uris is required and must be a non-empty array',
+      });
+      return;
+    }
+
+    const uris = redirectUris as string[];
+    const client = await authStore.registerClient(uris, clientName);
+    res.status(201).json({
+      client_id: client.clientId,
+      redirect_uris: client.redirectUris,
+      client_name: client.clientName,
+      client_id_issued_at: Math.floor(new Date(client.createdAt).getTime() / 1000),
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    });
+  });
+
+  /**
+   * RFC 6749 – Authorization Endpoint (PKCE required)
+   * Validates the MCP client, stores context in state, then forward to eBay OAuth.
+   */
+  app.get('/authorize', requireOauthStartKey, async (req, res) => {
+    try {
+      const q = req.query as Record<string, string>;
+      const { client_id, redirect_uri, response_type, state: mcpState,
+              code_challenge, code_challenge_method } = q;
+      const environment = (q.env === 'sandbox' || q.env === 'production'
+        ? q.env
+        : getConfiguredEnvironment()) as EbayEnvironment;
+
+      if (response_type !== 'code') {
+        res.status(400).json({ error: 'unsupported_response_type' });
+        return;
+      }
+      if (!client_id) {
+        res.status(400).json({ error: 'invalid_request', error_description: 'client_id is required' });
+        return;
+      }
+      const client = await authStore.getClient(client_id);
+      if (!client) {
+        res.status(400).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
+        return;
+      }
+      if (!redirect_uri || !client.redirectUris.includes(redirect_uri)) {
+        res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri not registered for this client' });
+        return;
+      }
+      if (!code_challenge || code_challenge_method !== 'S256') {
+        res.status(400).json({ error: 'invalid_request', error_description: 'PKCE with S256 code_challenge is required' });
+        return;
+      }
+
+      const ebayConfig = getEbayConfig(environment);
+      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
+        res.status(500).json({ error: 'server_error', error_description: `Missing eBay configuration for ${environment}` });
+        return;
+      }
+
+      const stateRecord = await authStore.createOAuthState(environment, undefined, {
+        mcpClientId: client_id,
+        mcpRedirectUri: redirect_uri,
+        mcpState,
+        mcpCodeChallenge: code_challenge,
+        mcpCodeChallengeMethod: code_challenge_method,
+      });
+
+      const oauthUrl = getOAuthAuthorizationUrl(
+        ebayConfig.clientId,
+        ebayConfig.redirectUri,
+        environment,
+        getHostedOauthScopes(environment),
+        undefined,
+        stateRecord.state
+      );
+      res.redirect(oauthUrl);
+    } catch (error) {
+      res.status(500).json({ error: 'server_error', error_description: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /**
+   * RFC 6749 – Token Endpoint
+   * Exchanges a short-lived MCP authorization code (+ PKCE verifier) for a session token.
+   */
+  app.post('/token', async (req, res) => {
+    const body = req.body as Record<string, string>;
+    const { grant_type, code, redirect_uri, client_id, code_verifier } = body;
+
+    if (grant_type !== 'authorization_code') {
+      res.status(400).json({ error: 'unsupported_grant_type' });
+      return;
+    }
+    if (!code) {
+      res.status(400).json({ error: 'invalid_request', error_description: 'code is required' });
+      return;
+    }
+
+    const authCode = await authStore.consumeAuthCode(code);
+    if (!authCode) {
+      res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid or expired authorization code' });
+      return;
+    }
+    if (authCode.clientId !== client_id) {
+      res.status(400).json({ error: 'invalid_client', error_description: 'client_id mismatch' });
+      return;
+    }
+    if (authCode.redirectUri !== redirect_uri) {
+      res.status(400).json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' });
+      return;
+    }
+    if (!code_verifier) {
+      res.status(400).json({ error: 'invalid_request', error_description: 'code_verifier is required' });
+      return;
+    }
+
+    // Verify PKCE S256: BASE64URL(SHA256(code_verifier)) must equal code_challenge
+    const expectedChallenge = createHash('sha256').update(code_verifier).digest('base64url');
+    if (expectedChallenge !== authCode.codeChallenge) {
+      res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
+      return;
+    }
+
+    const session = await authStore.createSession(authCode.userId, authCode.environment);
+    res.json({
+      access_token: session.sessionToken,
+      token_type: 'bearer',
+      scope: 'mcp',
+    });
+  });
+
+  // ── End MCP OAuth 2.1 endpoints ───────────────────────────────────────────
+
   app.get('/oauth/start', requireOauthStartKey, async (req, res) => {
     try {
       const environment = ((typeof req.query.env === 'string' ? req.query.env : undefined) ||
@@ -172,8 +333,9 @@ function createApp(): express.Application {
       }
 
       let environment: EbayEnvironment;
+      let stateRecord: Awaited<ReturnType<typeof authStore.consumeOAuthState>> = null;
       if (state) {
-        const stateRecord = await authStore.consumeOAuthState(state);
+        stateRecord = await authStore.consumeOAuthState(state);
         if (!stateRecord) {
           res.status(400).send('<h1>Invalid or expired OAuth state</h1>');
           return;
@@ -186,9 +348,7 @@ function createApp(): express.Application {
             : getConfiguredEnvironment();
         serverLogger.warn(
           'OAuth callback received without state; falling back to configured/query environment',
-          {
-            environment,
-          }
+          { environment }
         );
       }
 
@@ -196,6 +356,32 @@ function createApp(): express.Application {
       const api = await createUserScopedApi(userId, environment);
       const oauthClient = api.getAuthClient().getOAuthClient();
       const tokenData = await oauthClient.exchangeCodeForToken(code);
+
+      // ── MCP OAuth flow: redirect back to the registered MCP client ─────────
+      if (stateRecord?.mcpClientId && stateRecord.mcpRedirectUri && stateRecord.mcpCodeChallenge) {
+        const authCodeRecord = await authStore.createAuthCode(
+          stateRecord.mcpClientId,
+          stateRecord.mcpRedirectUri,
+          stateRecord.mcpCodeChallenge,
+          stateRecord.mcpCodeChallengeMethod ?? 'S256',
+          userId,
+          environment
+        );
+        const redirectUrl = new URL(stateRecord.mcpRedirectUri);
+        redirectUrl.searchParams.set('code', authCodeRecord.code);
+        if (stateRecord.mcpState) {
+          redirectUrl.searchParams.set('state', stateRecord.mcpState);
+        }
+        serverLogger.info('MCP OAuth flow complete, redirecting to client', {
+          clientId: stateRecord.mcpClientId,
+          redirectUri: stateRecord.mcpRedirectUri,
+          userId,
+        });
+        res.redirect(redirectUrl.toString());
+        return;
+      }
+      // ── End MCP OAuth flow ─────────────────────────────────────────────────
+
       const session = await authStore.createSession(userId, environment);
 
       res.status(200).send(`<!doctype html>
