@@ -64,7 +64,9 @@ export class CloudflareKVStore {
 
     // Keep the in-memory cache consistent with what we wrote.
     // If the KV entry has its own TTL, honour it for the cache as well.
-    const cacheTtl = expirationTtl ? Math.min(expirationTtl * 1_000, this.cacheTtlMs) : this.cacheTtlMs;
+    const cacheTtl = expirationTtl
+      ? Math.min(expirationTtl * 1_000, this.cacheTtlMs)
+      : this.cacheTtlMs;
     this.cache.set(key, { value, expiresAt: Date.now() + cacheTtl });
   }
 
