@@ -139,7 +139,7 @@ const EBAY_LOGO = `
 `;
 
 const CREATOR_CREDIT = `
-   Creator: ${chalk.bold('mrnajiboy')}
+   Creator: ${chalk.bold('YosefHayim')}
    ${createClickableLink(chalk.underline('linkedin.com/in/yosef-hayim-sabag'), 'https://www.linkedin.com/in/yosef-hayim-sabag/')}
 `;
 
