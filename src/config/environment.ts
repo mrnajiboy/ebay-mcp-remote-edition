@@ -216,18 +216,28 @@ export function validateEnvironmentConfig(): {
 } {
   const warnings: string[] = [];
   const errors: string[] = [];
-  const environment = getConfiguredEnvironment();
-  const configForEnv = getSecretConfigForEnvironment(environment);
 
-  if (!configForEnv) {
-    if (!process.env.EBAY_CLIENT_ID) {
-      errors.push('Missing eBay client ID for selected environment');
-    }
-    if (!process.env.EBAY_CLIENT_SECRET) {
-      errors.push('Missing eBay client secret for selected environment');
-    }
-    if (!process.env.EBAY_REDIRECT_URI) {
-      warnings.push('EBAY_REDIRECT_URI is not set for selected environment.');
+  const rawEnv = process.env.EBAY_ENVIRONMENT || process.env.EBAY_DEFAULT_ENVIRONMENT;
+  if (!rawEnv) {
+    warnings.push('EBAY_ENVIRONMENT not set; defaulting to production');
+  } else if (rawEnv !== 'production' && rawEnv !== 'sandbox') {
+    errors.push(`EBAY_ENVIRONMENT "${rawEnv}" is invalid; must be "production" or "sandbox"`);
+  }
+
+  if (errors.length === 0) {
+    const environment = getConfiguredEnvironment();
+    const configForEnv = getSecretConfigForEnvironment(environment);
+
+    if (!configForEnv) {
+      if (!process.env.EBAY_CLIENT_ID) {
+        errors.push('EBAY_CLIENT_ID is not set. OAuth will not work.');
+      }
+      if (!process.env.EBAY_CLIENT_SECRET) {
+        errors.push('EBAY_CLIENT_SECRET is not set. OAuth will not work.');
+      }
+      if (!process.env.EBAY_REDIRECT_URI) {
+        warnings.push('EBAY_REDIRECT_URI is not set for selected environment.');
+      }
     }
   }
 

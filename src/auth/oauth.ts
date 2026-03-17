@@ -27,6 +27,50 @@ export class EbayOAuthClient {
       );
       if (stored?.tokenData) {
         this.userTokens = stored.tokenData;
+        return;
+      }
+    }
+
+    // Fallback: load from EBAY_USER_REFRESH_TOKEN environment variable
+    const envRefreshToken = process.env.EBAY_USER_REFRESH_TOKEN;
+    if (envRefreshToken) {
+      try {
+        const authUrl = `${getBaseUrl(this.config.environment)}/identity/v1/oauth2/token`;
+        const credentials = Buffer.from(
+          `${this.config.clientId}:${this.config.clientSecret}`
+        ).toString('base64');
+
+        const response = await axios.post<EbayUserToken>(
+          authUrl,
+          new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: envRefreshToken,
+          }).toString(),
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              Authorization: `Basic ${credentials}`,
+            },
+          }
+        );
+
+        const tokenData = response.data;
+        const now = Date.now();
+        this.userTokens = {
+          clientId: this.config.clientId,
+          clientSecret: this.config.clientSecret,
+          redirectUri: this.config.redirectUri,
+          userAccessToken: tokenData.access_token,
+          userRefreshToken: tokenData.refresh_token || envRefreshToken,
+          tokenType: tokenData.token_type,
+          userAccessTokenExpiry: now + tokenData.expires_in * 1000,
+          userRefreshTokenExpiry: tokenData.refresh_token_expires_in
+            ? now + tokenData.refresh_token_expires_in * 1000
+            : now + 18 * 30 * 24 * 60 * 60 * 1000,
+          scope: tokenData.scope,
+        };
+      } catch {
+        // If refresh fails, leave userTokens as null
       }
     }
   }
@@ -134,36 +178,49 @@ export class EbayOAuthClient {
       'base64'
     );
 
-    const response = await axios.post<EbayUserToken>(
-      tokenUrl,
-      new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: this.config.redirectUri,
-      }).toString(),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${credentials}`,
-        },
-      }
-    );
+    try {
+      const response = await axios.post<EbayUserToken>(
+        tokenUrl,
+        new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: this.config.redirectUri,
+        }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Basic ${credentials}`,
+          },
+        }
+      );
 
-    const tokenData = response.data;
-    const now = Date.now();
-    this.userTokens = {
-      clientId: this.config.clientId,
-      clientSecret: this.config.clientSecret,
-      redirectUri: this.config.redirectUri,
-      userAccessToken: tokenData.access_token,
-      userRefreshToken: tokenData.refresh_token,
-      tokenType: tokenData.token_type,
-      userAccessTokenExpiry: now + tokenData.expires_in * 1000,
-      userRefreshTokenExpiry: now + tokenData.refresh_token_expires_in * 1000,
-      scope: tokenData.scope,
-    };
-    await this.persistUserTokens();
-    return tokenData;
+      const tokenData = response.data;
+      const now = Date.now();
+      this.userTokens = {
+        clientId: this.config.clientId,
+        clientSecret: this.config.clientSecret,
+        redirectUri: this.config.redirectUri,
+        userAccessToken: tokenData.access_token,
+        userRefreshToken: tokenData.refresh_token,
+        tokenType: tokenData.token_type,
+        userAccessTokenExpiry: now + tokenData.expires_in * 1000,
+        userRefreshTokenExpiry: now + tokenData.refresh_token_expires_in * 1000,
+        scope: tokenData.scope,
+      };
+      await this.persistUserTokens();
+      return tokenData;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.data) {
+        const data = error.response.data as { error?: string; error_description?: string };
+        if (data.error_description) {
+          throw new Error(data.error_description);
+        }
+        if (data.error) {
+          throw new Error(data.error);
+        }
+      }
+      throw error;
+    }
   }
 
   async refreshUserToken(): Promise<void> {

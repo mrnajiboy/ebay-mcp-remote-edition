@@ -163,7 +163,7 @@ describe('Scope Validation', () => {
 
       expect(result.warnings[0]).toMatch(/sell\.item\.draft/);
       expect(result.warnings[0]).toMatch(/only available in sandbox environment/);
-      expect(result.warnings[0]).toMatch(/may be rejected/);
+      expect(result.warnings[0]).toMatch(/not in production/);
     });
   });
 

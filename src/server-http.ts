@@ -445,13 +445,11 @@ function createApp(): express.Application {
       const server = await createMcpServer(userContext.userId, userContext.environment);
       await server.connect(transport);
     } else {
-      res
-        .status(400)
-        .json({
-          jsonrpc: '2.0',
-          error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
-          id: null,
-        });
+      res.status(400).json({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
+        id: null,
+      });
       return;
     }
 

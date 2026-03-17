@@ -105,7 +105,7 @@ For official eBay API support, please refer to the [eBay Developer Program](http
 - **Smart Authentication** - Automatic fallback from user tokens to client credentials where applicable
 - **Hosted Multi-User Mode** - Server-side OAuth + session-token auth for hosted MCP access
 - **Well Tested** - Comprehensive typecheck/build/deploy validation
-- **Interactive Setup Wizard** - Run `npm run setup` for guided local configuration
+- **Interactive Setup Wizard** - Run `pnpm run setup` for guided local configuration
 - **Developer Analytics** - Rate limit monitoring and signing key management
 
 ## Quick Start
@@ -130,8 +130,8 @@ npm install -g ebay-mcp
 ```bash
 git clone https://github.com/mrnajiboy/ebay-mcp.git
 cd ebay-mcp
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 ### 3. Run Local Setup Wizard
@@ -139,7 +139,7 @@ npm run build
 For local/STDIO usage:
 
 ```bash
-npm run setup
+pnpm run setup
 ```
 
 ### 4. Hosted Mode
@@ -153,19 +153,19 @@ For hosted Render usage, see the next section.
 ### Build command
 
 ```bash
-npm install && npm run build
+pnpm install && pnpm run build
 ```
 
 ### Start command
 
 ```bash
-npm run start:http
+pnpm run start:http
 ```
 
 ### Render environment variables
 
 ```bash
-NODE_VERSION=INT
+NODE_VERSION=24
 PORT=3000
 PUBLIC_BASE_URL=https://your-server.com
 EBAY_CONFIG_FILE=/etc/secrets/ebay-config.json
@@ -349,7 +349,7 @@ For the complete tool list, see [src/tools/definitions/](src/tools/definitions/)
 ### Prerequisites
 
 - Node.js >= 24.0.0
-- npm or pnpm
+- [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
 - eBay Developer Account
 
 ### Quick Start for Contributors
@@ -357,29 +357,29 @@ For the complete tool list, see [src/tools/definitions/](src/tools/definitions/)
 ```bash
 git clone https://github.com/mrnajiboy/ebay-mcp.git
 cd ebay-mcp
-npm install
-npm run build
-npm run typecheck
-npm test
+pnpm install
+pnpm run build
+pnpm run typecheck
+pnpm test
 ```
 
 ### Commands Reference
 
-| Command            | Description                                        |
-| ------------------ | -------------------------------------------------- |
-| `npm run build`    | Compile TypeScript to JavaScript                   |
-| `npm start`        | Run local STDIO MCP server                         |
-| `npm run start:http` | Run hosted HTTP MCP server                       |
-| `npm run dev`      | Run local server with hot reload                   |
-| `npm run dev:http` | Run hosted HTTP server with hot reload             |
-| `npm test`         | Run test suite                                     |
-| `npm run setup`    | Interactive setup wizard                           |
-| `npm run sync`     | Sync specs, generate types, find missing endpoints |
-| `npm run diagnose` | Check configuration and connectivity               |
-| `npm run check`    | Run typecheck + lint + format check                |
-| `npm run fix`      | Auto-fix lint and format issues                    |
+| Command                  | Description                                        |
+| ------------------------ | -------------------------------------------------- |
+| `pnpm run build`         | Compile TypeScript to JavaScript                   |
+| `pnpm start`             | Run local STDIO MCP server                         |
+| `pnpm run start:http`    | Run hosted HTTP MCP server                         |
+| `pnpm run dev`           | Run local server with hot reload                   |
+| `pnpm run dev:http`      | Run hosted HTTP server with hot reload             |
+| `pnpm test`              | Run test suite                                     |
+| `pnpm run setup`         | Interactive setup wizard                           |
+| `pnpm run sync`          | Sync specs, generate types, find missing endpoints |
+| `pnpm run diagnose`      | Check configuration and connectivity               |
+| `pnpm run check`         | Run typecheck + lint + format check                |
+| `pnpm run fix`           | Auto-fix lint and format issues                    |
 
-### About `npm run sync`
+### About `pnpm run sync`
 
 This command is a spec/type regeneration workflow. It is **not** an upstream git sync.
 
@@ -399,10 +399,10 @@ This fork treats sync as a repo-side maintenance workflow, not a live server fea
 Recommended manual flow:
 
 ```bash
-npm install
-npm run sync
-npm run typecheck
-npm run build
+pnpm install
+pnpm run sync
+pnpm run typecheck
+pnpm run build
 ```
 
 Then review the diff, commit the generated changes you want to keep, and deploy from Git.
@@ -414,8 +414,8 @@ This fork uses normal semver-compatible dependency ranges so fresh installs can 
 After dependency changes, validate with:
 
 ```bash
-npm run typecheck
-npm run build
+pnpm run typecheck
+pnpm run build
 ```
 
 ## Logging
