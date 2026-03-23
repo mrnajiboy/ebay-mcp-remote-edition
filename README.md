@@ -32,6 +32,8 @@ This fork of [Yosef Hayim's eBay MCP](https://github.com/YosefHayim/ebay-mcp) pr
 - `GET /whoami` endpoint for session-bound identity lookup
 - Optional `OAUTH_START_KEY` protection for `/oauth/start`
 - **MCP OAuth 2.1 authorization server** — Cline and other MCP clients that support OAuth discovery (`/.well-known/oauth-authorization-server`, `POST /register`, `GET /authorize`, `POST /token`) can authenticate fully automatically via browser eBay OAuth with no manual token pasting
+- **Environment-scoped route trees** — `/sandbox/mcp` and `/production/mcp` hard-bind their eBay environment; no `?env=` query param needed. Matching scoped discovery, register, authorize, token, and oauth/start endpoints included. Legacy `/mcp` kept for backward compatibility
+- **TTL-aligned session and token records** — Every stored record (`OAuthState`, `AuthCode`, `Session`, `UserToken`) now includes an `expiresAt` ISO timestamp and passes the matching TTL to the KV/Redis backend so application expiry and Redis key expiry are always in sync. Session TTL defaults to 30 days and is configurable via `SESSION_TTL_SECONDS`
 
 ---
 
@@ -422,6 +424,7 @@ UPSTASH_REDIS_REST_URL=https://...upstash.io
 UPSTASH_REDIS_REST_TOKEN=your-upstash-rest-token
 ADMIN_API_KEY=your-admin-api-key
 OAUTH_START_KEY=optional-shared-secret-for-oauth-start
+SESSION_TTL_SECONDS=2592000      # optional, default 30 days (2592000 s)
 EBAY_MARKETPLACE_ID=EBAY_COUNTRY
 EBAY_CONTENT_LANGUAGE=lang-COUNTRY
 EBAY_LOG_LEVEL=info
@@ -460,22 +463,25 @@ Render mounts it at:
 
 ### OAuth flows
 
-Start production OAuth:
+**Preferred — environment-scoped paths (no `?env=` needed):**
 
 ```text
-/oauth/start?env=production
+/sandbox/oauth/start        # always sandbox
+/production/oauth/start     # always production
 ```
 
-Start sandbox OAuth:
+**Legacy — `?env=` query param (also still supported):**
 
 ```text
 /oauth/start?env=sandbox
+/oauth/start?env=production
 ```
 
-If `OAUTH_START_KEY` is configured, include either:
+If `OAUTH_START_KEY` is configured, include it as a query param or header:
 
 ```text
-/oauth/start?env=production&key=YOUR_OAUTH_START_KEY
+/sandbox/oauth/start?key=YOUR_OAUTH_START_KEY
+/production/oauth/start?key=YOUR_OAUTH_START_KEY
 ```
 
 or send:
@@ -523,20 +529,28 @@ GET /whoami
 Authorization: Bearer <session-token>
 ```
 
-### MCP endpoint
+### MCP endpoints
+
+**Preferred — environment-scoped (hard-binds the eBay environment):**
 
 ```text
-POST /mcp
-GET /mcp
-DELETE /mcp
+POST/GET/DELETE /sandbox/mcp        # always sandbox
+POST/GET/DELETE /production/mcp     # always production
 ```
 
-#### Initial auth behavior
+Each scoped path has its own `/.well-known/oauth-authorization-server` so MCP clients that support OAuth discovery (Cline, etc.) automatically use the correct environment.
 
-- `GET /mcp` without a valid Bearer token redirects into browser OAuth
-- default environment is production
-- sandbox can be requested with `?env=sandbox`
-- `POST /mcp` without a valid Bearer token returns an auth-required JSON response
+**Legacy — auto-resolves environment from `?env=` or `EBAY_ENVIRONMENT`:**
+
+```text
+POST/GET/DELETE /mcp
+```
+
+#### Auth behavior (all paths)
+
+- `GET /mcp` (or scoped variant) without a valid Bearer token redirects into browser OAuth via the matching `oauth/start` path
+- `POST /mcp` without a valid Bearer token returns a structured `401` JSON response with an `authorization_url` field
+- Scoped paths return their hard-bound environment in every error response so the client can pre-fill the correct OAuth start URL
 
 This means browser-driven onboarding works cleanly, while protocol clients can still receive a structured auth response.
 
@@ -560,37 +574,70 @@ Replace `https://your-server.com` with your actual `PUBLIC_BASE_URL`.
 
 ### Cline (recommended — full OAuth auto-discovery)
 
-Cline supports OAuth 2.1 discovery natively. Just point it at the MCP endpoint and it handles everything:
+Cline supports OAuth 2.1 discovery natively. Point it at an environment-scoped MCP endpoint and it handles everything automatically — including fetching the correct discovery document, registering itself, opening the eBay browser login, and storing the session token.
+
+**Sandbox:**
 
 ```json
 {
   "mcpServers": {
-    "ebay": {
-      "url": "https://your-server.com/mcp"
+    "ebay-sandbox": {
+      "url": "https://your-server.com/sandbox/mcp"
+    }
+  }
+}
+```
+
+**Production:**
+
+```json
+{
+  "mcpServers": {
+    "ebay-production": {
+      "url": "https://your-server.com/production/mcp"
     }
   }
 }
 ```
 
 **What happens automatically:**
-1. Cline fetches `/.well-known/oauth-authorization-server` to discover the auth server.
-2. It registers itself at `POST /register` (Dynamic Client Registration).
-3. Your browser opens `GET /authorize`, which redirects to eBay's login page.
+1. Cline fetches `/sandbox/.well-known/oauth-authorization-server` (or `/production/...`) to discover the scoped auth server.
+2. It registers itself at `POST /sandbox/register`.
+3. Your browser opens `GET /sandbox/authorize`, which redirects to eBay's sandbox login page.
 4. After you grant access, eBay redirects to `/oauth/callback`, which issues an MCP auth code and sends it back to Cline.
-5. Cline exchanges the code at `POST /token` for a session token and stores it.
-6. All subsequent `/mcp` requests are authenticated automatically.
+5. Cline exchanges the code at `POST /sandbox/token` for a session token and stores it.
+6. All subsequent `/sandbox/mcp` requests are authenticated automatically.
+
+> **Legacy `?env=` URL** — If you prefer a single endpoint, `https://your-server.com/mcp` still works with environment auto-detection, but the env-scoped paths are recommended for unambiguous behaviour.
 
 > **`OAUTH_START_KEY` note:** If your server has `OAUTH_START_KEY` set, the `/authorize` endpoint also requires it. You can temporarily disable it for first-time client setup, or consult your server operator for the key.
 
 ### Claude Desktop (HTTP remote with pre-obtained session token)
 
-Claude Desktop's remote MCP support requires an explicit `Authorization` header. Complete the browser OAuth flow at `https://your-server.com/oauth/start` first to get your session token, then configure:
+Claude Desktop's remote MCP support requires an explicit `Authorization` header. Complete the browser OAuth flow at the appropriate env-scoped start URL first, then configure:
+
+**Sandbox:**
 
 ```json
 {
   "mcpServers": {
-    "ebay": {
-      "url": "https://your-server.com/mcp",
+    "ebay-sandbox": {
+      "url": "https://your-server.com/sandbox/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_SESSION_TOKEN"
+      }
+    }
+  }
+}
+```
+
+**Production:**
+
+```json
+{
+  "mcpServers": {
+    "ebay-production": {
+      "url": "https://your-server.com/production/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_SESSION_TOKEN"
       }
@@ -604,8 +651,8 @@ Claude Desktop's remote MCP support requires an explicit `Authorization` header.
 ```json
 {
   "mcpServers": {
-    "ebay": {
-      "url": "https://your-server.com/mcp",
+    "ebay-sandbox": {
+      "url": "https://your-server.com/sandbox/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_SESSION_TOKEN"
       }
@@ -618,11 +665,11 @@ Claude Desktop's remote MCP support requires an explicit `Authorization` header.
 
 These platforms use a fixed token field. To connect:
 
-1. Open `https://your-server.com/oauth/start?env=production` in a browser.
+1. Open `https://your-server.com/production/oauth/start` (or `/sandbox/oauth/start`) in a browser.
 2. Complete the eBay login flow.
 3. Copy the session token from the confirmation page.
 4. Paste it as your **API Key / Bearer token** in the platform's MCP connector settings.
-5. Set the MCP endpoint URL to `https://your-server.com/mcp`.
+5. Set the MCP endpoint URL to `https://your-server.com/production/mcp` (or `/sandbox/mcp`).
 
 ---
 
@@ -645,8 +692,9 @@ EBAY_USER_REFRESH_TOKEN=your_refresh_token
 Other supported env vars used by the current runtime:
 
 ```bash
-MCP_HOST=0.0.0.0        # optional HTTP bind host
-EBAY_TOKEN_STORE_PATH=.ebay-user-tokens.json   # legacy single-user file token store path
+MCP_HOST=0.0.0.0                              # optional HTTP bind host
+EBAY_TOKEN_STORE_PATH=.ebay-user-tokens.json  # legacy single-user file token store path
+SESSION_TTL_SECONDS=2592000                   # hosted mode: session token TTL (default 30 days)
 ```
 
 Notes:

@@ -87,16 +87,10 @@ function requireOauthStartKey(
 /**
  * Returns true when a redirect URI belongs to a well-known desktop / IDE
  * MCP client (VS Code, Cursor, Windsurf) or a localhost loopback.
- *
- * These clients drive the authorize flow directly and cannot always guarantee
- * that their /register request was persisted before /authorize is called.
- * We allow them to self-register on the fly so the flow doesn't hard-fail on
- * a missing client_id when the user's eBay app credentials are already in env.
  */
 function isTrustedDesktopRedirectUri(redirectUri: string): boolean {
   try {
     const u = new URL(redirectUri);
-    // Desktop IDE callback schemes
     if (
       u.protocol === 'vscode:' ||
       u.protocol === 'cursor:' ||
@@ -105,7 +99,6 @@ function isTrustedDesktopRedirectUri(redirectUri: string): boolean {
     ) {
       return true;
     }
-    // Localhost loopback (any port)
     if (
       (u.protocol === 'http:' || u.protocol === 'https:') &&
       (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1')
@@ -126,6 +119,11 @@ async function createUserScopedApi(
   await api.initialize();
   return api;
 }
+
+// ── Shared MCP transport map (keyed by MCP session UUID) ─────────────────
+// A single map is safe — session IDs are UUIDs with no env-specific uniqueness
+// requirement.
+const transports = new Map<string, StreamableHTTPServerTransport>();
 
 function createApp(): express.Application {
   const app = express();
@@ -154,13 +152,21 @@ function createApp(): express.Application {
   const serverUrl = getServerBaseUrl();
   const iconBaseUrl = `${serverUrl}/icons`;
 
+  // ── Root index / health ───────────────────────────────────────────────────
   app.get('/', (_req, res) => {
     res.json({
       name: 'ebay-mcp-remote-edition',
       version: getVersion(),
       mode: 'multi-user-hosted',
-      oauth_start: `${serverUrl}/oauth/start?env=${getConfiguredEnvironment()}`,
-      mcp_endpoint: `${serverUrl}/mcp`,
+      mcp_endpoints: {
+        sandbox: `${serverUrl}/sandbox/mcp`,
+        production: `${serverUrl}/production/mcp`,
+        default: `${serverUrl}/mcp`,
+      },
+      oauth_start: {
+        sandbox: `${serverUrl}/sandbox/oauth/start`,
+        production: `${serverUrl}/production/oauth/start`,
+      },
     });
   });
 
@@ -168,522 +174,7 @@ function createApp(): express.Application {
     res.json({ status: 'healthy', timestamp: new Date().toISOString(), version: getVersion() });
   });
 
-  // ── MCP OAuth 2.1 Authorization Server endpoints ─────────────────────────
-  // Required so MCP clients (e.g. Cline) can discover and use this server's
-  // built-in OAuth flow instead of hitting a 404 on /register.
-
-  /** RFC 8414 – Authorization Server Metadata */
-  app.get('/.well-known/oauth-authorization-server', (_req, res) => {
-    res.json({
-      issuer: serverUrl,
-      authorization_endpoint: `${serverUrl}/authorize`,
-      token_endpoint: `${serverUrl}/token`,
-      registration_endpoint: `${serverUrl}/register`,
-      response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code'],
-      code_challenge_methods_supported: ['S256'],
-      token_endpoint_auth_methods_supported: ['none'],
-      scopes_supported: ['mcp'],
-    });
-  });
-
-  /** RFC 7591 – Dynamic Client Registration */
-  app.post('/register', async (req, res) => {
-    const body = req.body as Record<string, unknown>;
-    const redirectUris = body.redirect_uris;
-    const clientName = typeof body.client_name === 'string' ? body.client_name : undefined;
-
-    if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
-      res.status(400).json({
-        error: 'invalid_client_metadata',
-        error_description: 'redirect_uris is required and must be a non-empty array',
-      });
-      return;
-    }
-
-    const uris = redirectUris as string[];
-    const client = await authStore.registerClient(uris, clientName);
-    serverLogger.info('[register] MCP client registered', {
-      clientId: client.clientId,
-      redirectUris: client.redirectUris,
-    });
-    res.status(201).json({
-      client_id: client.clientId,
-      redirect_uris: client.redirectUris,
-      client_name: client.clientName,
-      client_id_issued_at: Math.floor(new Date(client.createdAt).getTime() / 1000),
-      token_endpoint_auth_method: 'none',
-      grant_types: ['authorization_code'],
-      response_types: ['code'],
-    });
-  });
-
-  /**
-   * RFC 6749 – Authorization Endpoint (PKCE required)
-   * Validates the MCP client, stores context in state, then forward to eBay OAuth.
-   */
-  app.get('/authorize', requireOauthStartKey, async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      const {
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: responseType,
-        state: mcpState,
-        code_challenge: codeChallenge,
-        code_challenge_method: codeChallengeMethod,
-      } = q;
-      const environment =
-        q.env === 'sandbox' || q.env === 'production' ? q.env : getConfiguredEnvironment();
-
-      serverLogger.info('[authorize] Request received', {
-        clientId,
-        redirectUri,
-        responseType,
-        hasPkce: !!codeChallenge,
-        pkceMethod: codeChallengeMethod,
-        environment,
-        hasMcpState: !!mcpState,
-      });
-
-      if (responseType !== 'code') {
-        serverLogger.warn('[authorize] Rejected: unsupported_response_type', { responseType });
-        res.status(400).json({ error: 'unsupported_response_type' });
-        return;
-      }
-      if (!clientId) {
-        serverLogger.warn('[authorize] Rejected: missing client_id');
-        res
-          .status(400)
-          .json({ error: 'invalid_request', error_description: 'client_id is required' });
-        return;
-      }
-
-      // Look up the MCP client. If unknown, auto-register it for trusted desktop
-      // redirect URIs (VS Code, Cursor, Windsurf, localhost) so that the flow
-      // continues even when /register state was not persisted (e.g. memory backend)
-      // or when the IDE drives /authorize directly without a prior /register call.
-      let client = await authStore.getClient(clientId);
-      if (!client) {
-        if (redirectUri && isTrustedDesktopRedirectUri(redirectUri)) {
-          serverLogger.info(
-            '[authorize] Auto-registering trusted desktop MCP client (client_id not in store)',
-            { clientId, redirectUri }
-          );
-          client = await authStore.registerClientWithId(clientId, [redirectUri]);
-        } else {
-          serverLogger.warn('[authorize] Rejected: unknown client_id (not a trusted desktop URI)', {
-            clientId,
-            redirectUri,
-          });
-          res.status(400).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
-          return;
-        }
-      }
-      if (!redirectUri || !client.redirectUris.includes(redirectUri)) {
-        serverLogger.warn('[authorize] Rejected: redirect_uri mismatch', {
-          provided: redirectUri,
-          registered: client.redirectUris,
-        });
-        res.status(400).json({
-          error: 'invalid_request',
-          error_description: 'redirect_uri not registered for this client',
-        });
-        return;
-      }
-      if (!codeChallenge || codeChallengeMethod !== 'S256') {
-        serverLogger.warn('[authorize] Rejected: missing or invalid PKCE', {
-          hasPkce: !!codeChallenge,
-          method: codeChallengeMethod,
-        });
-        res.status(400).json({
-          error: 'invalid_request',
-          error_description: 'PKCE with S256 code_challenge is required',
-        });
-        return;
-      }
-
-      const ebayConfig = getEbayConfig(environment);
-      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
-        serverLogger.error('[authorize] eBay app credentials missing in env', {
-          hasClientId: !!ebayConfig.clientId,
-          hasClientSecret: !!ebayConfig.clientSecret,
-          hasRedirectUri: !!ebayConfig.redirectUri,
-          environment,
-        });
-        res.status(500).json({
-          error: 'server_error',
-          error_description: `Missing eBay configuration for ${environment}`,
-        });
-        return;
-      }
-
-      const stateRecord = await authStore.createOAuthState(environment, undefined, {
-        mcpClientId: clientId,
-        mcpRedirectUri: redirectUri,
-        mcpState,
-        mcpCodeChallenge: codeChallenge,
-        mcpCodeChallengeMethod: codeChallengeMethod,
-      });
-
-      const oauthUrl = getOAuthAuthorizationUrl(
-        ebayConfig.clientId,
-        ebayConfig.redirectUri,
-        environment,
-        getHostedOauthScopes(environment),
-        undefined,
-        stateRecord.state
-      );
-      serverLogger.info('[authorize] Redirecting to eBay OAuth', {
-        state: stateRecord.state,
-        environment,
-      });
-      res.redirect(oauthUrl);
-    } catch (error) {
-      serverLogger.error('[authorize] Unhandled error', {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      res.status(500).json({
-        error: 'server_error',
-        error_description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
-
-  /**
-   * RFC 6749 – Token Endpoint
-   * Exchanges a short-lived MCP authorization code (+ PKCE verifier) for a session token.
-   */
-  app.post('/token', async (req, res) => {
-    serverLogger.info('[token] Request received', {
-      contentType: req.headers['content-type'],
-      hasBody: !!req.body,
-    });
-
-    // Body may be form-encoded (RFC 6749 §4.1.3) or JSON — both are parsed by middleware.
-    // Guard against unparsed bodies (missing Content-Type header etc.)
-    if (!req.body || typeof req.body !== 'object') {
-      serverLogger.warn('[token] Rejected: missing or unparseable body');
-      res.status(400).json({
-        error: 'invalid_request',
-        error_description:
-          'Request body is missing or unparseable. Use application/x-www-form-urlencoded or application/json.',
-      });
-      return;
-    }
-
-    const body = req.body as Record<string, string>;
-    const {
-      grant_type: grantType,
-      code,
-      redirect_uri: redirectUri,
-      client_id: clientId,
-      code_verifier: codeVerifier,
-    } = body;
-
-    serverLogger.info('[token] Parsed fields', {
-      grantType,
-      hasCode: !!code,
-      redirectUri,
-      clientId,
-      hasCodeVerifier: !!codeVerifier,
-    });
-
-    if (grantType !== 'authorization_code') {
-      serverLogger.warn('[token] Rejected: unsupported_grant_type', { grantType });
-      res.status(400).json({ error: 'unsupported_grant_type' });
-      return;
-    }
-    if (!code) {
-      serverLogger.warn('[token] Rejected: missing code');
-      res.status(400).json({ error: 'invalid_request', error_description: 'code is required' });
-      return;
-    }
-
-    const authCode = await authStore.consumeAuthCode(code);
-    if (!authCode) {
-      serverLogger.warn('[token] Rejected: invalid or expired authorization code', {
-        codePrefix: code.substring(0, 8),
-      });
-      res.status(400).json({
-        error: 'invalid_grant',
-        error_description: 'Invalid or expired authorization code',
-      });
-      return;
-    }
-    serverLogger.info('[token] Auth code found', {
-      storedClientId: authCode.clientId,
-      providedClientId: clientId,
-      storedRedirectUri: authCode.redirectUri,
-      providedRedirectUri: redirectUri,
-    });
-    if (authCode.clientId !== clientId) {
-      serverLogger.warn('[token] Rejected: client_id mismatch', {
-        stored: authCode.clientId,
-        provided: clientId,
-      });
-      res.status(400).json({ error: 'invalid_client', error_description: 'client_id mismatch' });
-      return;
-    }
-    if (authCode.redirectUri !== redirectUri) {
-      serverLogger.warn('[token] Rejected: redirect_uri mismatch', {
-        stored: authCode.redirectUri,
-        provided: redirectUri,
-      });
-      res.status(400).json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' });
-      return;
-    }
-    if (!codeVerifier) {
-      serverLogger.warn('[token] Rejected: missing code_verifier');
-      res
-        .status(400)
-        .json({ error: 'invalid_request', error_description: 'code_verifier is required' });
-      return;
-    }
-
-    // Verify PKCE S256: BASE64URL(SHA256(code_verifier)) must equal code_challenge
-    const expectedChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
-    if (expectedChallenge !== authCode.codeChallenge) {
-      serverLogger.warn('[token] Rejected: PKCE verification failed', {
-        expected: authCode.codeChallenge,
-        computed: expectedChallenge,
-      });
-      res
-        .status(400)
-        .json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
-      return;
-    }
-
-    const session = await authStore.createSession(authCode.userId, authCode.environment);
-    serverLogger.info('[token] Session created, issuing access token', {
-      userId: authCode.userId,
-      environment: authCode.environment,
-      sessionTokenPrefix: session.sessionToken.substring(0, 8),
-    });
-    res.json({
-      access_token: session.sessionToken,
-      token_type: 'bearer',
-      scope: 'mcp',
-    });
-  });
-
-  // ── End MCP OAuth 2.1 endpoints ───────────────────────────────────────────
-
-  app.get('/oauth/start', requireOauthStartKey, async (req, res) => {
-    try {
-      const environment = ((typeof req.query.env === 'string' ? req.query.env : undefined) ??
-        getConfiguredEnvironment()) as EbayEnvironment;
-      const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : undefined;
-      const ebayConfig = getEbayConfig(environment);
-      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
-        res.status(500).json({ error: `Missing eBay configuration for ${environment}` });
-        return;
-      }
-      const stateRecord = await authStore.createOAuthState(environment, returnTo);
-      const oauthUrl = getOAuthAuthorizationUrl(
-        ebayConfig.clientId,
-        ebayConfig.redirectUri,
-        environment,
-        getHostedOauthScopes(environment),
-        undefined,
-        stateRecord.state
-      );
-      res.redirect(oauthUrl);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  app.get('/oauth/callback', async (req, res) => {
-    try {
-      const code = typeof req.query.code === 'string' ? req.query.code : undefined;
-      const state = typeof req.query.state === 'string' ? req.query.state : undefined;
-      const envFromQuery = typeof req.query.env === 'string' ? req.query.env : undefined;
-      const oauthError = typeof req.query.error === 'string' ? req.query.error : undefined;
-      const errorDescription =
-        typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-
-      serverLogger.info('[oauth/callback] Received', {
-        hasCode: !!code,
-        hasState: !!state,
-        oauthError,
-      });
-
-      if (oauthError) {
-        serverLogger.warn('[oauth/callback] eBay returned OAuth error', {
-          oauthError,
-          errorDescription,
-        });
-        res
-          .status(400)
-          .send(`<h1>OAuth failed</h1><p>${htmlEscape(errorDescription ?? oauthError)}</p>`);
-        return;
-      }
-      if (!code) {
-        serverLogger.warn('[oauth/callback] Missing authorization code');
-        res.status(400).send('<h1>Missing authorization code</h1>');
-        return;
-      }
-
-      let environment: EbayEnvironment;
-      let stateRecord: Awaited<ReturnType<typeof authStore.consumeOAuthState>> = null;
-      if (state) {
-        stateRecord = await authStore.consumeOAuthState(state);
-        if (!stateRecord) {
-          serverLogger.warn('[oauth/callback] OAuth state not found or expired', { state });
-          res.status(400).send('<h1>Invalid or expired OAuth state</h1>');
-          return;
-        }
-        environment = stateRecord.environment;
-        serverLogger.info('[oauth/callback] State resolved', {
-          environment,
-          isMcpFlow: !!(stateRecord.mcpClientId && stateRecord.mcpRedirectUri),
-          mcpClientId: stateRecord.mcpClientId,
-          mcpRedirectUri: stateRecord.mcpRedirectUri,
-        });
-      } else {
-        environment =
-          envFromQuery === 'sandbox' || envFromQuery === 'production'
-            ? envFromQuery
-            : getConfiguredEnvironment();
-        serverLogger.warn(
-          'OAuth callback received without state; falling back to configured/query environment',
-          { environment }
-        );
-      }
-
-      const userId = randomUUID();
-      const api = await createUserScopedApi(userId, environment);
-      const oauthClient = api.getAuthClient().getOAuthClient();
-      serverLogger.info('[oauth/callback] Exchanging code for eBay tokens', { userId });
-      const tokenData = await oauthClient.exchangeCodeForToken(code);
-      serverLogger.info('[oauth/callback] eBay token exchange successful', {
-        userId,
-        hasScope: !!tokenData.scope,
-      });
-
-      // ── MCP OAuth flow: redirect back to the registered MCP client ─────────
-      if (stateRecord?.mcpClientId && stateRecord.mcpRedirectUri && stateRecord.mcpCodeChallenge) {
-        const authCodeRecord = await authStore.createAuthCode(
-          stateRecord.mcpClientId,
-          stateRecord.mcpRedirectUri,
-          stateRecord.mcpCodeChallenge,
-          stateRecord.mcpCodeChallengeMethod ?? 'S256',
-          userId,
-          environment
-        );
-        const redirectUrl = new URL(stateRecord.mcpRedirectUri);
-        redirectUrl.searchParams.set('code', authCodeRecord.code);
-        if (stateRecord.mcpState) {
-          redirectUrl.searchParams.set('state', stateRecord.mcpState);
-        }
-        serverLogger.info('[oauth/callback] MCP OAuth flow complete, redirecting to client', {
-          clientId: stateRecord.mcpClientId,
-          redirectUri: stateRecord.mcpRedirectUri,
-          userId,
-          authCodePrefix: authCodeRecord.code.substring(0, 8),
-          finalRedirectUrl: redirectUrl.toString().substring(0, 120),
-        });
-        res.redirect(redirectUrl.toString());
-        return;
-      }
-      // ── End MCP OAuth flow ─────────────────────────────────────────────────
-
-      serverLogger.info('[oauth/callback] Non-MCP flow: creating hosted session', { userId });
-      const session = await authStore.createSession(userId, environment);
-
-      res.status(200).send(`<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>eBay MCP Connected</title>
-    <style>
-      body { font-family: Inter, Arial, sans-serif; max-width: 760px; margin: 40px auto; line-height: 1.5; padding: 0 16px; }
-      .card { background: #f7f7f8; padding: 16px; border-radius: 10px; margin: 16px 0; }
-      pre { white-space: pre-wrap; word-break: break-all; background: #fff; padding: 14px; border-radius: 8px; border: 1px solid #e5e7eb; }
-      .copy-btn { background: #111827; color: white; border: none; border-radius: 8px; padding: 10px 14px; cursor: pointer; transition: transform 120ms ease, opacity 120ms ease, background 120ms ease; }
-      .copy-btn:hover { background: #1f2937; }
-      .copy-btn:active { transform: scale(0.97); opacity: 0.92; }
-      .copy-status { margin-left: 12px; color: #065f46; font-weight: 600; }
-      .muted { color: #6b7280; }
-      a { color: #2563eb; }
-    </style>
-    <script>
-      async function copyText(elementId, statusId) {
-        const token = document.getElementById(elementId).innerText;
-        const status = document.getElementById(statusId);
-        try {
-          if (navigator.clipboard && window.isSecureContext) {
-            await navigator.clipboard.writeText(token);
-          } else {
-            const temp = document.createElement('textarea');
-            temp.value = token;
-            temp.setAttribute('readonly', '');
-            temp.style.position = 'absolute';
-            temp.style.left = '-9999px';
-            document.body.appendChild(temp);
-            temp.select();
-            document.execCommand('copy');
-            document.body.removeChild(temp);
-          }
-          status.textContent = 'Copied!';
-          setTimeout(() => { status.textContent = ''; }, 1800);
-        } catch (err) {
-          status.textContent = 'Copy failed — select manually';
-          setTimeout(() => { status.textContent = ''; }, 2500);
-        }
-      }
-    </script>
-  </head>
-  <body>
-    <h1>eBay account connected ✓</h1>
-    <p>Your <strong>${htmlEscape(environment)}</strong> account has been connected successfully.</p>
-
-    <h2>① Session token — paste as Bearer token in your MCP client</h2>
-    <div class="card">
-      <pre id="session-token">${htmlEscape(session.sessionToken)}</pre>
-      <button class="copy-btn" onclick="copyText('session-token','st-status')">Copy</button><span id="st-status" class="copy-status"></span>
-      <p class="muted">Set as <code>EBAY_SESSION_TOKEN</code> in your server env to survive restarts.</p>
-    </div>
-
-    <h2>② eBay user access token</h2>
-    <div class="card">
-      <pre id="access-token">${htmlEscape(tokenData.access_token)}</pre>
-      <button class="copy-btn" onclick="copyText('access-token','at-status')">Copy</button><span id="at-status" class="copy-status"></span>
-      <p class="muted">Set as <code>EBAY_USER_ACCESS_TOKEN</code> in your server env (optional — auto-refreshed from refresh token).</p>
-    </div>
-
-    <h2>③ eBay user refresh token</h2>
-    <div class="card">
-      <pre id="refresh-token">${htmlEscape(tokenData.refresh_token ?? '')}</pre>
-      <button class="copy-btn" onclick="copyText('refresh-token','rt-status')">Copy</button><span id="rt-status" class="copy-status"></span>
-      <p class="muted">Set as <code>EBAY_USER_REFRESH_TOKEN</code> in your server env. The server uses this to keep the access token fresh automatically.</p>
-    </div>
-
-    <div class="card">
-      <p><strong>After copying, add these 3 lines to your server env and restart:</strong></p>
-      <pre>EBAY_SESSION_TOKEN=${htmlEscape(session.sessionToken)}
-EBAY_USER_ACCESS_TOKEN=${htmlEscape(tokenData.access_token)}
-EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
-    </div>
-
-    <p><strong>Scopes granted:</strong> ${htmlEscape(tokenData.scope ?? 'Not returned by eBay in token response')} — <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer">Full scope list on the developer platform</a>.</p>
-    <p class="muted">Keep these tokens private. Refresh tokens are valid for ~18 months.</p>
-  </body>
-</html>`);
-    } catch (error) {
-      serverLogger.error('[oauth/callback] Unhandled error', {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      res
-        .status(500)
-        .send(
-          `<h1>OAuth callback failed</h1><pre>${htmlEscape(error instanceof Error ? error.message : String(error))}</pre>`
-        );
-    }
-  });
+  // ── Admin routes ──────────────────────────────────────────────────────────
 
   app.get('/admin/session/:sessionToken', requireAdmin, async (req, res) => {
     const tokenParam = req.params.sessionToken;
@@ -712,6 +203,7 @@ EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
       userId: session.userId,
       environment: session.environment,
       createdAt: session.createdAt,
+      expiresAt: session.expiresAt,
       lastUsedAt: session.lastUsedAt,
       revokedAt: session.revokedAt ?? null,
     });
@@ -731,7 +223,310 @@ EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
     res.json({ ok: true, deleted: true });
   });
 
-  const transports = new Map<string, StreamableHTTPServerTransport>();
+  // ── Single OAuth callback (registered with eBay — must be one fixed URL) ─
+  // The environment is recovered from the state record, not the URL path.
+  app.get('/oauth/callback', async (req, res) => {
+    await handleOAuthCallback(req, res, serverUrl);
+  });
+
+  // ── Mount env-scoped route trees ─────────────────────────────────────────
+  // Each tree hard-binds its environment so no ?env= query param is needed.
+  app.use('/sandbox', mountEnvRouter('sandbox', serverUrl, iconBaseUrl));
+  app.use('/production', mountEnvRouter('production', serverUrl, iconBaseUrl));
+
+  // ── Root / backward-compat MCP routes (env resolved from ?env= or EBAY_ENVIRONMENT) ─
+  app.use(mountEnvRouter(null, serverUrl, iconBaseUrl));
+
+  return app;
+}
+
+// ── Environment-scoped router factory ────────────────────────────────────
+/**
+ * Creates an Express router with all MCP OAuth 2.1 + MCP endpoints for a
+ * specific environment.
+ *
+ * @param hardcodedEnv  `'sandbox'` | `'production'` to hard-bind, or `null`
+ *                      for the legacy auto-detect behaviour (reads `?env=` or
+ *                      `EBAY_ENVIRONMENT`).
+ * @param serverUrl     Canonical server origin, e.g. `https://my.host.com`.
+ * @param iconBaseUrl   Full URL prefix for icon assets.
+ */
+function mountEnvRouter(
+  hardcodedEnv: EbayEnvironment | null,
+  serverUrl: string,
+  iconBaseUrl: string
+): express.Router {
+  const router = express.Router();
+
+  // The base URL that MCP clients will use for this router tree.
+  // e.g. "https://my.host.com/sandbox" or "https://my.host.com" (root).
+  const prefix = hardcodedEnv ?? '';
+  const routeBaseUrl = hardcodedEnv ? `${serverUrl}/${hardcodedEnv}` : serverUrl;
+
+  function resolveEnv(req: express.Request): EbayEnvironment {
+    if (hardcodedEnv) return hardcodedEnv;
+    const q = req.query as Record<string, string>;
+    return q.env === 'sandbox' || q.env === 'production' ? q.env : getConfiguredEnvironment();
+  }
+
+  // ── RFC 8414 – Authorization Server Metadata ──────────────────────────
+  router.get('/.well-known/oauth-authorization-server', (_req, res) => {
+    res.json({
+      issuer: routeBaseUrl,
+      authorization_endpoint: `${routeBaseUrl}/authorize`,
+      token_endpoint: `${routeBaseUrl}/token`,
+      registration_endpoint: `${routeBaseUrl}/register`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+      scopes_supported: ['mcp'],
+    });
+  });
+
+  // ── RFC 7591 – Dynamic Client Registration ────────────────────────────
+  router.post('/register', async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const redirectUris = body.redirect_uris;
+    const clientName = typeof body.client_name === 'string' ? body.client_name : undefined;
+
+    if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
+      res.status(400).json({
+        error: 'invalid_client_metadata',
+        error_description: 'redirect_uris is required and must be a non-empty array',
+      });
+      return;
+    }
+
+    const uris = redirectUris as string[];
+    const client = await authStore.registerClient(uris, clientName);
+    serverLogger.info(`[${prefix || 'root'}/register] MCP client registered`, {
+      clientId: client.clientId,
+      redirectUris: client.redirectUris,
+    });
+    res.status(201).json({
+      client_id: client.clientId,
+      redirect_uris: client.redirectUris,
+      client_name: client.clientName,
+      client_id_issued_at: Math.floor(new Date(client.createdAt).getTime() / 1000),
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    });
+  });
+
+  // ── RFC 6749 – Authorization Endpoint (PKCE required) ────────────────
+  router.get('/authorize', requireOauthStartKey, async (req, res) => {
+    try {
+      const q = req.query as Record<string, string>;
+      const {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: responseType,
+        state: mcpState,
+        code_challenge: codeChallenge,
+        code_challenge_method: codeChallengeMethod,
+      } = q;
+      const environment = resolveEnv(req);
+
+      serverLogger.info(`[${prefix || 'root'}/authorize] Request received`, {
+        clientId,
+        redirectUri,
+        responseType,
+        hasPkce: !!codeChallenge,
+        pkceMethod: codeChallengeMethod,
+        environment,
+        hasMcpState: !!mcpState,
+      });
+
+      if (responseType !== 'code') {
+        res.status(400).json({ error: 'unsupported_response_type' });
+        return;
+      }
+      if (!clientId) {
+        res
+          .status(400)
+          .json({ error: 'invalid_request', error_description: 'client_id is required' });
+        return;
+      }
+
+      let client = await authStore.getClient(clientId);
+      if (!client) {
+        if (redirectUri && isTrustedDesktopRedirectUri(redirectUri)) {
+          serverLogger.info(
+            `[${prefix || 'root'}/authorize] Auto-registering trusted desktop MCP client`,
+            { clientId, redirectUri }
+          );
+          client = await authStore.registerClientWithId(clientId, [redirectUri]);
+        } else {
+          serverLogger.warn(`[${prefix || 'root'}/authorize] Rejected: unknown client_id`, {
+            clientId,
+            redirectUri,
+          });
+          res.status(400).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
+          return;
+        }
+      }
+      if (!redirectUri || !client.redirectUris.includes(redirectUri)) {
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'redirect_uri not registered for this client',
+        });
+        return;
+      }
+      if (!codeChallenge || codeChallengeMethod !== 'S256') {
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'PKCE with S256 code_challenge is required',
+        });
+        return;
+      }
+
+      const ebayConfig = getEbayConfig(environment);
+      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
+        res.status(500).json({
+          error: 'server_error',
+          error_description: `Missing eBay configuration for ${environment}`,
+        });
+        return;
+      }
+
+      const stateRecord = await authStore.createOAuthState(environment, undefined, {
+        mcpClientId: clientId,
+        mcpRedirectUri: redirectUri,
+        mcpState,
+        mcpCodeChallenge: codeChallenge,
+        mcpCodeChallengeMethod: codeChallengeMethod,
+      });
+
+      const oauthUrl = getOAuthAuthorizationUrl(
+        ebayConfig.clientId,
+        ebayConfig.redirectUri,
+        environment,
+        getHostedOauthScopes(environment),
+        undefined,
+        stateRecord.state
+      );
+      serverLogger.info(`[${prefix || 'root'}/authorize] Redirecting to eBay OAuth`, {
+        state: stateRecord.state,
+        environment,
+      });
+      res.redirect(oauthUrl);
+    } catch (error) {
+      serverLogger.error(`[${prefix || 'root'}/authorize] Unhandled error`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        error: 'server_error',
+        error_description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // ── RFC 6749 – Token Endpoint ─────────────────────────────────────────
+  router.post('/token', async (req, res) => {
+    if (!req.body || typeof req.body !== 'object') {
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Request body is missing or unparseable.',
+      });
+      return;
+    }
+
+    const body = req.body as Record<string, string>;
+    const {
+      grant_type: grantType,
+      code,
+      redirect_uri: redirectUri,
+      client_id: clientId,
+      code_verifier: codeVerifier,
+    } = body;
+
+    if (grantType !== 'authorization_code') {
+      res.status(400).json({ error: 'unsupported_grant_type' });
+      return;
+    }
+    if (!code) {
+      res.status(400).json({ error: 'invalid_request', error_description: 'code is required' });
+      return;
+    }
+
+    const authCode = await authStore.consumeAuthCode(code);
+    if (!authCode) {
+      res.status(400).json({
+        error: 'invalid_grant',
+        error_description: 'Invalid or expired authorization code',
+      });
+      return;
+    }
+
+    serverLogger.info(`[${prefix || 'root'}/token] Auth code found`, {
+      storedClientId: authCode.clientId,
+      providedClientId: clientId,
+    });
+
+    if (authCode.clientId !== clientId) {
+      res.status(400).json({ error: 'invalid_client', error_description: 'client_id mismatch' });
+      return;
+    }
+    if (authCode.redirectUri !== redirectUri) {
+      res.status(400).json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' });
+      return;
+    }
+    if (!codeVerifier) {
+      res
+        .status(400)
+        .json({ error: 'invalid_request', error_description: 'code_verifier is required' });
+      return;
+    }
+
+    const expectedChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+    if (expectedChallenge !== authCode.codeChallenge) {
+      res
+        .status(400)
+        .json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
+      return;
+    }
+
+    const session = await authStore.createSession(authCode.userId, authCode.environment);
+    serverLogger.info(`[${prefix || 'root'}/token] Session created`, {
+      userId: authCode.userId,
+      environment: authCode.environment,
+      expiresAt: session.expiresAt,
+    });
+    res.json({
+      access_token: session.sessionToken,
+      token_type: 'bearer',
+      scope: 'mcp',
+    });
+  });
+
+  // ── OAuth start (browser-initiated non-MCP flow) ──────────────────────
+  router.get('/oauth/start', requireOauthStartKey, async (req, res) => {
+    try {
+      const environment = resolveEnv(req);
+      const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : undefined;
+      const ebayConfig = getEbayConfig(environment);
+      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
+        res.status(500).json({ error: `Missing eBay configuration for ${environment}` });
+        return;
+      }
+      const stateRecord = await authStore.createOAuthState(environment, returnTo);
+      const oauthUrl = getOAuthAuthorizationUrl(
+        ebayConfig.clientId,
+        ebayConfig.redirectUri,
+        environment,
+        getHostedOauthScopes(environment),
+        undefined,
+        stateRecord.state
+      );
+      res.redirect(oauthUrl);
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // ── MCP endpoint ──────────────────────────────────────────────────────
 
   const authenticateSession = async (
     req: express.Request,
@@ -739,15 +534,17 @@ EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
     next: express.NextFunction
   ): Promise<void> => {
     const authHeader = req.headers.authorization;
-    const requestedEnv = ((typeof req.query.env === 'string' ? req.query.env : undefined) ??
-      (typeof req.headers['x-ebay-env'] === 'string' ? req.headers['x-ebay-env'] : undefined) ??
-      getConfiguredEnvironment()) as EbayEnvironment;
+    const requestedEnv = resolveEnv(req);
 
     const sendAuthorizationRequired = (
       reason: 'missing_session_token' | 'invalid_session_token'
     ): void => {
-      const oauthUrl = new URL(`${getServerBaseUrl()}/oauth/start`);
-      oauthUrl.searchParams.set('env', requestedEnv);
+      const oauthStartPath = `${routeBaseUrl}/oauth/start`;
+      const oauthUrl = new URL(oauthStartPath);
+      // Only append ?env= for the root (auto) router; env-scoped routers are self-describing.
+      if (!hardcodedEnv) {
+        oauthUrl.searchParams.set('env', requestedEnv);
+      }
       if (CONFIG.oauthStartKey) {
         oauthUrl.searchParams.set('key', CONFIG.oauthStartKey);
       }
@@ -857,6 +654,7 @@ EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
           serverLogger.info('New MCP session initialized', {
             sessionId: newSessionId,
             userId: userContext.userId,
+            environment: userContext.environment,
           });
         },
       });
@@ -896,11 +694,206 @@ EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
     await transport.handleRequest(req, res);
   };
 
-  app.post('/mcp', authenticateSession, mcpPostHandler);
-  app.get('/mcp', authenticateSession, handleSessionRequest);
-  app.delete('/mcp', authenticateSession, handleSessionRequest);
+  router.post('/mcp', authenticateSession, mcpPostHandler);
+  router.get('/mcp', authenticateSession, handleSessionRequest);
+  router.delete('/mcp', authenticateSession, handleSessionRequest);
 
-  return app;
+  return router;
+}
+
+// ── eBay OAuth callback ───────────────────────────────────────────────────
+// This is mounted once at root because eBay requires a single registered
+// redirect URI per app. The environment is recovered from the stored state.
+async function handleOAuthCallback(
+  req: express.Request,
+  res: express.Response,
+  serverUrl: string
+): Promise<void> {
+  try {
+    const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+    const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+    const envFromQuery = typeof req.query.env === 'string' ? req.query.env : undefined;
+    const oauthError = typeof req.query.error === 'string' ? req.query.error : undefined;
+    const errorDescription =
+      typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
+
+    serverLogger.info('[oauth/callback] Received', {
+      hasCode: !!code,
+      hasState: !!state,
+      oauthError,
+    });
+
+    if (oauthError) {
+      res
+        .status(400)
+        .send(`<h1>OAuth failed</h1><p>${htmlEscape(errorDescription ?? oauthError)}</p>`);
+      return;
+    }
+    if (!code) {
+      res.status(400).send('<h1>Missing authorization code</h1>');
+      return;
+    }
+
+    let environment: EbayEnvironment;
+    let stateRecord: Awaited<ReturnType<typeof authStore.consumeOAuthState>> = null;
+    if (state) {
+      stateRecord = await authStore.consumeOAuthState(state);
+      if (!stateRecord) {
+        serverLogger.warn('[oauth/callback] OAuth state not found or expired', { state });
+        res.status(400).send('<h1>Invalid or expired OAuth state</h1>');
+        return;
+      }
+      environment = stateRecord.environment;
+      serverLogger.info('[oauth/callback] State resolved', {
+        environment,
+        isMcpFlow: !!(stateRecord.mcpClientId && stateRecord.mcpRedirectUri),
+      });
+    } else {
+      environment =
+        envFromQuery === 'sandbox' || envFromQuery === 'production'
+          ? envFromQuery
+          : getConfiguredEnvironment();
+      serverLogger.warn(
+        'OAuth callback received without state; falling back to configured/query environment',
+        { environment }
+      );
+    }
+
+    const userId = randomUUID();
+    const api = await createUserScopedApi(userId, environment);
+    const oauthClient = api.getAuthClient().getOAuthClient();
+    serverLogger.info('[oauth/callback] Exchanging code for eBay tokens', { userId });
+    const tokenData = await oauthClient.exchangeCodeForToken(code);
+    serverLogger.info('[oauth/callback] eBay token exchange successful', {
+      userId,
+      hasScope: !!tokenData.scope,
+    });
+
+    // ── MCP OAuth flow: redirect back to the registered MCP client ────────
+    if (stateRecord?.mcpClientId && stateRecord.mcpRedirectUri && stateRecord.mcpCodeChallenge) {
+      const authCodeRecord = await authStore.createAuthCode(
+        stateRecord.mcpClientId,
+        stateRecord.mcpRedirectUri,
+        stateRecord.mcpCodeChallenge,
+        stateRecord.mcpCodeChallengeMethod ?? 'S256',
+        userId,
+        environment
+      );
+      const redirectUrl = new URL(stateRecord.mcpRedirectUri);
+      redirectUrl.searchParams.set('code', authCodeRecord.code);
+      if (stateRecord.mcpState) {
+        redirectUrl.searchParams.set('state', stateRecord.mcpState);
+      }
+      serverLogger.info('[oauth/callback] MCP OAuth flow complete, redirecting to client', {
+        clientId: stateRecord.mcpClientId,
+        userId,
+        authCodePrefix: authCodeRecord.code.substring(0, 8),
+        expiresAt: authCodeRecord.expiresAt,
+      });
+      res.redirect(redirectUrl.toString());
+      return;
+    }
+
+    // ── Non-MCP flow: show tokens page ────────────────────────────────────
+    serverLogger.info('[oauth/callback] Non-MCP flow: creating hosted session', { userId });
+    const session = await authStore.createSession(userId, environment);
+
+    res.status(200).send(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>eBay MCP Connected</title>
+    <style>
+      body { font-family: Inter, Arial, sans-serif; max-width: 760px; margin: 40px auto; line-height: 1.5; padding: 0 16px; }
+      .card { background: #f7f7f8; padding: 16px; border-radius: 10px; margin: 16px 0; }
+      pre { white-space: pre-wrap; word-break: break-all; background: #fff; padding: 14px; border-radius: 8px; border: 1px solid #e5e7eb; }
+      .copy-btn { background: #111827; color: white; border: none; border-radius: 8px; padding: 10px 14px; cursor: pointer; transition: transform 120ms ease, opacity 120ms ease, background 120ms ease; }
+      .copy-btn:hover { background: #1f2937; }
+      .copy-btn:active { transform: scale(0.97); opacity: 0.92; }
+      .copy-status { margin-left: 12px; color: #065f46; font-weight: 600; }
+      .muted { color: #6b7280; }
+      a { color: #2563eb; }
+    </style>
+    <script>
+      async function copyText(elementId, statusId) {
+        const token = document.getElementById(elementId).innerText;
+        const status = document.getElementById(statusId);
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(token);
+          } else {
+            const temp = document.createElement('textarea');
+            temp.value = token;
+            temp.setAttribute('readonly', '');
+            temp.style.position = 'absolute';
+            temp.style.left = '-9999px';
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand('copy');
+            document.body.removeChild(temp);
+          }
+          status.textContent = 'Copied!';
+          setTimeout(() => { status.textContent = ''; }, 1800);
+        } catch (err) {
+          status.textContent = 'Copy failed — select manually';
+          setTimeout(() => { status.textContent = ''; }, 2500);
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>eBay account connected ✓</h1>
+    <p>Your <strong>${htmlEscape(environment)}</strong> account has been connected successfully.</p>
+    <p>Session expires: <strong>${htmlEscape(session.expiresAt)}</strong></p>
+
+    <h2>① Session token — paste as Bearer token in your MCP client</h2>
+    <div class="card">
+      <pre id="session-token">${htmlEscape(session.sessionToken)}</pre>
+      <button class="copy-btn" onclick="copyText('session-token','st-status')">Copy</button><span id="st-status" class="copy-status"></span>
+      <p class="muted">Set as <code>EBAY_SESSION_TOKEN</code> in your server env to survive restarts.</p>
+    </div>
+
+    <h2>② eBay user access token</h2>
+    <div class="card">
+      <pre id="access-token">${htmlEscape(tokenData.access_token)}</pre>
+      <button class="copy-btn" onclick="copyText('access-token','at-status')">Copy</button><span id="at-status" class="copy-status"></span>
+      <p class="muted">Set as <code>EBAY_USER_ACCESS_TOKEN</code> in your server env (optional — auto-refreshed from refresh token).</p>
+    </div>
+
+    <h2>③ eBay user refresh token</h2>
+    <div class="card">
+      <pre id="refresh-token">${htmlEscape(tokenData.refresh_token ?? '')}</pre>
+      <button class="copy-btn" onclick="copyText('refresh-token','rt-status')">Copy</button><span id="rt-status" class="copy-status"></span>
+      <p class="muted">Set as <code>EBAY_USER_REFRESH_TOKEN</code> in your server env. The server uses this to keep the access token fresh automatically.</p>
+    </div>
+
+    <div class="card">
+      <p><strong>After copying, add these 3 lines to your server env and restart:</strong></p>
+      <pre>EBAY_SESSION_TOKEN=${htmlEscape(session.sessionToken)}
+EBAY_USER_ACCESS_TOKEN=${htmlEscape(tokenData.access_token)}
+EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
+    </div>
+
+    <p><strong>MCP endpoints:</strong></p>
+    <ul>
+      <li>Sandbox: <code>${htmlEscape(`${serverUrl}/sandbox/mcp`)}</code></li>
+      <li>Production: <code>${htmlEscape(`${serverUrl}/production/mcp`)}</code></li>
+    </ul>
+    <p><strong>Scopes granted:</strong> ${htmlEscape(tokenData.scope ?? 'Not returned by eBay in token response')}</p>
+    <p class="muted">Keep these tokens private. Refresh tokens are valid for ~18 months.</p>
+  </body>
+</html>`);
+  } catch (error) {
+    serverLogger.error('[oauth/callback] Unhandled error', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    res
+      .status(500)
+      .send(
+        `<h1>OAuth callback failed</h1><pre>${htmlEscape(error instanceof Error ? error.message : String(error))}</pre>`
+      );
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await
@@ -912,13 +905,16 @@ async function main(): Promise<void> {
     const keyPath = process.env.EBAY_LOCAL_TLS_KEY_PATH;
     const useHttps = CONFIG.publicBaseUrl.startsWith('https://') && !!certPath && !!keyPath;
 
+    const serverUrl = getServerBaseUrl();
+
     const onListening = (): void => {
-      const serverUrl = getServerBaseUrl();
       const protocol = useHttps ? 'HTTPS' : 'HTTP';
       console.log(`Server running at ${serverUrl} [${protocol}]`);
-      console.log(`OAuth start: ${serverUrl}/oauth/start?env=production`);
-      console.log(`OAuth start sandbox: ${serverUrl}/oauth/start?env=sandbox`);
-      console.log(`MCP endpoint: ${serverUrl}/mcp`);
+      console.log(`MCP (sandbox):    ${serverUrl}/sandbox/mcp`);
+      console.log(`MCP (production): ${serverUrl}/production/mcp`);
+      console.log(`OAuth (sandbox):  ${serverUrl}/sandbox/oauth/start`);
+      console.log(`OAuth (prod):     ${serverUrl}/production/oauth/start`);
+      console.log(`MCP (default):    ${serverUrl}/mcp`);
     };
 
     let server: ReturnType<typeof app.listen>;

@@ -15,7 +15,12 @@
  */
 
 import chalk from 'chalk';
-import { createServer as createHttpServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
+import {
+  createServer as createHttpServer,
+  type Server,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'http';
 import { createServer as createHttpsServer } from 'https';
 import { readFileSync } from 'fs';
 import type { EbayConfig } from '../types/ebay.js';
@@ -181,10 +186,7 @@ export async function startCallbackServer(
       callbackResolver = res;
     });
 
-    const handleRequest = (
-      req: IncomingMessage,
-      res: ServerResponse
-    ) => {
+    const handleRequest = (req: IncomingMessage, res: ServerResponse) => {
       if (!req.url) {
         res.writeHead(400);
         res.end('Bad Request');
@@ -256,9 +258,7 @@ export async function startCallbackServer(
 
     server.listen(port, () => {
       const scheme = useHttps ? 'https' : 'http';
-      console.log(
-        chalk.gray(`  OAuth callback server listening on ${scheme}://localhost:${port}`)
-      );
+      console.log(chalk.gray(`  OAuth callback server listening on ${scheme}://localhost:${port}`));
       resolve({ server, codePromise });
     });
 

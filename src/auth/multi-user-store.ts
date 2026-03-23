@@ -3,10 +3,25 @@ import type { EbayEnvironment } from '@/config/environment.js';
 import type { StoredTokenData } from '@/types/ebay.js';
 import { createKVStore, type KVStore } from '@/auth/kv-store.js';
 
+// ── TTL constants (seconds) ────────────────────────────────────────────────
+/** 15 minutes — matches the eBay OAuth state parameter lifetime. */
+const OAUTH_STATE_TTL_S = 15 * 60;
+/** 10 minutes — short-lived MCP authorization code. */
+const AUTH_CODE_TTL_S = 10 * 60;
+/** 30 days — configurable via SESSION_TTL_SECONDS env var. */
+const SESSION_TTL_S = Number(process.env.SESSION_TTL_SECONDS ?? 30 * 24 * 60 * 60);
+/** 18 months — default fallback when no refresh token expiry is available. */
+const DEFAULT_REFRESH_TOKEN_TTL_S = 18 * 30 * 24 * 60 * 60;
+
+function secondsFromNow(ttlSeconds: number): string {
+  return new Date(Date.now() + ttlSeconds * 1_000).toISOString();
+}
+
 export interface OAuthStateRecord {
   state: string;
   environment: EbayEnvironment;
   createdAt: string;
+  expiresAt: string;
   returnTo?: string;
   /** Set when this state was initiated by an MCP OAuth 2.1 authorization request */
   mcpClientId?: string;
@@ -34,6 +49,7 @@ export interface AuthCodeRecord {
   userId: string;
   environment: EbayEnvironment;
   createdAt: string;
+  expiresAt: string;
 }
 
 export interface UserTokenRecord {
@@ -41,6 +57,7 @@ export interface UserTokenRecord {
   environment: EbayEnvironment;
   tokenData: StoredTokenData;
   updatedAt: string;
+  expiresAt: string;
 }
 
 export interface SessionRecord {
@@ -48,6 +65,7 @@ export interface SessionRecord {
   userId: string;
   environment: EbayEnvironment;
   createdAt: string;
+  expiresAt: string;
   lastUsedAt: string;
   revokedAt?: string;
 }
@@ -105,10 +123,11 @@ export class MultiUserAuthStore {
       state,
       environment,
       createdAt: new Date().toISOString(),
+      expiresAt: secondsFromNow(OAUTH_STATE_TTL_S),
       returnTo,
       ...mcpContext,
     };
-    await this.kv.put(this.stateKey(state), record, 15 * 60);
+    await this.kv.put(this.stateKey(state), record, OAUTH_STATE_TTL_S);
     return record;
   }
 
@@ -126,13 +145,27 @@ export class MultiUserAuthStore {
     environment: EbayEnvironment,
     tokenData: StoredTokenData
   ): Promise<void> {
+    // Derive TTL from refresh token expiry when available; fall back to 18 months.
+    let ttlSeconds = DEFAULT_REFRESH_TOKEN_TTL_S;
+    if (tokenData.userRefreshTokenExpiry) {
+      const expiryMs =
+        typeof tokenData.userRefreshTokenExpiry === 'number'
+          ? tokenData.userRefreshTokenExpiry
+          : new Date(tokenData.userRefreshTokenExpiry).getTime();
+      const remaining = Math.floor((expiryMs - Date.now()) / 1_000);
+      if (remaining > 0) {
+        ttlSeconds = remaining;
+      }
+    }
+
     const record: UserTokenRecord = {
       userId,
       environment,
       tokenData,
       updatedAt: new Date().toISOString(),
+      expiresAt: secondsFromNow(ttlSeconds),
     };
-    await this.kv.put(this.userTokenKey(userId, environment), record);
+    await this.kv.put(this.userTokenKey(userId, environment), record, ttlSeconds);
   }
 
   async getUserTokens(
@@ -150,9 +183,10 @@ export class MultiUserAuthStore {
       userId,
       environment,
       createdAt: now,
+      expiresAt: secondsFromNow(SESSION_TTL_S),
       lastUsedAt: now,
     };
-    await this.kv.put(this.sessionKey(sessionToken), record);
+    await this.kv.put(this.sessionKey(sessionToken), record, SESSION_TTL_S);
     return record;
   }
 
@@ -176,8 +210,12 @@ export class MultiUserAuthStore {
       return;
     }
 
+    // Recalculate remaining TTL so Redis/KV doesn't expire an active session.
+    const expiresAt = new Date(record.expiresAt).getTime();
+    const remainingTtl = Math.max(Math.floor((expiresAt - now) / 1_000), SESSION_TTL_S);
+
     record.lastUsedAt = new Date(now).toISOString();
-    await this.kv.put(this.sessionKey(sessionToken), record);
+    await this.kv.put(this.sessionKey(sessionToken), record, remainingTtl);
     this.sessionTouchCache.set(sessionToken, now);
   }
 
@@ -186,8 +224,12 @@ export class MultiUserAuthStore {
     if (!record) {
       return;
     }
+    // Keep whatever TTL remains — just mark as revoked.
+    const expiresAt = new Date(record.expiresAt).getTime();
+    const remainingTtl = Math.max(Math.floor((expiresAt - Date.now()) / 1_000), 60);
+
     record.revokedAt = new Date().toISOString();
-    await this.kv.put(this.sessionKey(sessionToken), record);
+    await this.kv.put(this.sessionKey(sessionToken), record, remainingTtl);
   }
 
   async deleteSession(sessionToken: string): Promise<void> {
@@ -270,8 +312,9 @@ export class MultiUserAuthStore {
       userId,
       environment,
       createdAt: new Date().toISOString(),
+      expiresAt: secondsFromNow(AUTH_CODE_TTL_S),
     };
-    await this.kv.put(`auth_code:${code}`, record, 10 * 60); // 10 min TTL
+    await this.kv.put(`auth_code:${code}`, record, AUTH_CODE_TTL_S);
     return record;
   }
 

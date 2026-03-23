@@ -648,6 +648,83 @@ If you're still experiencing issues:
 3. **Verify eBay API Status:**
    - Check [eBay API Status](https://developer.ebay.com/support/api-status) for any service outages
 
+## Hosted Server — Environment-Scoped Endpoints
+
+The HTTP server (`pnpm run start:http`) exposes **dedicated route trees for each eBay environment**. These are the preferred MCP endpoint URLs for hosted deployments.
+
+### MCP endpoints
+
+| Path | Environment |
+|------|-------------|
+| `POST/GET/DELETE /sandbox/mcp` | Always sandbox |
+| `POST/GET/DELETE /production/mcp` | Always production |
+| `POST/GET/DELETE /mcp` | Auto-detect from `?env=` or `EBAY_ENVIRONMENT` (legacy) |
+
+Each scoped path has its own OAuth 2.1 discovery document:
+
+```text
+GET /sandbox/.well-known/oauth-authorization-server
+GET /production/.well-known/oauth-authorization-server
+GET /.well-known/oauth-authorization-server   (legacy)
+```
+
+### OAuth start URLs
+
+```text
+GET /sandbox/oauth/start        # always sandbox
+GET /production/oauth/start     # always production
+GET /oauth/start?env=sandbox    # legacy
+GET /oauth/start?env=production # legacy
+```
+
+eBay's callback URL (`/oauth/callback`) is always at the root because eBay requires a single registered redirect URI per application. The environment is recovered from the OAuth state record stored at flow-start time.
+
+---
+
+## Hosted Server — Session and Token Lifetimes
+
+The hosted auth store keeps every record in sync with the configured KV/Redis backend TTL.
+
+### TTL schedule
+
+| Record type | Payload field | KV/Redis TTL |
+|-------------|--------------|--------------|
+| OAuth state | `expiresAt` | 15 minutes |
+| MCP auth code | `expiresAt` | 10 minutes |
+| Session | `expiresAt` | 30 days (configurable) |
+| User token record | `expiresAt` | Refresh token expiry (fallback 18 months) |
+
+### Session TTL
+
+Default session lifetime is **30 days**. Override at startup:
+
+```bash
+SESSION_TTL_SECONDS=604800   # 7 days
+SESSION_TTL_SECONDS=2592000  # 30 days (default)
+SESSION_TTL_SECONDS=7776000  # 90 days
+```
+
+### User token TTL
+
+Token records are stored with a TTL derived from `userRefreshTokenExpiry` in the token response. If the field is absent, an 18-month fallback is used. When the refresh token expires, the KV/Redis key also expires automatically — no manual cleanup required.
+
+### `GET /whoami` response
+
+The `expiresAt` field is now included in the session introspection response:
+
+```json
+{
+  "userId": "...",
+  "environment": "sandbox",
+  "createdAt": "2026-03-23T08:00:00.000Z",
+  "expiresAt": "2026-04-22T08:00:00.000Z",
+  "lastUsedAt": "2026-03-23T09:30:00.000Z",
+  "revokedAt": null
+}
+```
+
+---
+
 ## Additional Resources
 
 - [eBay Developer Portal](https://developer.ebay.com/) - API documentation and credentials

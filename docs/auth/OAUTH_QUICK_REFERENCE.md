@@ -216,6 +216,54 @@ code: "v^1.1#i^1#r^1#..." // From redirect URL
 
 4. Start using inventory APIs - tokens will auto-refresh!
 
+## Hosted Server Quick Reference
+
+When using the hosted HTTP server (`pnpm run start:http`) instead of local STDIO mode, the following URLs replace the MCP tool–based OAuth flow.
+
+### Env-scoped MCP endpoints (preferred)
+
+| Endpoint | Binds to |
+|----------|----------|
+| `https://your-server.com/sandbox/mcp` | Sandbox |
+| `https://your-server.com/production/mcp` | Production |
+| `https://your-server.com/mcp` | Auto-detect (legacy) |
+
+### Start OAuth in a browser
+
+```text
+https://your-server.com/sandbox/oauth/start
+https://your-server.com/production/oauth/start
+```
+
+### OAuth 2.1 discovery (used by Cline / other MCP clients)
+
+```text
+GET https://your-server.com/sandbox/.well-known/oauth-authorization-server
+GET https://your-server.com/production/.well-known/oauth-authorization-server
+```
+
+### Session token TTL schedule
+
+| Item | Lifetime |
+|------|----------|
+| OAuth state (`expiresAt`) | 15 min |
+| MCP auth code (`expiresAt`) | 10 min |
+| Session token (`expiresAt`) | 30 days (override with `SESSION_TTL_SECONDS`) |
+| User token record (`expiresAt`) | Refresh token expiry (fallback 18 months) |
+
+All records include an `expiresAt` ISO 8601 field in the payload; the KV/Redis TTL is always set to match so there is no divergence between application-level and storage-level expiry.
+
+### Check session identity
+
+```text
+GET /whoami
+Authorization: Bearer <session-token>
+```
+
+Returns `userId`, `environment`, `createdAt`, `expiresAt`, `lastUsedAt`, `revokedAt`.
+
+---
+
 ## References
 
 - [eBay OAuth Documentation](https://developer.ebay.com/api-docs/static/oauth-tokens.html)
