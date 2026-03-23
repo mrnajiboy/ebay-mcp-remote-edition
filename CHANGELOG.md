@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.0.0...ebay-mcp-remote-edition-v3.1.0) (2026-03-23)
+
+
+### Features
+
+* add https native support to streamable http server version, fix linting errors ([4868125](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/486812543362350ae7f66826d3ee3db7eb72895c))
+
+
+### Bug Fixes
+
+* fixed endpoint structure, documentation, session TTL timing ([0ae3edc](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/0ae3edc59d1deb002903a163b29482d0a413bc2a))
+* oauth testing error ([7dac593](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7dac593cd9d63e9c1e6a7c54970ca9eef4d0a935))
+
+
+### Dependencies
+
+* fixed risky deps ([7a301f6](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7a301f6ac9b4c674abcf1017acfaab682bc1dbfd))
+
+
+### Documentation
+
+* fix env example layout for less confusion ([5ffe1ab](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/5ffe1ab0f29e313cda48d83c83cf5ed6d64232a9))
+* update API status snapshot [skip ci] ([e77d947](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/e77d9470ff0fcafc63512aeac59afc9a1a6a348e))
+
 ## [3.0.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.16...ebay-mcp-remote-edition-v3.0.0) (2026-03-23)
 
 
