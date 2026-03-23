@@ -101,6 +101,51 @@ EBAY_LOCAL_TLS_CERT_PATH=/path/to/ebay-local.test.pem
 EBAY_LOCAL_TLS_KEY_PATH=/path/to/ebay-local.test-key.pem
 ```
 
+#### ⚠️ Trust the mkcert CA in Node.js (required for MCP clients like Cline)
+
+VS Code's extension host (where Cline runs) uses Node.js for outbound HTTPS requests. Node.js does **not** automatically read macOS's system keychain, so the `ebay-local.test` certificate is not trusted by default. This causes the OAuth token exchange (`POST /sandbox/token`) to fail silently — the browser flow completes, the "Open in VS Code" page appears, but Cline never receives a session token.
+
+**Fix — run these two commands once, then fully quit and reopen VS Code:**
+
+```bash
+# 1. Set for the current macOS session (affects all Dock/Spotlight-launched apps):
+launchctl setenv NODE_EXTRA_CA_CERTS "$(mkcert -CAROOT)/rootCA.pem"
+
+# 2. Create a LaunchAgent so it persists across reboots:
+cat > ~/Library/LaunchAgents/com.local.mkcert-node-trust.plist <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.local.mkcert-node-trust</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>launchctl</string><string>setenv</string>
+    <string>NODE_EXTRA_CA_CERTS</string>
+    <string>/Users/YOUR_USERNAME/Library/Application Support/mkcert/rootCA.pem</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+EOF
+launchctl load ~/Library/LaunchAgents/com.local.mkcert-node-trust.plist
+
+# 3. For terminal-launched VS Code — add to ~/.zshrc:
+echo 'export NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"' >> ~/.zshrc
+```
+
+> Replace `YOUR_USERNAME` with your actual macOS username in the plist, or use the full path printed by `mkcert -CAROOT`.
+
+After running these commands and **fully quitting VS Code (Cmd+Q on macOS)** and reopening it, Cline's extension host will trust the `ebay-local.test` certificate and the MCP OAuth flow will complete successfully.
+
+**Verify the fix works (without restarting VS Code):**
+```bash
+NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" node -e "
+  require('https').get('https://ebay-local.test:3000/health', r => console.log('TLS OK — status:', r.statusCode)).on('error', e => console.error('TLS FAIL:', e.message));
+"
+# Expected: TLS OK — status: 200
+```
+
 For hosted deployments, register your server's public HTTPS URL instead (e.g. `https://your-server.com/oauth/callback`).
 
 ---

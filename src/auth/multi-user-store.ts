@@ -8,8 +8,22 @@ import { createKVStore, type KVStore } from '@/auth/kv-store.js';
 const OAUTH_STATE_TTL_S = 15 * 60;
 /** 10 minutes — short-lived MCP authorization code. */
 const AUTH_CODE_TTL_S = 10 * 60;
-/** 30 days — configurable via SESSION_TTL_SECONDS env var. */
-const SESSION_TTL_S = Number(process.env.SESSION_TTL_SECONDS ?? 30 * 24 * 60 * 60);
+/** 30 days — default; configurable via SESSION_TTL_SECONDS env var. */
+const SESSION_TTL_FALLBACK_S = 30 * 24 * 60 * 60;
+const _rawSessionTtl = process.env.SESSION_TTL_SECONDS;
+const SESSION_TTL_S: number = (() => {
+  if (_rawSessionTtl === undefined || _rawSessionTtl.trim() === '') {
+    return SESSION_TTL_FALLBACK_S;
+  }
+  const parsed = Number(_rawSessionTtl);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `[multi-user-store] SESSION_TTL_SECONDS="${_rawSessionTtl}" is invalid; falling back to ${SESSION_TTL_FALLBACK_S}s (30 days)`
+    );
+    return SESSION_TTL_FALLBACK_S;
+  }
+  return Math.floor(parsed);
+})();
 /** 18 months — default fallback when no refresh token expiry is available. */
 const DEFAULT_REFRESH_TOKEN_TTL_S = 18 * 30 * 24 * 60 * 60;
 
@@ -37,6 +51,13 @@ export interface ClientRecord {
   redirectUris: string[];
   clientName?: string;
   createdAt: string;
+  /**
+   * The eBay environment this client was registered for (sandbox | production).
+   * Set when registration goes through an env-scoped path (e.g. /sandbox/register).
+   * Used by the root authorize endpoint as a fallback when no ?env= query param
+   * is present and the client's cached auth-server URL points to root /authorize.
+   */
+  environment?: EbayEnvironment;
 }
 
 /** Short-lived authorization code issued after eBay OAuth completes in MCP flow */
@@ -238,13 +259,18 @@ export class MultiUserAuthStore {
 
   // ── RFC 7591 Dynamic Client Registration ──────────────────────────────────
 
-  async registerClient(redirectUris: string[], clientName?: string): Promise<ClientRecord> {
+  async registerClient(
+    redirectUris: string[],
+    clientName?: string,
+    environment?: EbayEnvironment
+  ): Promise<ClientRecord> {
     const clientId = randomUUID();
     const record: ClientRecord = {
       clientId,
       redirectUris,
       clientName,
       createdAt: new Date().toISOString(),
+      ...(environment ? { environment } : {}),
     };
     await this.kv.put(`client:${clientId}`, record);
     return record;
@@ -262,18 +288,31 @@ export class MultiUserAuthStore {
    * An existing record for `clientId` is overwritten only if the supplied
    * `redirectUri` is not already listed (additive merge otherwise).
    */
+  /**
+   * @param environment  Optional env to tag the client with.  When provided,
+   *   the environment is persisted on the record so that the root /authorize
+   *   endpoint can use it as a fallback even when no ?env= query param is
+   *   present.  If the existing record already has a different environment
+   *   the new value wins (e.g. re-registering via /sandbox/authorize should
+   *   override a stale "production" tag).
+   */
   async registerClientWithId(
     clientId: string,
     redirectUris: string[],
-    clientName?: string
+    clientName?: string,
+    environment?: EbayEnvironment
   ): Promise<ClientRecord> {
     const existing = await this.kv.get<ClientRecord>(`client:${clientId}`);
     const now = new Date().toISOString();
 
     if (existing) {
-      // Merge any new redirect URIs into the existing record
+      // Merge any new redirect URIs and update the env tag when provided.
       const merged = Array.from(new Set([...existing.redirectUris, ...redirectUris]));
-      const updated: ClientRecord = { ...existing, redirectUris: merged };
+      const updated: ClientRecord = {
+        ...existing,
+        redirectUris: merged,
+        ...(environment ? { environment } : {}),
+      };
       await this.kv.put(`client:${clientId}`, updated);
       return updated;
     }
@@ -283,6 +322,7 @@ export class MultiUserAuthStore {
       redirectUris,
       clientName,
       createdAt: now,
+      ...(environment ? { environment } : {}),
     };
     await this.kv.put(`client:${clientId}`, record);
     return record;

@@ -15,6 +15,8 @@ import {
   getHostedOauthScopes,
   getEbayConfig,
   getOAuthAuthorizationUrl,
+  validateCredentialsForEnvironment,
+  ruNameToEnvironment,
   type EbayEnvironment,
 } from '@/config/environment.js';
 import { getToolDefinitions, executeTool } from '@/tools/index.js';
@@ -152,6 +154,87 @@ function createApp(): express.Application {
   const serverUrl = getServerBaseUrl();
   const iconBaseUrl = `${serverUrl}/icons`;
 
+  // ── RFC 9728 – Path-based Protected Resource Metadata ────────────────────
+  // Cline probes these URLs for MCP resources at /sandbox/mcp and /production/mcp.
+  // RFC 9728 §3 defines the well-known URI as:
+  //   /.well-known/oauth-protected-resource{path-to-resource}
+  // We must serve these before the env routers so they are not caught by their
+  // own /.well-known/... handler (which is relative to the router base path).
+
+  app.get('/.well-known/oauth-protected-resource/sandbox/mcp', (_req, res) => {
+    res.json({
+      resource: `${serverUrl}/sandbox/mcp`,
+      authorization_servers: [`${serverUrl}/sandbox`],
+      scopes_supported: ['mcp'],
+      resource_documentation: 'https://github.com/mrnajiboy/ebay-mcp-remote-edition',
+    });
+  });
+
+  app.get('/.well-known/oauth-protected-resource/production/mcp', (_req, res) => {
+    res.json({
+      resource: `${serverUrl}/production/mcp`,
+      authorization_servers: [`${serverUrl}/production`],
+      scopes_supported: ['mcp'],
+      resource_documentation: 'https://github.com/mrnajiboy/ebay-mcp-remote-edition',
+    });
+  });
+
+  // Generic fallback: serves the default-env resource metadata.
+  // Also satisfies clients that probe /.well-known/oauth-protected-resource
+  // without a path suffix.
+  app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+    const defaultEnv = getConfiguredEnvironment();
+    res.json({
+      resource: `${serverUrl}/${defaultEnv}/mcp`,
+      authorization_servers: [`${serverUrl}/${defaultEnv}`],
+      scopes_supported: ['mcp'],
+      resource_documentation: 'https://github.com/mrnajiboy/ebay-mcp-remote-edition',
+    });
+  });
+
+  // ── RFC 8414 §3 – Path-based Authorization Server Metadata ───────────────
+  // When Protected Resource Metadata says authorization_servers: ["…/sandbox"],
+  // RFC 8414 §3 requires the auth server metadata to be fetchable at:
+  //   /.well-known/oauth-authorization-server/sandbox   (NOT /sandbox/.well-known/…)
+  //
+  // Cline probes exactly this form. Without these routes it falls back to root
+  // /authorize which silently defaults to production.
+
+  app.get('/.well-known/oauth-authorization-server/sandbox', (_req, res) => {
+    const base = `${serverUrl}/sandbox`;
+    // authorization_endpoint uses the ROOT /authorize with ?env=sandbox so that
+    // MCP clients (like Cline) that strip the path prefix from the issuer URL
+    // still land on the correct environment — the ?env= query param is
+    // preserved through URL construction and picked up by resolveEnv().
+    // token/registration still use the env-scoped path.
+    res.json({
+      issuer: base,
+      authorization_endpoint: `${serverUrl}/authorize?env=sandbox`,
+      token_endpoint: `${base}/token`,
+      registration_endpoint: `${base}/register`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+      scopes_supported: ['mcp'],
+    });
+  });
+
+  app.get('/.well-known/oauth-authorization-server/production', (_req, res) => {
+    const base = `${serverUrl}/production`;
+    res.json({
+      issuer: base,
+      authorization_endpoint: `${serverUrl}/authorize?env=production`,
+      token_endpoint: `${base}/token`,
+      registration_endpoint: `${base}/register`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+      scopes_supported: ['mcp'],
+    });
+  });
+
   // ── Root index / health ───────────────────────────────────────────────────
   app.get('/', (_req, res) => {
     res.json({
@@ -266,16 +349,69 @@ function mountEnvRouter(
   function resolveEnv(req: express.Request): EbayEnvironment {
     if (hardcodedEnv) return hardcodedEnv;
     const q = req.query as Record<string, string>;
-    return q.env === 'sandbox' || q.env === 'production' ? q.env : getConfiguredEnvironment();
+    if (q.env === 'sandbox' || q.env === 'production') return q.env;
+
+    // For root router, detect environment from available signals in priority order:
+    //
+    //   1. `resource` query param (RFC 9728) — MCP clients like Cline include the
+    //      full target MCP URL, e.g. resource=https://host/sandbox/mcp, which
+    //      encodes the env directly in its path.
+    //
+    //   2. Per-env RuNames (EBAY_SANDBOX_RUNAME / EBAY_PRODUCTION_RUNAME) via
+    //      -SB- / -PR- segment — if only ONE is configured, it's definitive.
+    //      If BOTH are configured they conflict; skip to next step.
+    //
+    //   3. Generic RuName (EBAY_RUNAME / legacy EBAY_REDIRECT_URI) to disambiguate
+    //      when both or neither env-specific vars are set.
+    //
+    //   4. EBAY_ENVIRONMENT env var — last resort only.
+
+    // Step 1: resource param (most reliable for RFC 9728-aware clients).
+    const resourceParam = q.resource;
+    if (resourceParam) {
+      if (resourceParam.includes('/sandbox/') || resourceParam.endsWith('/sandbox')) {
+        return 'sandbox';
+      }
+      if (resourceParam.includes('/production/') || resourceParam.endsWith('/production')) {
+        return 'production';
+      }
+    }
+
+    // Step 2: per-env RuName detection.
+    const sandboxRuName =
+      process.env.EBAY_SANDBOX_RUNAME || process.env.EBAY_SANDBOX_REDIRECT_URI;
+    const productionRuName =
+      process.env.EBAY_PRODUCTION_RUNAME || process.env.EBAY_PRODUCTION_REDIRECT_URI;
+    const genericRuName = process.env.EBAY_RUNAME || process.env.EBAY_REDIRECT_URI;
+
+    const sandboxDetected = ruNameToEnvironment(sandboxRuName);
+    const productionDetected = ruNameToEnvironment(productionRuName);
+
+    if (sandboxDetected && !productionDetected) return 'sandbox';
+    if (productionDetected && !sandboxDetected) return 'production';
+
+    // Step 3: generic RuName to disambiguate when both/neither env-specific are set.
+    const genericDetected = ruNameToEnvironment(genericRuName);
+    if (genericDetected) return genericDetected;
+
+    // Step 4: final fallback.
+    return getConfiguredEnvironment();
   }
 
   // ── RFC 8414 – Authorization Server Metadata ──────────────────────────
+  // For env-scoped routers: endpoints are relative to the env base URL.
+  // For the ROOT router: endpoints are relative to the DEFAULT environment's
+  // base URL (not root). This ensures that MCP clients that cached root
+  // auth-server discovery (e.g. Cline) see env-specific authorize/token/
+  // register URLs and update their cached endpoints on the next request.
   router.get('/.well-known/oauth-authorization-server', (_req, res) => {
+    // env-scoped: use as-is; root: redirect to the configured default env sub-path
+    const endpointBase = hardcodedEnv ? routeBaseUrl : `${serverUrl}/${getConfiguredEnvironment()}`;
     res.json({
       issuer: routeBaseUrl,
-      authorization_endpoint: `${routeBaseUrl}/authorize`,
-      token_endpoint: `${routeBaseUrl}/token`,
-      registration_endpoint: `${routeBaseUrl}/register`,
+      authorization_endpoint: `${endpointBase}/authorize`,
+      token_endpoint: `${endpointBase}/token`,
+      registration_endpoint: `${endpointBase}/register`,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code'],
       code_challenge_methods_supported: ['S256'],
@@ -299,7 +435,9 @@ function mountEnvRouter(
     }
 
     const uris = redirectUris as string[];
-    const client = await authStore.registerClient(uris, clientName);
+    // Tag the registered client with the env so that root /authorize can use
+    // client.environment as a fallback when no ?env= param is present.
+    const client = await authStore.registerClient(uris, clientName, hardcodedEnv ?? undefined);
     serverLogger.info(`[${prefix || 'root'}/register] MCP client registered`, {
       clientId: client.clientId,
       redirectUris: client.redirectUris,
@@ -327,7 +465,16 @@ function mountEnvRouter(
         code_challenge: codeChallenge,
         code_challenge_method: codeChallengeMethod,
       } = q;
-      const environment = resolveEnv(req);
+      // Environment resolution (in priority order):
+      //   1. URL path prefix (/sandbox, /production) → authoritative  [hardcodedEnv]
+      //   2. Explicit ?env= query param
+      //   3. ?resource param (RFC 9728 — full MCP URL encodes env in its path)
+      //   4. RuName -SB-/-PR- segment / EBAY_ENVIRONMENT fallback (see resolveEnv)
+      const envSource = hardcodedEnv ? 'path' :
+        (q.env === 'sandbox' || q.env === 'production') ? 'query' :
+        (q.resource && (q.resource.includes('/sandbox/') || q.resource.includes('/production/'))) ? 'resource' :
+        'runame';
+      let environment = resolveEnv(req);
 
       serverLogger.info(`[${prefix || 'root'}/authorize] Request received`, {
         clientId,
@@ -336,6 +483,7 @@ function mountEnvRouter(
         hasPkce: !!codeChallenge,
         pkceMethod: codeChallengeMethod,
         environment,
+        envSource,
         hasMcpState: !!mcpState,
       });
 
@@ -351,13 +499,37 @@ function mountEnvRouter(
       }
 
       let client = await authStore.getClient(clientId);
+
+      // For root router (hardcodedEnv = null): if the client was previously
+      // registered through an env-scoped path (e.g. /sandbox/register), use
+      // that env instead of the generic fallback — even if ?env= was not sent.
+      // This fixes the case where Cline has cached root /authorize but the
+      // client record was tagged as sandbox from an earlier discovery pass.
+      if (!hardcodedEnv && client?.environment) {
+        if (environment !== client.environment) {
+          serverLogger.info(`[root/authorize] Overriding env from client registration`, {
+            clientId,
+            resolvedEnv: environment,
+            clientEnv: client.environment,
+          });
+          environment = client.environment;
+        }
+      }
+
       if (!client) {
         if (redirectUri && isTrustedDesktopRedirectUri(redirectUri)) {
           serverLogger.info(
             `[${prefix || 'root'}/authorize] Auto-registering trusted desktop MCP client`,
             { clientId, redirectUri }
           );
-          client = await authStore.registerClientWithId(clientId, [redirectUri]);
+          // Tag the new client with the already-resolved env so subsequent root
+          // /authorize calls also land on the correct env without re-discovery.
+          client = await authStore.registerClientWithId(
+            clientId,
+            [redirectUri],
+            undefined,
+            environment
+          );
         } else {
           serverLogger.warn(`[${prefix || 'root'}/authorize] Rejected: unknown client_id`, {
             clientId,
@@ -387,6 +559,29 @@ function mountEnvRouter(
         res.status(500).json({
           error: 'server_error',
           error_description: `Missing eBay configuration for ${environment}`,
+        });
+        return;
+      }
+
+      // Validate that the loaded credentials (RuName segment) actually match the
+      // requested environment.  This is the authoritative check — if the RuName
+      // contains -PR- but the request is for sandbox (or vice-versa), we must
+      // fail fast rather than silently issuing tokens for the wrong environment.
+      const credCheck = validateCredentialsForEnvironment(environment);
+      serverLogger.info(`[${prefix || 'root'}/authorize] Credential check`, {
+        environment,
+        envSource,
+        ruName: ebayConfig.redirectUri,
+        ruNameDetectedEnv: credCheck.detectedEnv,
+        credentialValid: credCheck.valid,
+      });
+      if (!credCheck.valid) {
+        serverLogger.error(`[${prefix || 'root'}/authorize] RuName/environment mismatch`, {
+          error: credCheck.error,
+        });
+        res.status(500).json({
+          error: 'server_misconfiguration',
+          error_description: credCheck.error,
         });
         return;
       }
@@ -425,6 +620,17 @@ function mountEnvRouter(
 
   // ── RFC 6749 – Token Endpoint ─────────────────────────────────────────
   router.post('/token', async (req, res) => {
+    // Entry-level log fires before ANY validation so we can confirm whether
+    // Cline's token request reaches the server at all.  If this log never
+    // appears after a successful vscode:// deep-link redirect, the request
+    // is being dropped before it reaches the server (TLS trust issue, wrong
+    // URL, or the deep link is silently swallowed by VS Code).
+    serverLogger.info(`[${prefix || 'root'}/token] Request received`, {
+      contentType: req.headers['content-type'],
+      origin: req.headers['origin'],
+      hasBody: !!req.body,
+    });
+
     if (!req.body || typeof req.body !== 'object') {
       res.status(400).json({
         error: 'invalid_request',
@@ -549,6 +755,24 @@ function mountEnvRouter(
         oauthUrl.searchParams.set('key', CONFIG.oauthStartKey);
       }
 
+      // RFC 9728 §5.1 / RFC 6750: include resource_metadata in WWW-Authenticate
+      // so that MCP clients (Cline, Claude Desktop, etc.) can discover the
+      // correct env-scoped authorization server without probing well-known URLs.
+      // The path-based well-known URI for a resource at /sandbox/mcp is
+      //   /.well-known/oauth-protected-resource/sandbox/mcp
+      // For the root MCP path we fall back to the generic well-known endpoint.
+      const resourcePath = req.path; // e.g. "" (when router is at /sandbox)
+      const fullResourcePath = hardcodedEnv
+        ? `/${hardcodedEnv}${resourcePath}`
+        : resourcePath;
+      // Normalise: strip trailing slashes, ensure it does not double-encode
+      const resourceMetadataUrl = `${serverUrl}/.well-known/oauth-protected-resource${fullResourcePath.replace(/\/$/, '')}`;
+
+      res.setHeader(
+        'WWW-Authenticate',
+        `Bearer realm="mcp", resource_metadata="${resourceMetadataUrl}"`
+      );
+
       if (req.method === 'GET') {
         res.redirect(oauthUrl.toString());
         return;
@@ -559,6 +783,7 @@ function mountEnvRouter(
         authorization_required: true,
         environment: requestedEnv,
         authorization_url: oauthUrl.toString(),
+        resource_metadata: resourceMetadataUrl,
         message:
           'No valid hosted session token was provided. Complete the browser OAuth flow using authorization_url, then retry with Authorization: Bearer <session-token>.',
       });
@@ -784,13 +1009,64 @@ async function handleOAuthCallback(
       if (stateRecord.mcpState) {
         redirectUrl.searchParams.set('state', stateRecord.mcpState);
       }
+      const finalRedirectUrl = redirectUrl.toString();
       serverLogger.info('[oauth/callback] MCP OAuth flow complete, redirecting to client', {
         clientId: stateRecord.mcpClientId,
         userId,
         authCodePrefix: authCodeRecord.code.substring(0, 8),
         expiresAt: authCodeRecord.expiresAt,
+        // Full URL logged so we can verify vscode:// deep-link format exactly.
+        // NOTE: contains auth code — treat as sensitive, rotate immediately on exposure.
+        redirectUrl: finalRedirectUrl,
       });
-      res.redirect(redirectUrl.toString());
+
+      // ── Custom-scheme redirect (vscode://, cursor://, etc.) ──────────────
+      // Browsers (Chrome 91+, Safari) block plain HTTP 302 → custom-scheme
+      // redirects without an explicit user gesture, causing the vscode:// URI
+      // to be silently swallowed before VS Code ever receives the deep link.
+      //
+      // Fix: serve an HTML page that uses window.location.href (page-level
+      // navigation; browsers allow this) and shows a manual button fallback.
+      // The page also shows a "close this tab" message after the redirect so
+      // the user knows the flow completed.
+      const isCustomScheme =
+        redirectUrl.protocol !== 'http:' && redirectUrl.protocol !== 'https:';
+
+      if (isCustomScheme) {
+        const safeFinalUrl = htmlEscape(finalRedirectUrl);
+        res.status(200).send(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Opening in VS Code…</title>
+    <style>
+      body { font-family: Inter, Arial, sans-serif; max-width: 520px; margin: 80px auto; text-align: center; line-height: 1.6; color: #111827; padding: 0 16px; }
+      .btn { display: inline-block; background: #111827; color: #fff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 1rem; margin-top: 20px; }
+      .btn:hover { background: #1f2937; }
+      .muted { color: #6b7280; font-size: .9rem; margin-top: 24px; }
+    </style>
+  </head>
+  <body>
+    <h2>eBay authentication complete ✓</h2>
+    <p>Opening VS Code to finish connecting…</p>
+    <a class="btn" href="${safeFinalUrl}" id="open-link">Open in VS Code</a>
+    <p class="muted">If VS Code does not open automatically, click the button above.<br>You may close this tab once VS Code activates.</p>
+    <script>
+      // Give the page a moment to render, then navigate.
+      // window.location.href (user-initiated via script on page load) is
+      // allowed by Chrome/Safari for custom URI schemes.
+      setTimeout(function() {
+        window.location.href = ${JSON.stringify(finalRedirectUrl)};
+      }, 300);
+    </script>
+  </body>
+</html>`);
+        return;
+      }
+
+      // For http:// / https:// redirect URIs (e.g. localhost loopback), a
+      // plain 302 is fine and is the standard OAuth response.
+      res.redirect(finalRedirectUrl);
       return;
     }
 

@@ -157,26 +157,67 @@ export function getHostedOauthScopes(environment: EbayEnvironment): string[] {
     'https://api.ebay.com/oauth/api_scope/commerce.message',
     'https://api.ebay.com/oauth/api_scope/commerce.feedback',
     'https://api.ebay.com/oauth/api_scope/commerce.shipping',
-    'https://api.ebay.com/oauth/api_scope/sell.order.read',
-    'https://api.ebay.com/oauth/api_scope/sell.order',
-    'https://api.ebay.com/oauth/api_scope/sell.auction.read',
-    'https://api.ebay.com/oauth/api_scope/sell.offer.read',
-    'https://api.ebay.com/oauth/api_scope/sell.offer',
-    'https://api.ebay.com/oauth/api_scope/sell.return.read',
-    'https://api.ebay.com/oauth/api_scope/sell.return',
-    'https://api.ebay.com/oauth/api_scope/sell.refund.read',
-    'https://api.ebay.com/oauth/api_scope/sell.resolution.read',
-    'https://api.ebay.com/oauth/api_scope/sell.inquiry.read',
-    'https://api.ebay.com/oauth/api_scope/sell.inquiry',
-    'https://api.ebay.com/oauth/api_scope/sell.cancellation.read',
-    'https://api.ebay.com/oauth/api_scope/sell.cancellation',
-    'https://api.ebay.com/oauth/api_scope/commerce.usernote',
   ];
 }
 
 export function getConfiguredEnvironment(): EbayEnvironment {
   const env = process.env.EBAY_ENVIRONMENT || process.env.EBAY_DEFAULT_ENVIRONMENT || 'production';
   return env === 'sandbox' ? 'sandbox' : 'production';
+}
+
+/**
+ * Parse an eBay RuName string to detect whether it belongs to production or
+ * sandbox.  eBay encodes the environment in a dedicated segment of the RuName:
+ *
+ *   CompanyName-AppNickname-AppName-**PR**-ID   → production
+ *   CompanyName-AppNickname-AppName-**SB**-ID   → sandbox
+ *
+ * @returns `'production'` | `'sandbox'` | `null` (unknown / not detectable)
+ */
+export function ruNameToEnvironment(ruName: string | undefined | null): EbayEnvironment | null {
+  if (!ruName) return null;
+  // Look for a word boundary -PR- or -SB- anywhere in the string.
+  // Use exact dash-delimited segment matching to avoid false positives (e.g.
+  // "PROMO" or "SUBSCRIBE" being mis-detected).
+  if (/-PR-/i.test(ruName)) return 'production';
+  if (/-SB-/i.test(ruName)) return 'sandbox';
+  return null;
+}
+
+/**
+ * Validate that the credentials configured for `environment` actually match
+ * the requested environment by inspecting the RuName segment.
+ *
+ * Returns an object describing whether the credentials look correct and any
+ * human-readable warning or error message.
+ */
+export function validateCredentialsForEnvironment(environment: EbayEnvironment): {
+  valid: boolean;
+  detectedEnv: EbayEnvironment | null;
+  warning?: string;
+  error?: string;
+} {
+  const config = getEbayConfig(environment);
+  const ruName = config.redirectUri;
+  const detectedEnv = ruNameToEnvironment(ruName);
+
+  if (detectedEnv === null) {
+    // Can't tell from the RuName — treat as valid (no info to contradict it).
+    return { valid: true, detectedEnv: null };
+  }
+
+  if (detectedEnv !== environment) {
+    return {
+      valid: false,
+      detectedEnv,
+      error:
+        `Credential mismatch: the RuName "${ruName}" belongs to ${detectedEnv} ` +
+        `but the request targets ${environment}. ` +
+        `Check EBAY_${environment.toUpperCase()}_RUNAME (or EBAY_RUNAME).`,
+    };
+  }
+
+  return { valid: true, detectedEnv };
 }
 
 export function validateScopes(

@@ -519,6 +519,74 @@ EBAY_USER_REFRESH_TOKEN=v^1.1#r^1#i^1#p^3#I^3#f^0#t^H4sIAAAAAAAAAOVXa2...
 
 ### Common Issues
 
+#### Cline (or other MCP client) completes browser OAuth but never connects — session token never issued
+
+**Symptom:** The browser goes through the full eBay login flow. The "eBay authentication complete ✓" page appears with an "Open in VS Code" button. You click it, VS Code activates, but Cline keeps showing "Authenticating…" or presents the auth prompt again. The server logs show the callback completed (`MCP OAuth flow complete`) but **no `POST /sandbox/token` or `POST /production/token` entry ever appears**.
+
+**Root cause:** VS Code's extension host (the Node.js process where Cline runs) does not automatically trust certificates signed by a local CA — even if `mkcert -install` added the CA to macOS's system keychain and Safari/Chrome trust it. The `POST /token` request fails at the TLS handshake level and is silently dropped before reaching the server.
+
+**Diagnosis:**
+```bash
+# Run this WITHOUT NODE_EXTRA_CA_CERTS set:
+node -e "
+require('https').request({hostname: 'ebay-local.test', port: 3000, path: '/sandbox/token', method: 'POST'},
+  r => console.log('TLS OK:', r.statusCode)
+).on('error', e => console.error('TLS FAIL:', e.code, e.message)).end();
+"
+# If you see UNABLE_TO_VERIFY_LEAF_SIGNATURE — this is the problem.
+```
+
+**Fix:**
+```bash
+# 1. Set for the current macOS launchd session (affects NEWLY launched apps):
+launchctl setenv NODE_EXTRA_CA_CERTS "$(mkcert -CAROOT)/rootCA.pem"
+
+# 2. Create a LaunchAgent so it survives reboots:
+#    (Replace YOUR_USERNAME or use the full path from `mkcert -CAROOT`)
+cat > ~/Library/LaunchAgents/com.local.mkcert-node-trust.plist <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.local.mkcert-node-trust</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>launchctl</string><string>setenv</string>
+    <string>NODE_EXTRA_CA_CERTS</string>
+    <string>/Users/YOUR_USERNAME/Library/Application Support/mkcert/rootCA.pem</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+EOF
+launchctl load ~/Library/LaunchAgents/com.local.mkcert-node-trust.plist
+
+# 3. For terminal-launched VS Code, also add to ~/.zshrc:
+echo 'export NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"' >> ~/.zshrc
+```
+
+Then **fully quit VS Code (Cmd+Q)** and reopen it — the existing VS Code process doesn't inherit `launchctl setenv` changes; only freshly launched processes do. After reopening, retry the MCP auth flow.
+
+**Verify the fix (without restarting VS Code):**
+```bash
+NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" node -e "
+  require('https').get('https://ebay-local.test:3000/health',
+    r => console.log('TLS OK — status:', r.statusCode)
+  ).on('error', e => console.error('TLS FAIL:', e.message));
+"
+# Expected: TLS OK — status: 200
+```
+
+After VS Code is reopened with the fix in place, you should see these log entries immediately after clicking "Open in VS Code":
+```
+[sandbox/token] Request received
+[sandbox/token] Auth code found
+[sandbox/token] Session created
+New MCP session initialized
+```
+
+---
+
 #### "EBAY_CLIENT_ID environment variable is required"
 
 **Problem:** Client ID is missing or not set correctly.
