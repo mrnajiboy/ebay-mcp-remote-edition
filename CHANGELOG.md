@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.16...ebay-mcp-remote-edition-v3.0.0) (2026-03-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* full refactor of multi-user storage structures, local and remote credentials, documentation.
+
+### ref
+
+* full refactor of multi-user storage structures, local and remote credentials, documentation. ([c8a8b3e](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/c8a8b3eca64a2bc0f99690f98092df70318736c5))
+
 ## [2.0.16](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v2.0.15...ebay-mcp-remote-edition-v2.0.16) (2026-03-17)
 
 
