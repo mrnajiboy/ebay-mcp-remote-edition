@@ -1,6 +1,6 @@
 {
   "name": "ebay-mcp-remote-edition",
-  "version": "2.0.16",
+  "version": "3.0.0",
   "description": "Remote + Local MCP server for eBay APIs - provides access to eBay developer functionality through MCP (Model Context Protocol)",
   "type": "module",
   "main": "build/index.js",
