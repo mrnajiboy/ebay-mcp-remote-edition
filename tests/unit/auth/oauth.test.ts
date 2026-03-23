@@ -9,6 +9,7 @@ import {
   createFullyExpiredTokens,
 } from '../../helpers/mock-token-storage.js';
 import { mockOAuthTokenEndpoint, cleanupMocks } from '../../helpers/mock-http.js';
+import { resetKVStoreSingleton } from '../../../src/auth/kv-store.js';
 
 describe('EbayOAuthClient', () => {
   let oauthClient: EbayOAuthClient;
@@ -18,6 +19,11 @@ describe('EbayOAuthClient', () => {
     // Reset mocks
     vi.clearAllMocks();
     cleanupMocks();
+
+    // Force in-memory KV backend so tests never need Cloudflare credentials
+    process.env.EBAY_TOKEN_STORE_BACKEND = 'memory';
+    // Reset the KV store singleton so each test gets a fresh InMemoryKVStore
+    resetKVStoreSingleton();
 
     // Clear environment variables to prevent automatic token loading
     delete process.env.EBAY_USER_REFRESH_TOKEN;
@@ -46,6 +52,9 @@ describe('EbayOAuthClient', () => {
   afterEach(() => {
     cleanupMocks();
     nock.enableNetConnect();
+    // Clean up the singleton so later test files aren't affected
+    resetKVStoreSingleton();
+    delete process.env.EBAY_TOKEN_STORE_BACKEND;
   });
 
   describe('initialize', () => {
