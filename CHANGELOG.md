@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.2](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.1.1...ebay-mcp-remote-edition-v3.1.2) (2026-03-23)
+
+
+### Bug Fixes
+
+* linting ([eeab3f5](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/eeab3f51bd6e23372fd24adda2ffd009f74ea3b4))
+* local resolving and ouath flow + documentation ([e7f0b58](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/e7f0b58681f835a1929285f69f56f9137ab42945))
+
 ## [3.1.1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.1.0...ebay-mcp-remote-edition-v3.1.1) (2026-03-23)
 
 
