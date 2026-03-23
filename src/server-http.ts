@@ -22,7 +22,7 @@ import { MultiUserAuthStore } from '@/auth/multi-user-store.js';
 
 const CONFIG = {
   host: process.env.MCP_HOST ?? '0.0.0.0',
-  port: Number(process.env.PORT ?? process.env.MCP_PORT ?? 3000),
+  port: Number(process.env.PORT ?? 3000),
   publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? '').replace(/\/$/, ''),
   adminApiKey: process.env.ADMIN_API_KEY ?? '',
   oauthStartKey: process.env.OAUTH_START_KEY ?? '',
@@ -608,9 +608,9 @@ function createApp(): express.Application {
       a { color: #2563eb; }
     </style>
     <script>
-      async function copySessionToken() {
-        const token = document.getElementById('session-token').innerText;
-        const status = document.getElementById('copy-status');
+      async function copyText(elementId, statusId) {
+        const token = document.getElementById(elementId).innerText;
+        const status = document.getElementById(statusId);
         try {
           if (navigator.clipboard && window.isSecureContext) {
             await navigator.clipboard.writeText(token);
@@ -635,20 +635,39 @@ function createApp(): express.Application {
     </script>
   </head>
   <body>
-    <h1>eBay account connected</h1>
+    <h1>eBay account connected ✓</h1>
     <p>Your <strong>${htmlEscape(environment)}</strong> account has been connected successfully.</p>
+
+    <h2>① Session token — paste as Bearer token in your MCP client</h2>
     <div class="card">
-      <p><strong>User ID:</strong> <code>${htmlEscape(userId)}</code></p>
-      <p><strong>Paste this session token into Make or TypingMind as your API Key / Access token.</strong></p>
       <pre id="session-token">${htmlEscape(session.sessionToken)}</pre>
-      <button class="copy-btn" onclick="copySessionToken()">Copy session token</button><span id="copy-status" class="copy-status"></span>
+      <button class="copy-btn" onclick="copyText('session-token','st-status')">Copy</button><span id="st-status" class="copy-status"></span>
+      <p class="muted">Set as <code>EBAY_SESSION_TOKEN</code> in your server env to survive restarts.</p>
     </div>
+
+    <h2>② eBay user access token</h2>
     <div class="card">
-      <p><strong>Authorization header format</strong></p>
-      <pre>Authorization: Bearer ${htmlEscape(session.sessionToken)}</pre>
+      <pre id="access-token">${htmlEscape(tokenData.access_token)}</pre>
+      <button class="copy-btn" onclick="copyText('access-token','at-status')">Copy</button><span id="at-status" class="copy-status"></span>
+      <p class="muted">Set as <code>EBAY_USER_ACCESS_TOKEN</code> in your server env (optional — auto-refreshed from refresh token).</p>
     </div>
-    <p><strong>Scopes granted:</strong> ${htmlEscape(tokenData.scope ?? 'Not returned by eBay in token response')} — <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer">See full account scope list on the developer platform</a>.</p>
-    <p class="muted">Keep this token private. If it is exposed, revoke it using the admin session endpoints and create a new one.</p>
+
+    <h2>③ eBay user refresh token</h2>
+    <div class="card">
+      <pre id="refresh-token">${htmlEscape(tokenData.refresh_token ?? '')}</pre>
+      <button class="copy-btn" onclick="copyText('refresh-token','rt-status')">Copy</button><span id="rt-status" class="copy-status"></span>
+      <p class="muted">Set as <code>EBAY_USER_REFRESH_TOKEN</code> in your server env. The server uses this to keep the access token fresh automatically.</p>
+    </div>
+
+    <div class="card">
+      <p><strong>After copying, add these 3 lines to your server env and restart:</strong></p>
+      <pre>EBAY_SESSION_TOKEN=${htmlEscape(session.sessionToken)}
+EBAY_USER_ACCESS_TOKEN=${htmlEscape(tokenData.access_token)}
+EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
+    </div>
+
+    <p><strong>Scopes granted:</strong> ${htmlEscape(tokenData.scope ?? 'Not returned by eBay in token response')} — <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer">Full scope list on the developer platform</a>.</p>
+    <p class="muted">Keep these tokens private. Refresh tokens are valid for ~18 months.</p>
   </body>
 </html>`);
     } catch (error) {
@@ -751,6 +770,7 @@ function createApp(): express.Application {
       return;
     }
     const sessionToken = authHeader.slice('Bearer '.length).trim();
+
     const session = await authStore.getSession(sessionToken);
     if (!session || session.revokedAt) {
       sendAuthorizationRequired('invalid_session_token');

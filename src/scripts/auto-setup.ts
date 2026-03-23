@@ -14,11 +14,7 @@ import { dirname, join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir, platform } from 'os';
 
-import { config } from 'dotenv';
 import { fileURLToPath } from 'url';
-
-// Load environment variables silently
-config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

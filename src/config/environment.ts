@@ -1,4 +1,3 @@
-import { config } from 'dotenv';
 import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -9,7 +8,6 @@ import { getVersion } from '@/utils/version.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-config({ path: join(__dirname, '../../.env'), quiet: true });
 
 interface ScopeDefinition {
   Scope: string;
@@ -19,6 +17,7 @@ interface ScopeDefinition {
 interface EbaySecretConfigEntry {
   clientId: string;
   clientSecret: string;
+  /** The eBay RuName string (used as redirect_uri in token exchange calls) */
   redirectUri: string;
 }
 
@@ -229,14 +228,42 @@ export function validateEnvironmentConfig(): {
     const configForEnv = getSecretConfigForEnvironment(environment);
 
     if (!configForEnv) {
-      if (!process.env.EBAY_CLIENT_ID) {
+      // Mirror the same fallback logic used in getEbayConfig() so that
+      // per-environment overrides (EBAY_PRODUCTION_CLIENT_ID etc.) are
+      // recognised here too and don't produce false-positive errors.
+      const effectiveClientId =
+        environment === 'production'
+          ? process.env.EBAY_PRODUCTION_CLIENT_ID || process.env.EBAY_CLIENT_ID
+          : process.env.EBAY_SANDBOX_CLIENT_ID || process.env.EBAY_CLIENT_ID;
+
+      const effectiveClientSecret =
+        environment === 'production'
+          ? process.env.EBAY_PRODUCTION_CLIENT_SECRET || process.env.EBAY_CLIENT_SECRET
+          : process.env.EBAY_SANDBOX_CLIENT_SECRET || process.env.EBAY_CLIENT_SECRET;
+
+      // EBAY_RUNAME is the preferred name (it's a RuName string, not a URL).
+      // EBAY_REDIRECT_URI is kept for backward compatibility.
+      const effectiveRuName =
+        environment === 'production'
+          ? process.env.EBAY_PRODUCTION_RUNAME ||
+            process.env.EBAY_PRODUCTION_REDIRECT_URI ||
+            process.env.EBAY_RUNAME ||
+            process.env.EBAY_REDIRECT_URI
+          : process.env.EBAY_SANDBOX_RUNAME ||
+            process.env.EBAY_SANDBOX_REDIRECT_URI ||
+            process.env.EBAY_RUNAME ||
+            process.env.EBAY_REDIRECT_URI;
+
+      if (!effectiveClientId) {
         errors.push('EBAY_CLIENT_ID is not set. OAuth will not work.');
       }
-      if (!process.env.EBAY_CLIENT_SECRET) {
+      if (!effectiveClientSecret) {
         errors.push('EBAY_CLIENT_SECRET is not set. OAuth will not work.');
       }
-      if (!process.env.EBAY_REDIRECT_URI) {
-        warnings.push('EBAY_REDIRECT_URI is not set for selected environment.');
+      if (!effectiveRuName) {
+        warnings.push(
+          'EBAY_RUNAME (or legacy EBAY_REDIRECT_URI) is not set for selected environment.'
+        );
       }
     }
   }
@@ -262,10 +289,18 @@ export function getEbayConfig(environmentOverride?: EbayEnvironment): EbayConfig
       ? process.env.EBAY_PRODUCTION_CLIENT_SECRET || process.env.EBAY_CLIENT_SECRET || ''
       : process.env.EBAY_SANDBOX_CLIENT_SECRET || process.env.EBAY_CLIENT_SECRET || '';
 
+  // Preferred var is EBAY_RUNAME (clearer naming — it IS the RuName, not a URL).
+  // EBAY_REDIRECT_URI is kept for backward compatibility.
   const fallbackRedirectUri =
     environment === 'production'
-      ? process.env.EBAY_PRODUCTION_REDIRECT_URI || process.env.EBAY_REDIRECT_URI
-      : process.env.EBAY_SANDBOX_REDIRECT_URI || process.env.EBAY_REDIRECT_URI;
+      ? process.env.EBAY_PRODUCTION_RUNAME ||
+        process.env.EBAY_PRODUCTION_REDIRECT_URI ||
+        process.env.EBAY_RUNAME ||
+        process.env.EBAY_REDIRECT_URI
+      : process.env.EBAY_SANDBOX_RUNAME ||
+        process.env.EBAY_SANDBOX_REDIRECT_URI ||
+        process.env.EBAY_RUNAME ||
+        process.env.EBAY_REDIRECT_URI;
 
   return {
     clientId: secretConfig?.clientId || fallbackClientId,

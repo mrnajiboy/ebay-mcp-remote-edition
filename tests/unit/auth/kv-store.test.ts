@@ -12,6 +12,7 @@ import {
   resetKVStoreSingleton,
   InMemoryKVStore,
   CloudflareKVStore,
+  UpstashRedisKVStore,
 } from '@/auth/kv-store.js';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -32,6 +33,48 @@ function withBackendEnv(value: string | undefined, fn: () => void) {
       process.env.EBAY_TOKEN_STORE_BACKEND = prev;
     }
   }
+}
+
+/**
+ * Set stub credentials for Cloudflare KV so the constructor doesn't throw.
+ * Returns a cleanup function.
+ */
+function withCloudflareStubCreds(): () => void {
+  const prev = {
+    id: process.env.CLOUDFLARE_ACCOUNT_ID,
+    ns: process.env.CLOUDFLARE_KV_NAMESPACE_ID,
+    token: process.env.CLOUDFLARE_API_TOKEN,
+  };
+  process.env.CLOUDFLARE_ACCOUNT_ID = '__test__';
+  process.env.CLOUDFLARE_KV_NAMESPACE_ID = '__test__';
+  process.env.CLOUDFLARE_API_TOKEN = '__test__';
+  return () => {
+    if (prev.id === undefined) delete process.env.CLOUDFLARE_ACCOUNT_ID;
+    else process.env.CLOUDFLARE_ACCOUNT_ID = prev.id;
+    if (prev.ns === undefined) delete process.env.CLOUDFLARE_KV_NAMESPACE_ID;
+    else process.env.CLOUDFLARE_KV_NAMESPACE_ID = prev.ns;
+    if (prev.token === undefined) delete process.env.CLOUDFLARE_API_TOKEN;
+    else process.env.CLOUDFLARE_API_TOKEN = prev.token;
+  };
+}
+
+/**
+ * Set stub credentials for Upstash Redis so the constructor doesn't throw.
+ * Returns a cleanup function.
+ */
+function withUpstashStubCreds(): () => void {
+  const prev = {
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  };
+  process.env.UPSTASH_REDIS_REST_URL = 'https://stub.upstash.io';
+  process.env.UPSTASH_REDIS_REST_TOKEN = '__test__';
+  return () => {
+    if (prev.url === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
+    else process.env.UPSTASH_REDIS_REST_URL = prev.url;
+    if (prev.token === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    else process.env.UPSTASH_REDIS_REST_TOKEN = prev.token;
+  };
 }
 
 // ── setup ─────────────────────────────────────────────────────────────────────
@@ -74,32 +117,77 @@ describe('createKVStore() – backend selection', () => {
   });
 
   it('returns CloudflareKVStore when EBAY_TOKEN_STORE_BACKEND=cloudflare-kv', () => {
-    withBackendEnv('cloudflare-kv', () => {
-      const store = createKVStore();
-      expect(store).toBeInstanceOf(CloudflareKVStore);
-      expect(store.backendName).toBe('CloudflareKVStore');
-    });
+    const cleanup = withCloudflareStubCreds();
+    try {
+      withBackendEnv('cloudflare-kv', () => {
+        const store = createKVStore();
+        expect(store).toBeInstanceOf(CloudflareKVStore);
+        expect(store.backendName).toBe('CloudflareKVStore');
+      });
+    } finally {
+      cleanup();
+    }
   });
 
   it('returns CloudflareKVStore when EBAY_TOKEN_STORE_BACKEND=cloudflare', () => {
-    withBackendEnv('cloudflare', () => {
-      const store = createKVStore();
-      expect(store).toBeInstanceOf(CloudflareKVStore);
-    });
+    const cleanup = withCloudflareStubCreds();
+    try {
+      withBackendEnv('cloudflare', () => {
+        const store = createKVStore();
+        expect(store).toBeInstanceOf(CloudflareKVStore);
+      });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('returns UpstashRedisKVStore when EBAY_TOKEN_STORE_BACKEND=upstash-redis', () => {
+    const cleanup = withUpstashStubCreds();
+    try {
+      withBackendEnv('upstash-redis', () => {
+        const store = createKVStore();
+        expect(store).toBeInstanceOf(UpstashRedisKVStore);
+        expect(store.backendName).toBe('UpstashRedisKVStore');
+      });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('returns UpstashRedisKVStore when EBAY_TOKEN_STORE_BACKEND=redis', () => {
+    const cleanup = withUpstashStubCreds();
+    try {
+      withBackendEnv('redis', () => {
+        const store = createKVStore();
+        expect(store).toBeInstanceOf(UpstashRedisKVStore);
+      });
+    } finally {
+      cleanup();
+    }
   });
 
   it('defaults to CloudflareKVStore when EBAY_TOKEN_STORE_BACKEND is unset', () => {
-    withBackendEnv(undefined, () => {
-      const store = createKVStore();
-      expect(store).toBeInstanceOf(CloudflareKVStore);
-    });
+    const cleanup = withCloudflareStubCreds();
+    try {
+      withBackendEnv(undefined, () => {
+        const store = createKVStore();
+        expect(store).toBeInstanceOf(CloudflareKVStore);
+      });
+    } finally {
+      cleanup();
+    }
   });
 
   it('defaults to CloudflareKVStore for an unrecognised value', () => {
-    withBackendEnv('redis', () => {
-      const store = createKVStore();
-      expect(store).toBeInstanceOf(CloudflareKVStore);
-    });
+    const cleanup = withCloudflareStubCreds();
+    try {
+      withBackendEnv('something-unknown', () => {
+        const store = createKVStore();
+        expect(store).toBeInstanceOf(CloudflareKVStore);
+      });
+    } finally {
+      cleanup();
+    }
   });
 });
 
@@ -124,6 +212,8 @@ describe('createKVStore() – singleton', () => {
     });
 
     // Changing the env var now should have no effect — singleton is already set.
+    // Add stub Cloudflare creds so if it DID reconstruct, it wouldn't throw.
+    const cleanup = withCloudflareStubCreds();
     process.env.EBAY_TOKEN_STORE_BACKEND = 'cloudflare-kv';
     try {
       const second = createKVStore();
@@ -131,6 +221,7 @@ describe('createKVStore() – singleton', () => {
       expect(second).toBeInstanceOf(InMemoryKVStore);
     } finally {
       delete process.env.EBAY_TOKEN_STORE_BACKEND;
+      cleanup();
     }
   });
 

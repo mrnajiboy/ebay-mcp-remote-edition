@@ -17,6 +17,8 @@ out/
 
 # Environment variables
 .env
+.env.keys
+.env.vault
 .env.local
 .env.*.local
 .env.development
@@ -24,6 +26,8 @@ out/
 .env.production
 .env.staging
 *.env.backup
+*.env.keys
+*.env.vault
 
 # Logs
 logs/
@@ -188,6 +192,7 @@ temp/
 secrets/
 .secrets/
 credentials.json
+.dotenvx/
 
 # General (excluding docs/CLAUDE.md which tracks development progress)
 /CLAUDE.md

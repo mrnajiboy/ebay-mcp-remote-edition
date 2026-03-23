@@ -1,11 +1,7 @@
-import { config } from 'dotenv';
 import { EbaySellerApi } from '@/api/index.js';
 import type { EbayConfig } from '@/types/ebay.js';
 import * as fs from 'fs';
 import * as path from 'path';
-
-// Load environment variables silently
-config({ quiet: true });
 
 interface EndpointFailure {
   category: string;

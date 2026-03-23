@@ -192,7 +192,7 @@ function generateEnvFile(config: Record<string, string>, environment: string): v
 
 EBAY_CLIENT_ID=${config.EBAY_CLIENT_ID || 'your_client_id_here'}
 EBAY_CLIENT_SECRET=${config.EBAY_CLIENT_SECRET || 'your_client_secret_here'}
-EBAY_REDIRECT_URI=${config.EBAY_REDIRECT_URI || 'http://localhost:3000/oauth/callback'}
+EBAY_RUNAME=${config.EBAY_RUNAME || config.EBAY_REDIRECT_URI || ''}
 
 # ═══════════════════════════════════════════════════════════════════
 # Environment (sandbox or production)
@@ -733,9 +733,10 @@ async function runInteractiveSetup(args: CLIArgs) {
     },
     {
       type: 'text',
-      name: 'EBAY_REDIRECT_URI',
-      message: 'eBay Redirect URI (RuName):',
-      initial: existingConfig.EBAY_REDIRECT_URI || 'http://localhost:3000/oauth/callback',
+      name: 'EBAY_RUNAME',
+      message: 'RuName (eBay-generated string from Developer Portal → User Tokens):',
+      // Pre-fill from EBAY_RUNAME first, else fall back to legacy EBAY_REDIRECT_URI
+      initial: existingConfig.EBAY_RUNAME || existingConfig.EBAY_REDIRECT_URI || '',
       validate: validateRequired,
     },
   ]);
@@ -749,7 +750,7 @@ async function runInteractiveSetup(args: CLIArgs) {
   const needsRuNameHelp = await prompts({
     type: 'confirm',
     name: 'value',
-    message: 'Need help understanding RuName (Redirect URI)?',
+    message: 'Need help understanding RuName?',
     initial: false,
   });
 
@@ -796,7 +797,7 @@ async function runInteractiveSetup(args: CLIArgs) {
   const ebayConfig: EbayConfig = {
     clientId: credentials.EBAY_CLIENT_ID,
     clientSecret: credentials.EBAY_CLIENT_SECRET,
-    redirectUri: credentials.EBAY_REDIRECT_URI,
+    redirectUri: credentials.EBAY_RUNAME,
     environment: environment as 'sandbox' | 'production',
   };
 
@@ -835,7 +836,9 @@ async function runInteractiveSetup(args: CLIArgs) {
   const config: Record<string, string> = {
     EBAY_CLIENT_ID: credentials.EBAY_CLIENT_ID,
     EBAY_CLIENT_SECRET: credentials.EBAY_CLIENT_SECRET,
-    EBAY_REDIRECT_URI: credentials.EBAY_REDIRECT_URI,
+    // Store under the new preferred key; also keep legacy key for backward compat.
+    EBAY_RUNAME: credentials.EBAY_RUNAME,
+    EBAY_REDIRECT_URI: credentials.EBAY_RUNAME,
     EBAY_ENVIRONMENT: environment,
     EBAY_MARKETPLACE_ID: existingConfig.EBAY_MARKETPLACE_ID || '',
     EBAY_CONTENT_LANGUAGE: existingConfig.EBAY_CONTENT_LANGUAGE || '',
@@ -864,7 +867,7 @@ async function runInteractiveSetup(args: CLIArgs) {
   console.log(
     `  ${chalk.gray('Client Secret:')} ${'*'.repeat(Math.min(config.EBAY_CLIENT_SECRET.length, 20))}`
   );
-  console.log(`  ${chalk.gray('Redirect URI:')} ${config.EBAY_REDIRECT_URI}`);
+  console.log(`  ${chalk.gray('RuName:')} ${config.EBAY_RUNAME || config.EBAY_REDIRECT_URI}`);
   console.log(`  ${chalk.gray('Environment:')} ${chalk.bold(config.EBAY_ENVIRONMENT)}`);
   console.log(
     `  ${chalk.gray('User Refresh Token:')} ${config.EBAY_USER_REFRESH_TOKEN ? chalk.green('✓ Configured') : chalk.yellow('✗ Not set')}`

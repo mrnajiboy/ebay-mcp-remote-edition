@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
+import { Redis } from '@upstash/redis';
 
 // ── Shared interface ──────────────────────────────────────────────────────────
 
@@ -80,6 +81,12 @@ export class CloudflareKVStore implements KVStore {
     this.namespaceId = process.env.CLOUDFLARE_KV_NAMESPACE_ID || '';
     const apiToken = process.env.CLOUDFLARE_API_TOKEN || '';
 
+    if (!this.accountId || !this.namespaceId || !apiToken) {
+      throw new Error(
+        'Cloudflare KV backend selected, but CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_KV_NAMESPACE_ID, and CLOUDFLARE_API_TOKEN must all be set.'
+      );
+    }
+
     this.client = axios.create({
       baseURL: `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/storage/kv/namespaces/${this.namespaceId}`,
       headers: {
@@ -146,6 +153,74 @@ export class CloudflareKVStore implements KVStore {
   }
 }
 
+// ── Upstash Redis backend ────────────────────────────────────────────────────
+
+/**
+ * Upstash Redis REST API backend with an in-memory read-through cache.
+ * Used when EBAY_TOKEN_STORE_BACKEND=upstash-redis.
+ */
+export class UpstashRedisKVStore implements KVStore {
+  readonly backendName = 'UpstashRedisKVStore';
+  private client: Redis;
+  private cache = new Map<string, CacheEntry<unknown>>();
+  private cacheTtlMs: number;
+
+  constructor(cacheTtlMs = 5 * 60 * 1_000) {
+    this.cacheTtlMs = cacheTtlMs;
+    const url = process.env.UPSTASH_REDIS_REST_URL || '';
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN || '';
+
+    if (!url || !token) {
+      throw new Error(
+        'Upstash Redis backend selected, but UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must both be set.'
+      );
+    }
+
+    this.client = new Redis({ url, token });
+  }
+
+  private isCacheValid(entry: CacheEntry<unknown>): boolean {
+    return Date.now() < entry.expiresAt;
+  }
+
+  async get<T>(key: string): Promise<T | null> {
+    const cached = this.cache.get(key);
+    if (cached && this.isCacheValid(cached)) {
+      return cached.value as T | null;
+    }
+
+    const value = await this.client.get<T>(key);
+    this.cache.set(key, { value, expiresAt: Date.now() + this.cacheTtlMs });
+    return value ?? null;
+  }
+
+  async put(key: string, value: unknown, expirationTtl?: number): Promise<void> {
+    if (expirationTtl !== undefined) {
+      await this.client.set(key, value, { ex: expirationTtl });
+    } else {
+      await this.client.set(key, value);
+    }
+
+    const cacheTtl = expirationTtl
+      ? Math.min(expirationTtl * 1_000, this.cacheTtlMs)
+      : this.cacheTtlMs;
+    this.cache.set(key, { value, expiresAt: Date.now() + cacheTtl });
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.client.del(key);
+    this.cache.delete(key);
+  }
+
+  invalidate(key: string): void {
+    this.cache.delete(key);
+  }
+
+  flushCache(): void {
+    this.cache.clear();
+  }
+}
+
 // ── Singleton factory ─────────────────────────────────────────────────────────
 
 /**
@@ -168,8 +243,9 @@ let _kvStoreSingleton: KVStore | null = null;
  * Returns (or lazily creates) the process-wide KV store singleton based on the
  * EBAY_TOKEN_STORE_BACKEND environment variable:
  *
- *   memory        → InMemoryKVStore  (no external dependencies, data lost on restart)
- *   cloudflare-kv → CloudflareKVStore (default; requires CLOUDFLARE_* env vars)
+ *   memory         → InMemoryKVStore   (no external dependencies, data lost on restart)
+ *   cloudflare-kv  → CloudflareKVStore (requires CLOUDFLARE_* env vars)
+ *   upstash-redis  → UpstashRedisKVStore (requires UPSTASH_REDIS_REST_* env vars)
  *
  * If the variable is unset or unrecognised, defaults to cloudflare-kv so that
  * existing hosted deployments continue to work without any config change.
@@ -190,6 +266,15 @@ export function createKVStore(): KVStore {
         `[kv-store] EBAY_TOKEN_STORE_BACKEND="${rawEnv ?? ''}" → using InMemoryKVStore (no external KV calls)`
       );
       _kvStoreSingleton = new InMemoryKVStore();
+      break;
+    }
+    case 'upstash-redis':
+    case 'upstash':
+    case 'redis': {
+      console.log(
+        `[kv-store] EBAY_TOKEN_STORE_BACKEND="${rawEnv ?? ''}" → using UpstashRedisKVStore (url="${process.env.UPSTASH_REDIS_REST_URL ?? '(unset)'}")`
+      );
+      _kvStoreSingleton = new UpstashRedisKVStore();
       break;
     }
     case 'cloudflare-kv':

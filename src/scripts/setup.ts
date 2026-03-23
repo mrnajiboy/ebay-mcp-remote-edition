@@ -5,13 +5,10 @@ import { homedir, platform } from 'os';
 import axios from 'axios';
 import chalk from 'chalk';
 import { checkForUpdates } from '../utils/version.js';
-import { config } from 'dotenv';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import { getOAuthAuthorizationUrl } from '../config/environment.js';
 import prompts from 'prompts';
-
-config({ quiet: true });
 
 checkForUpdates();
 
@@ -700,8 +697,11 @@ function updateClaudeDesktopConfig(
     if (envConfig.EBAY_CLIENT_SECRET) {
       envVars.EBAY_CLIENT_SECRET = envConfig.EBAY_CLIENT_SECRET;
     }
-    if (envConfig.EBAY_REDIRECT_URI) {
-      envVars.EBAY_REDIRECT_URI = envConfig.EBAY_REDIRECT_URI;
+    if (envConfig.EBAY_RUNAME || envConfig.EBAY_REDIRECT_URI) {
+      // Pass the RuName under both keys so any code that reads either var works.
+      const ruName = envConfig.EBAY_RUNAME || envConfig.EBAY_REDIRECT_URI;
+      envVars.EBAY_RUNAME = ruName;
+      envVars.EBAY_REDIRECT_URI = ruName; // legacy compat
     }
     if (envConfig.EBAY_MARKETPLACE_ID) {
       envVars.EBAY_MARKETPLACE_ID = envConfig.EBAY_MARKETPLACE_ID;
@@ -816,7 +816,7 @@ function saveConfig(envConfig: Record<string, string>, environment: string): voi
 
 EBAY_CLIENT_ID=${envConfig.EBAY_CLIENT_ID || ''}
 EBAY_CLIENT_SECRET=${envConfig.EBAY_CLIENT_SECRET || ''}
-EBAY_REDIRECT_URI=${envConfig.EBAY_REDIRECT_URI || ''}
+EBAY_RUNAME=${envConfig.EBAY_RUNAME || envConfig.EBAY_REDIRECT_URI || ''}
 EBAY_ENVIRONMENT=${environment}
 ${marketplaceLine}
 ${contentLanguageLine}
@@ -1090,9 +1090,9 @@ async function stepCredentials(state: SetupState): Promise<StepResult> {
     },
     {
       type: 'text',
-      name: 'redirectUri',
-      message: 'Redirect URI (RuName):',
-      initial: state.config.EBAY_REDIRECT_URI || '',
+      name: 'ruName',
+      message: 'RuName (eBay-generated string from Developer Portal → User Tokens):',
+      initial: state.config.EBAY_RUNAME || state.config.EBAY_REDIRECT_URI || '',
       validate: (v: string) => v.trim().length > 0 || 'Required',
     },
   ]);
@@ -1101,7 +1101,9 @@ async function stepCredentials(state: SetupState): Promise<StepResult> {
 
   state.config.EBAY_CLIENT_ID = responses.clientId;
   state.config.EBAY_CLIENT_SECRET = responses.clientSecret;
-  state.config.EBAY_REDIRECT_URI = responses.redirectUri;
+  // Store in both new and legacy key so both code paths work going forward.
+  state.config.EBAY_RUNAME = responses.ruName;
+  state.config.EBAY_REDIRECT_URI = responses.ruName; // backward compat
 
   return 'continue';
 }
@@ -1730,7 +1732,7 @@ async function stepComplete(state: SetupState): Promise<void> {
     `Marketplace ID:  ${state.config.EBAY_MARKETPLACE_ID || 'Not set'}`,
     `Content-Lang:    ${state.config.EBAY_CONTENT_LANGUAGE || 'Not set'}`,
     `Client ID:       ${state.config.EBAY_CLIENT_ID?.slice(0, 20)}...`,
-    `Redirect URI:    ${state.config.EBAY_REDIRECT_URI?.slice(0, 30)}...`,
+    `RuName:          ${(state.config.EBAY_RUNAME || state.config.EBAY_REDIRECT_URI || '')?.slice(0, 30)}...`,
     `OAuth Token:     ${state.config.EBAY_USER_REFRESH_TOKEN ? '✓ Configured' : '✗ Not set'}`,
     `Rate Limit:      ${state.config.EBAY_USER_REFRESH_TOKEN ? '10k-50k/day' : '1k/day'}`,
   ]);

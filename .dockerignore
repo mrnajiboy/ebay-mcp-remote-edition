@@ -1,6 +1,8 @@
 node_modules
 .git
 .env
+.env.keys
+.env.vault
 build
 coverage
 dist
@@ -9,3 +11,4 @@ npm-debug.log
 pnpm-debug.log
 .vscode
 .DS_Store
+.dotenvx

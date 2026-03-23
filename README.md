@@ -21,7 +21,7 @@ This fork of [Yosef Hayim's eBay MCP](https://github.com/YosefHayim/ebay-mcp) pr
 
 - Hosted Streamable HTTP MCP deployment mode for remote server deployment
 - Multi-user server-side eBay OAuth for both production and sandbox
-- Cloudflare KV-backed storage for:
+- Cloudflare KV / Upstash Redis-backed storage for:
   - OAuth state
   - user token records
   - session records
@@ -124,7 +124,32 @@ For official eBay API support, please refer to the [eBay Developer Program](http
 1. Create a free [eBay Developer Account](https://developer.ebay.com/)
 2. Generate application keys in the [Developer Portal](https://developer.ebay.com/my/keys)
 3. Save your **Client ID** and **Client Secret**
-4. Configure environment-specific RuNames for production and sandbox as needed
+4. Configure a **RuName** (Redirect URL Name) for each environment you plan to use
+
+> **Local HTTPS callback URL (required by eBay)**
+>
+> eBay requires an **HTTPS** callback URL. For local development, use [mkcert](https://github.com/FiloSottile/mkcert) to create a locally-trusted certificate so your dev machine can serve HTTPS.
+>
+> **One-time mkcert setup (macOS):**
+> ```bash
+> brew install mkcert nss          # nss adds Firefox trust support
+> mkcert -install                  # installs local CA into system trust store
+> mkcert ebay-local.test           # creates ebay-local.test.pem + ebay-local.test-key.pem
+> echo "127.0.0.1  ebay-local.test" | sudo tee -a /etc/hosts
+> ```
+>
+> In the eBay Developer Portal, register **`https://ebay-local.test:3000/oauth/callback`** as the callback URL under **User Tokens → Add RuName**. eBay will generate a RuName string (e.g. `YourApp-YourApp-SBX-abcdefg`). Copy that RuName into `EBAY_RUNAME` (or `EBAY_SANDBOX_RUNAME` / `EBAY_PRODUCTION_RUNAME`).
+>
+> Then add to your `.env`:
+> ```
+> PUBLIC_BASE_URL=https://ebay-local.test:3000
+> EBAY_LOCAL_TLS_CERT_PATH=/path/to/ebay-local.test.pem
+> EBAY_LOCAL_TLS_KEY_PATH=/path/to/ebay-local.test-key.pem
+> ```
+>
+> The server automatically starts an HTTPS callback listener when `PUBLIC_BASE_URL` begins with `https://`.
+>
+> **Note:** `EBAY_RUNAME` is an eBay-generated string (the RuName), **not** the callback URL itself. The callback URL is set via `PUBLIC_BASE_URL`. If your eBay app was previously configured only with a hosted callback URL, you will need to add the local URL as an additional RuName in the portal — eBay currently only allows one OAuth-enabled RuName per app at a time.
 
 ### 2. Install
 
@@ -151,6 +176,30 @@ pnpm install
 pnpm run build
 ```
 
+### Environment management with dotenvx
+
+`dotenvx` is for local env workflows only.
+
+Hosted/server platforms should provide environment variables directly.
+For local development, the standard runtime scripts automatically load `.env`
+through dotenvx unless a hosted environment is detected.
+
+Common commands:
+
+```bash
+pnpm run env:encrypt
+pnpm run env:decrypt
+pnpm run env:run -- pnpm run dev:http
+```
+
+This lets you keep a local `.env` for development while also supporting
+encrypted env files for sharing or deployment workflows.
+
+The built-in runtime scripts now behave like this:
+
+- local machine → load `.env` via dotenvx automatically
+- hosted platform (for example `RENDER=true`) → use platform-provided env vars directly
+
 ### 3. Run Local Setup Wizard
 
 For local/STDIO usage after cloning:
@@ -175,6 +224,8 @@ Two ways to configure your MCP client for local (STDIO) usage:
 The configs below show both. Supply your eBay credentials either as `env` fields in the config or via a `.env` file in the working directory.
 
 > **Getting your credentials:** Run `pnpm run setup` in the cloned repo — it completes the OAuth flow and writes `EBAY_USER_REFRESH_TOKEN` to `.env`.
+
+> **`EBAY_RUNAME` is a RuName string, not a URL.** It looks like `YourApp-YourApp-SBX-abcdefg`. To obtain one, register your HTTPS callback URL in the [eBay Developer Portal](https://developer.ebay.com/my/auth) under **User Tokens → Add RuName**, then copy the generated string. See [Step 1](#1-get-ebay-credentials) for the full setup guide including mkcert local HTTPS. `EBAY_REDIRECT_URI` is still accepted as a legacy alias for `EBAY_RUNAME`.
 
 ### Cline
 
@@ -352,18 +403,23 @@ pnpm install && pnpm run build
 pnpm run start:http
 ```
 
+On hosted platforms, this uses the platform env directly and does not try to load local `.env` files.
+
 ### Recommended Render environment variables
 
 ```bash
 PORT=
+MCP_HOST=0.0.0.0
 NODE_VERSION=
 PUBLIC_BASE_URL=https://your-server.com
 EBAY_CONFIG_FILE=/etc/secrets/ebay-config.json
 EBAY_DEFAULT_ENVIRONMENT=sandbox|production
-EBAY_TOKEN_STORE_BACKEND=cloudflare-kv
+EBAY_TOKEN_STORE_BACKEND=cloudflare-kv|upstash-redis
 CLOUDFLARE_ACCOUNT_ID=ID
 CLOUDFLARE_KV_NAMESPACE_ID=ID
 CLOUDFLARE_API_TOKEN=your-cloudflare-api-token
+UPSTASH_REDIS_REST_URL=https://...upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-upstash-rest-token
 ADMIN_API_KEY=your-admin-api-key
 OAUTH_START_KEY=optional-shared-secret-for-oauth-start
 EBAY_MARKETPLACE_ID=EBAY_COUNTRY
@@ -430,7 +486,7 @@ X-OAuth-Start-Key: YOUR_OAUTH_START_KEY
 
 ### Hosted session token usage
 
-After successful callback, the app issues a session token and displays it in a copy-friendly callback page.
+After successful callback, the app issues a session token and stores it in the configured persistent backend (Cloudflare KV or Upstash Redis), then displays it in a copy-friendly callback page.
 
 Use it in your MCP client:
 
@@ -444,7 +500,7 @@ For Make/Zapier/TypingMind anywhere where Remote MCP is accepted, the practical 
 2. copy the returned session token from the callback page
 3. paste it into the platform's API Key / Access token field
 
-Normal MCP usage should not open a browser window once a valid hosted session token already exists.
+Normal MCP usage should not open a browser window once a valid hosted session token already exists in the configured persistent store.
 
 ### Admin endpoints
 
@@ -585,6 +641,36 @@ EBAY_MARKETPLACE_ID=EBAY_COUNTRY
 EBAY_CONTENT_LANGUAGE=lang_COUNTRY
 EBAY_USER_REFRESH_TOKEN=your_refresh_token
 ```
+
+Other supported env vars used by the current runtime:
+
+```bash
+MCP_HOST=0.0.0.0        # optional HTTP bind host
+EBAY_TOKEN_STORE_PATH=.ebay-user-tokens.json   # legacy single-user file token store path
+```
+
+Notes:
+- `EBAY_TOKEN_STORE_PATH` is part of the older local file-token-store path and is **not** used by the hosted multi-user KV/Redis auth flow.
+
+Token env vars such as `EBAY_USER_REFRESH_TOKEN`, `EBAY_USER_ACCESS_TOKEN`, and `EBAY_APP_ACCESS_TOKEN`
+should be treated as local single-user inputs or explicit manual override flows.
+In hosted multi-user mode, OAuth state, user tokens, and session tokens are persisted in the configured
+remote store (Cloudflare KV or Upstash Redis), not in environment variables.
+
+For multi-user local or hosted deployments, use a persistent auth store:
+
+- `EBAY_TOKEN_STORE_BACKEND=cloudflare-kv`, or
+- `EBAY_TOKEN_STORE_BACKEND=upstash-redis`
+
+Use `memory` only for tests or throwaway dev sessions, since all OAuth state,
+user tokens, and session tokens are lost on restart.
+
+Backend selection is driven by `EBAY_TOKEN_STORE_BACKEND` explicitly. Credentials alone do not select the backend:
+
+- `EBAY_TOKEN_STORE_BACKEND=cloudflare-kv` → Cloudflare KV
+- `EBAY_TOKEN_STORE_BACKEND=upstash-redis` → Upstash Redis
+
+If the selected backend is missing required credentials, the server now fails loudly at startup instead of silently appearing to use the wrong store.
 
 ### OAuth Authentication
 
