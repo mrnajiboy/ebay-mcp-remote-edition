@@ -1605,9 +1605,7 @@ export async function executeTool(
       // The MCP tool definition wraps inputs inside a `destination` field:
       // { destination: { name, endpoint, verificationToken } }
       // eBay API expects: { name, status, deliveryConfig: { endpoint, verificationToken } }
-      const dest = (args as Record<string, unknown>).destination as
-        | Record<string, unknown>
-        | undefined;
+      const dest = args.destination as Record<string, unknown> | undefined;
       if (dest) {
         const { name, endpoint, verificationToken, status } = dest as {
           name?: string;
@@ -1662,7 +1660,8 @@ export async function executeTool(
       const validated = createSubscriptionSchema.parse(args);
       // Convert snake_case to camelCase for eBay API
       const subPayload: Record<string, unknown> = {};
-      if (validated.destination_id !== undefined) subPayload.destinationId = validated.destination_id;
+      if (validated.destination_id !== undefined)
+        subPayload.destinationId = validated.destination_id;
       if (validated.status !== undefined) subPayload.status = validated.status;
       if (validated.topic_id !== undefined) subPayload.topicId = validated.topic_id;
       if (validated.payload !== undefined) {
