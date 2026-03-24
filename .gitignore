@@ -78,6 +78,7 @@ $RECYCLE.BIN/
 .vi
 .vim/
 .netrwhist
+.kilocode/
 
 # Testing
 coverage/
