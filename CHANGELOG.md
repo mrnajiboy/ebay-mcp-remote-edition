@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.1.2...ebay-mcp-remote-edition-v3.2.0) (2026-03-31)
+
+
+### Features
+
+* added validation data endpoints for market research, still beta, testing for bugs. ([688e469](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/688e469abe953af336e5d505ffbdb10811fa643e))
+
+
+### Bug Fixes
+
+* a lot ([e07c955](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/e07c9553d3ba36257c7a1bb6087fd6c79d6c360a))
+* added third-party sold data api to validation endpoint ([82aa229](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/82aa229768fc427d67b76908db41226eeea15a90))
+* callback page ([a7d358f](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/a7d358f6a2df95e16860f4b116a875fc4f5492dc))
+* createDestination call ([5082ef4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/5082ef440ed1ed72fcfe9884b0da71550a265cea))
+* lint ([092ac48](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/092ac482335a9c4bccda4a38a9c6b493ea51ce1a))
+* linting ([4a2b033](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/4a2b0336c3fdf504d0091ab5bde433457053d672))
+* linting/prettier ([a04c389](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/a04c3895de01f95f940a70c4cd57fedee213a886))
+* memory allocation, for better memory management, less 134 errors ([557fbfd](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/557fbfd9bd78b0c73f937d5caec29fd29772abe3))
+* rename script ([ad1784c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/ad1784c831b8286e7dc94ace984d064e4e77c886))
+* test formatting issue for destination tool call ([7120876](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7120876cb874cc6279aa2f7e5983d020b8b86bf0))
+* token endpoints ([67661ed](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/67661edd157a05a0c24779765f9e9e3fdf652a41))
+* validation endpoint maintenance ([2320852](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/2320852fe82f8d1915a0a0c5d2f962487c8d35cc))
+* validation runner changes ([3eef648](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/3eef64802f548545ada1b855edcb1bd0eacea9e0))
+* versioning logic ([2aca668](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/2aca668cd2c2c9878d1b535376c243a4c5e76df8))
+
+
+### Dependencies
+
+* update deps ([c8257d9](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/c8257d96bb576561f2b0a6f4f1a642c5319c3ebe))
+
+
+### Documentation
+
+* update API status snapshot [skip ci] ([aa60039](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/aa600392d521c0bcb7877f6ae646a8e6443b9dc2))
+* update gitignore ([0502279](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/050227934d4cd01047e34f73dc6a8be0d489a945))
+
 ## [3.1.2](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.1.1...ebay-mcp-remote-edition-v3.1.2) (2026-03-23)
 
 
