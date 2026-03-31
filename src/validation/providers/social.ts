@@ -3,6 +3,7 @@ import type {
   SocialValidationSignals,
   ValidationRunRequest,
   ValidationSignalConfidence,
+  YouTubeCandidateClass,
 } from '../types.js';
 import {
   buildRedditQueryPlan,
@@ -63,6 +64,7 @@ interface RankedYouTubeCandidate {
   avgDailyViews: number | null;
   relevanceScore: number;
   rankingSignals: {
+    candidateClass: YouTubeCandidateClass;
     officialTitleSignal: boolean;
     officialChannelSignal: boolean;
     brandedChannelSignal: boolean;
@@ -73,6 +75,7 @@ interface RankedYouTubeCandidate {
     albumPhraseAlignment: boolean;
     albumKeywordMatches: number;
     queryMatchCount: number;
+    officialReleaseScore: number;
   };
 }
 
@@ -168,19 +171,35 @@ function scoreYouTubeCandidate(
   const queryMatchBoost = candidate.matchedQueries.length * 8;
   const viewSignal =
     candidate.totalViews !== null ? Math.min(8, Math.log10(candidate.totalViews + 1)) : 0;
+  const officialReleaseScore =
+    (hasOfficialSignal ? 90 : 0) +
+    (hasOfficialChannelSignal ? 95 : 0) +
+    (hasBrandedChannelSignal && channelContainsArtist ? 35 : 0) +
+    (hasAlbumPhraseMatch ? 20 : 0) +
+    albumMatches * 12 -
+    (hasDemotedTitleSignal ? 120 : 0) -
+    (hasShortsSignal ? 70 : 0) -
+    (hasDemotedChannelSignal ? 90 : 0);
+  const candidateClass: YouTubeCandidateClass =
+    hasDemotedTitleSignal || hasShortsSignal || hasDemotedChannelSignal
+      ? 'fallback_adjacent'
+      : hasOfficialSignal || hasOfficialChannelSignal
+        ? 'official_release'
+        : (hasBrandedChannelSignal || channelContainsArtist) &&
+            (hasArtistAlignment || hasAlbumPhraseMatch || albumMatches > 0)
+          ? 'branded_media'
+          : 'fallback_adjacent';
   const score =
-    (hasArtistAlignment ? 110 : 0) +
-    (hasAlbumPhraseMatch ? 50 : 0) +
-    albumMatches * 30 +
-    (hasOfficialSignal ? 55 : 0) +
-    (hasOfficialChannelSignal ? 50 : hasBrandedChannelSignal && channelContainsArtist ? 18 : 0) -
-    (hasDemotedTitleSignal ? 65 : 0) -
-    (hasShortsSignal ? 35 : 0) -
-    (hasDemotedChannelSignal ? 35 : 0) +
+    officialReleaseScore +
+    (candidateClass === 'official_release' ? 160 : candidateClass === 'branded_media' ? 70 : 0) +
+    (hasArtistAlignment ? 95 : 0) +
+    (hasAlbumPhraseMatch ? 40 : 0) +
+    albumMatches * 18 +
     queryMatchBoost +
     viewSignal;
 
   return {
+    candidateClass,
     officialTitleSignal: hasOfficialSignal,
     officialChannelSignal: hasOfficialChannelSignal,
     brandedChannelSignal: hasBrandedChannelSignal,
@@ -191,8 +210,20 @@ function scoreYouTubeCandidate(
     albumPhraseAlignment: hasAlbumPhraseMatch,
     albumKeywordMatches: albumMatches,
     queryMatchCount: candidate.matchedQueries.length,
+    officialReleaseScore,
     score,
   };
+}
+
+function getYouTubeCandidateClassRank(candidateClass: YouTubeCandidateClass): number {
+  switch (candidateClass) {
+    case 'official_release':
+      return 0;
+    case 'branded_media':
+      return 1;
+    case 'fallback_adjacent':
+      return 2;
+  }
 }
 
 function getAxiosFailureDebug(error: unknown): {
@@ -425,6 +456,7 @@ export async function getSocialValidationSignals(
               avgDailyViews,
               relevanceScore: 0,
               rankingSignals: {
+                candidateClass: 'fallback_adjacent',
                 officialTitleSignal: false,
                 officialChannelSignal: false,
                 brandedChannelSignal: false,
@@ -435,6 +467,7 @@ export async function getSocialValidationSignals(
                 albumPhraseAlignment: false,
                 albumKeywordMatches: 0,
                 queryMatchCount: searchCandidate?.matchedQueries.length ?? 0,
+                officialReleaseScore: 0,
               },
             };
           }
@@ -449,6 +482,7 @@ export async function getSocialValidationSignals(
           );
           candidate.relevanceScore = ranking.score;
           candidate.rankingSignals = {
+            candidateClass: ranking.candidateClass,
             officialTitleSignal: ranking.officialTitleSignal,
             officialChannelSignal: ranking.officialChannelSignal,
             brandedChannelSignal: ranking.brandedChannelSignal,
@@ -459,10 +493,17 @@ export async function getSocialValidationSignals(
             albumPhraseAlignment: ranking.albumPhraseAlignment,
             albumKeywordMatches: ranking.albumKeywordMatches,
             queryMatchCount: ranking.queryMatchCount,
+            officialReleaseScore: ranking.officialReleaseScore,
           };
         }
 
         rankedCandidates.sort((left, right) => {
+          const classDelta =
+            getYouTubeCandidateClassRank(left.rankingSignals.candidateClass) -
+            getYouTubeCandidateClassRank(right.rankingSignals.candidateClass);
+          if (classDelta !== 0) {
+            return classDelta;
+          }
           if (right.relevanceScore !== left.relevanceScore) {
             return right.relevanceScore - left.relevanceScore;
           }
@@ -485,6 +526,7 @@ export async function getSocialValidationSignals(
           checked: true,
           queryCandidates,
           selectedQuery,
+          selectedCandidateClass: selectedCandidate?.rankingSignals.candidateClass ?? null,
           query: selectedQuery,
           searchUrl: selectedQuery ? buildYouTubeSearchUrl(selectedQuery) : undefined,
           resultsExamined: rankedCandidates.length,
@@ -507,6 +549,9 @@ export async function getSocialValidationSignals(
               candidate.avgDailyViews !== null ? Math.round(candidate.avgDailyViews) : null,
             relevanceScore: candidate.relevanceScore,
             matchedQueries: candidate.matchedQueries,
+            candidateClass: candidate.rankingSignals.candidateClass,
+            selectedByClass: candidate.videoId === selectedCandidate?.videoId,
+            officialReleaseScore: candidate.rankingSignals.officialReleaseScore,
             officialTitleSignal: candidate.rankingSignals.officialTitleSignal,
             officialChannelSignal: candidate.rankingSignals.officialChannelSignal,
             brandedChannelSignal: candidate.rankingSignals.brandedChannelSignal,
@@ -525,13 +570,14 @@ export async function getSocialValidationSignals(
           daysLive: selectedCandidate?.daysLive ?? null,
           avgDailyViews: selectedAvgDailyViews,
           confidence: getYouTubeConfidence(selectedCandidate?.avgDailyViews ?? null),
-          note: 'Average daily views proxy selected from the best relevant high-view candidate, not true 24h delta.',
+          note: 'Average daily views proxy selected from the best official/branded release candidate available, not true 24h delta.',
         };
       } else {
         debug.youtube = {
           checked: true,
           queryCandidates,
           selectedQuery: queryCandidates[0],
+          selectedCandidateClass: null,
           query: queryCandidates[0],
           searchUrl: queryCandidates[0] ? buildYouTubeSearchUrl(queryCandidates[0]) : undefined,
           resultsExamined: 0,
@@ -559,6 +605,7 @@ export async function getSocialValidationSignals(
         checked: true,
         queryCandidates,
         selectedQuery: queryCandidates[0],
+        selectedCandidateClass: null,
         query: queryCandidates[0],
         searchUrl: queryCandidates[0] ? buildYouTubeSearchUrl(queryCandidates[0]) : undefined,
         resultsExamined: 0,

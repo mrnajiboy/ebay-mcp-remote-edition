@@ -2,6 +2,8 @@ export type TrackingCadence = 'Daily' | 'Hourly' | 'Off';
 
 export type ValidationSignalConfidence = 'High' | 'Medium' | 'Low';
 
+export type YouTubeCandidateClass = 'official_release' | 'branded_media' | 'fallback_adjacent';
+
 export interface ValidationSoldVelocity {
   day1Sold: number | null;
   day2Sold: number | null;
@@ -151,6 +153,7 @@ export interface SocialValidationSignals {
       searchUrl?: string;
       queryCandidates?: string[];
       selectedQuery?: string;
+      selectedCandidateClass?: YouTubeCandidateClass | null;
       resultsExamined?: number;
       queryDiagnostics?: {
         query: string;
@@ -175,6 +178,9 @@ export interface SocialValidationSignals {
         avgDailyViews: number | null;
         relevanceScore: number;
         matchedQueries: string[];
+        candidateClass?: YouTubeCandidateClass;
+        selectedByClass?: boolean;
+        officialReleaseScore?: number;
         officialTitleSignal?: boolean;
         officialChannelSignal?: boolean;
         brandedChannelSignal?: boolean;

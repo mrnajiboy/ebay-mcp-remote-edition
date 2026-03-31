@@ -38,6 +38,8 @@ const GENERIC_DESCRIPTOR_PATTERN =
   /^(?:album|albums|standard album|standard|cd|music|release|kpop|version|ver)\b/i;
 const BROWSE_DESCRIPTOR_HINT_PATTERN =
   /\blimited\b|\bdeluxe\b|\bdigipack\b|\bplatform\b|\bjewel\b|\bphotobook\b|\bkit\b|\bpoca\b|\bweverse\b|\bcompact\b|\btarget\b|\bexclusive\b|\bsigned\b|\bvinyl\b|\blp\b|\bstandard\b/i;
+const SOCIAL_CONVERSATION_NOISE_PATTERN =
+  /\b(?:lp|vinyl|cd|photobook|digipack|platform|jewel|compact|kit|poca|weverse|standard|limited|deluxe|edition|version|ver\.?)\b/gi;
 
 export function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -294,6 +296,24 @@ function dedupeQueryPlan(candidates: ProviderQueryCandidate[]): ProviderQueryCan
   return result;
 }
 
+function isValidConversationQuery(candidate: string): boolean {
+  const sanitized = sanitizeQueryCandidate(candidate);
+
+  return sanitized.length >= 2 && /[\p{L}\p{N}]/u.test(sanitized);
+}
+
+function finalizeConversationQueryPlan(
+  candidates: ProviderQueryCandidate[]
+): ProviderQueryCandidate[] {
+  return dedupeQueryPlan(candidates).filter((candidate) => isValidConversationQuery(candidate.query));
+}
+
+function buildConversationAlbumPhrase(albumPhrase: string): string {
+  const primarySegment = sanitizeQueryCandidate(albumPhrase.split(',')[0] ?? albumPhrase);
+
+  return sanitizeQueryCandidate(primarySegment.replace(SOCIAL_CONVERSATION_NOISE_PATTERN, ' '));
+}
+
 function finalizeQueryPlan(
   candidates: ProviderQueryCandidate[],
   primaryArtist: string,
@@ -400,9 +420,9 @@ export function buildSoldQueryCandidates(request: ValidationRunRequest): string[
 export function buildTwitterQueryPlan(request: ValidationRunRequest): ProviderQueryCandidate[] {
   const { primaryArtist, albumPhrase } = buildCorePhrases(request);
   const compactArtist = buildCompactPhrase(primaryArtist);
-  const compactAlbum = buildCompactPhrase(albumPhrase);
+  const compactAlbum = buildCompactPhrase(buildConversationAlbumPhrase(albumPhrase));
 
-  return finalizeQueryPlan(
+  return finalizeConversationQueryPlan(
     [
       {
         family: 'artist_album_conversation',
@@ -414,12 +434,11 @@ export function buildTwitterQueryPlan(request: ValidationRunRequest): ProviderQu
       },
       {
         family: 'artist_album_keyword',
-        query: buildCompactPhrase(compactArtist, 'album', compactAlbum),
+        query: buildCompactPhrase(compactArtist, 'album'),
       },
-      { family: 'album_artist_reversed', query: buildCompactPhrase(compactAlbum, compactArtist) },
-    ],
-    primaryArtist,
-    albumPhrase
+      { family: 'artist_only_fallback', query: compactArtist },
+      { family: 'album_only_fallback', query: compactAlbum },
+    ]
   );
 }
 
