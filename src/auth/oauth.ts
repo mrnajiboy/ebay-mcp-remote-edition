@@ -13,6 +13,12 @@ export class EbayOAuthClient {
   private appAccessTokenExpiry = 0;
   private userTokens: StoredTokenData | null = null;
   private authStore = new MultiUserAuthStore();
+  private authSource:
+    | 'stored_user_tokens'
+    | 'env_refresh_token_fallback'
+    | 'authorization_code_exchange'
+    | 'manual_set_user_tokens'
+    | null = null;
 
   constructor(
     private config: EbayConfig,
@@ -31,6 +37,7 @@ export class EbayOAuthClient {
       );
       if (stored?.tokenData) {
         this.userTokens = stored.tokenData;
+        this.authSource = 'stored_user_tokens';
         return;
       }
     }
@@ -73,6 +80,7 @@ export class EbayOAuthClient {
             : now + 18 * 30 * 24 * 60 * 60 * 1000,
           scope: tokenData.scope,
         };
+        this.authSource = 'env_refresh_token_fallback';
       } catch {
         // If refresh fails, leave userTokens as null
       }
@@ -140,6 +148,7 @@ export class EbayOAuthClient {
       userAccessTokenExpiry: accessTokenExpiry ?? now + 7200 * 1000,
       userRefreshTokenExpiry: refreshTokenExpiry ?? now + 18 * 30 * 24 * 60 * 60 * 1000,
     };
+    this.authSource = 'manual_set_user_tokens';
     await this.persistUserTokens();
   }
 
@@ -211,6 +220,7 @@ export class EbayOAuthClient {
         userRefreshTokenExpiry: now + tokenData.refresh_token_expires_in * 1000,
         scope: tokenData.scope,
       };
+      this.authSource = 'authorization_code_exchange';
       await this.persistUserTokens();
       return tokenData;
     } catch (error) {
@@ -267,6 +277,40 @@ export class EbayOAuthClient {
       scope: tokenData.scope || this.userTokens.scope,
     };
     await this.persistUserTokens();
+  }
+
+  getAuthDebugInfo(): {
+    tokenEndpoint: string;
+    environment: 'production' | 'sandbox';
+    hasClientId: boolean;
+    hasClientSecret: boolean;
+    hasRefreshToken: boolean;
+    hasAccessToken: boolean;
+    hasRedirectUri: boolean;
+    refreshTokenExpiry?: number;
+    accessTokenExpiry?: number;
+    source?:
+      | 'stored_user_tokens'
+      | 'env_refresh_token_fallback'
+      | 'authorization_code_exchange'
+      | 'manual_set_user_tokens';
+  } {
+    return {
+      tokenEndpoint: this.getTokenEndpoint(),
+      environment: this.config.environment,
+      hasClientId: this.config.clientId.trim().length > 0,
+      hasClientSecret: this.config.clientSecret.trim().length > 0,
+      hasRefreshToken: !!this.userTokens?.userRefreshToken,
+      hasAccessToken: !!this.userTokens?.userAccessToken,
+      hasRedirectUri: !!this.config.redirectUri,
+      ...(this.userTokens?.userRefreshTokenExpiry
+        ? { refreshTokenExpiry: this.userTokens.userRefreshTokenExpiry }
+        : {}),
+      ...(this.userTokens?.userAccessTokenExpiry
+        ? { accessTokenExpiry: this.userTokens.userAccessTokenExpiry }
+        : {}),
+      ...(this.authSource ? { source: this.authSource } : {}),
+    };
   }
 
   isAuthenticated(): boolean {

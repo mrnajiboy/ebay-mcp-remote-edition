@@ -1,6 +1,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import axios from 'axios';
 import { createServer as createHttpsServer } from 'https';
 import { readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
@@ -81,6 +82,36 @@ function getRetryTimestampFromBody(body: unknown): string {
     }
   }
   return new Date(Date.now() + 30 * 60 * 1000).toISOString();
+}
+
+function getAxiosFailureDebug(error: unknown): {
+  responseStatus: number | null;
+  responseBodyExcerpt: string | null;
+} {
+  if (!axios.isAxiosError(error)) {
+    return {
+      responseStatus: null,
+      responseBodyExcerpt: null,
+    };
+  }
+
+  const responseStatus = error.response?.status ?? null;
+  const rawBody: unknown = error.response?.data;
+
+  if (rawBody === undefined) {
+    return {
+      responseStatus,
+      responseBodyExcerpt: null,
+    };
+  }
+
+  const bodyText =
+    typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody, null, 2);
+
+  return {
+    responseStatus,
+    responseBodyExcerpt: bodyText.slice(0, 500),
+  };
 }
 
 function requireAdmin(
@@ -492,15 +523,60 @@ function mountEnvRouter(
     let authenticated = false;
     let authError: string | null = null;
     let tokenStatus: ReturnType<EbaySellerApi['getTokenInfo']> | null = null;
+    let authDebug:
+      | {
+          tokenEndpoint: string;
+          environment: 'production' | 'sandbox';
+          hasClientId: boolean;
+          hasClientSecret: boolean;
+          hasRefreshToken: boolean;
+          hasAccessToken: boolean;
+          hasRedirectUri: boolean;
+          configuredMarketplaceId: string;
+          configuredContentLanguage: string;
+          refreshTokenExpiry?: number;
+          accessTokenExpiry?: number;
+          source?:
+            | 'stored_user_tokens'
+            | 'env_refresh_token_fallback'
+            | 'authorization_code_exchange'
+            | 'manual_set_user_tokens';
+          responseStatus?: number | null;
+          responseBodyExcerpt?: string | null;
+        }
+      | null = null;
 
     if (validationRunnerUserId && storedTokens?.tokenData) {
       try {
         const api = await createUserScopedApi(validationRunnerUserId, environment);
+        const oauthClient = api.getAuthClient().getOAuthClient();
+        const config = api.getAuthClient().getConfig();
+        authDebug = {
+          ...oauthClient.getAuthDebugInfo(),
+          configuredMarketplaceId: config.marketplaceId ?? '',
+          configuredContentLanguage: config.contentLanguage ?? '',
+        };
         await api.getAuthClient().getOAuthClient().getAccessToken();
         authenticated = true;
         tokenStatus = api.getTokenInfo();
       } catch (error) {
         authError = error instanceof Error ? error.message : String(error);
+        const failureDebug = getAxiosFailureDebug(error);
+        authDebug = authDebug
+          ? {
+              ...authDebug,
+              responseStatus: failureDebug.responseStatus,
+              responseBodyExcerpt: failureDebug.responseBodyExcerpt,
+            }
+          : null;
+        serverLogger.error('Validation health auth check failed', {
+          environment,
+          validationRunnerUserId,
+          tokenEndpoint: authDebug?.tokenEndpoint ?? null,
+          responseStatus: failureDebug.responseStatus,
+          responseBodyExcerpt: failureDebug.responseBodyExcerpt,
+          authError,
+        });
       }
     }
 
@@ -511,6 +587,7 @@ function mountEnvRouter(
       hasStoredTokens: !!storedTokens?.tokenData,
       authenticated,
       tokenStatus,
+      authDebug,
       providers: {
         ebay: { available: true, implemented: true, confidence: 'medium' },
         social: { available: false, implemented: false, confidence: 'low' },
