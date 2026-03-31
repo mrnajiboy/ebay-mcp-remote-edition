@@ -152,11 +152,7 @@ export function buildValidationQueryCandidates(request: ValidationRunRequest): s
     primaryArtist
   );
   const tier5 = ensureArtistRetention(
-    [
-      primaryArtist,
-      request.item.releaseType[0] ?? '',
-      primaryAlbumPhrase,
-    ].join(' '),
+    [primaryArtist, request.item.releaseType[0] ?? '', primaryAlbumPhrase].join(' '),
     primaryArtist
   );
 

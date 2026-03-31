@@ -2,7 +2,9 @@ import type {
   ChartValidationSignals,
   EbaySoldValidationSignals,
   EbayValidationSignals,
+  PreviousComebackResearchSignals,
   SocialValidationSignals,
+  TerapeakValidationSignals,
   TrackingCadence,
   ValidationRunRequest,
 } from './types.js';
@@ -10,8 +12,10 @@ import type {
 interface ValidationRecommendationInput {
   ebay: EbayValidationSignals;
   sold: EbaySoldValidationSignals;
+  terapeak: TerapeakValidationSignals;
   social: SocialValidationSignals;
   chart: ChartValidationSignals;
+  research: PreviousComebackResearchSignals;
 }
 
 function addHours(timestamp: string, hours: number): string {
@@ -47,7 +51,12 @@ export function buildValidationRecommendation(
       ? addHours(request.timestamp, 1)
       : addHours(request.timestamp, 24);
 
-  const marketPrice = signals.sold.soldMedianPriceUsd ?? signals.ebay.marketPriceUsd;
+  const marketPrice =
+    signals.terapeak.marketPriceUsd ??
+    signals.sold.soldMedianPriceUsd ??
+    signals.ebay.marketPriceUsd;
+  const preorderListingsCount =
+    signals.terapeak.preOrderListingsCount ?? signals.ebay.preOrderListingsCount;
   const wholesale = request.item.wholesalePrice;
   const marginRatio =
     marketPrice !== null && wholesale !== null && wholesale > 0
@@ -72,8 +81,8 @@ export function buildValidationRecommendation(
   } else if (
     marginRatio !== null &&
     marginRatio >= 1 &&
-    signals.ebay.preOrderListingsCount !== null &&
-    signals.ebay.preOrderListingsCount >= 25
+    preorderListingsCount !== null &&
+    preorderListingsCount >= 25
   ) {
     latestAiRecommendation =
       'Demand and pricing look constructive. Continue tracking closely and be ready to upgrade from watch status if sell-through strengthens.';
@@ -102,7 +111,8 @@ export function buildValidationRecommendation(
       'Temporary sold-provider data is present, but sample depth is not yet strong enough to justify an automatic buy-decision change.';
   } else if (
     signals.social.twitterTrending === true ||
-    (signals.social.youtubeViews24hMillions !== null && signals.social.youtubeViews24hMillions >= 0.1) ||
+    (signals.social.youtubeViews24hMillions !== null &&
+      signals.social.youtubeViews24hMillions >= 0.1) ||
     (signals.social.redditPostsCount7d !== null && signals.social.redditPostsCount7d >= 5)
   ) {
     latestAiRecommendation =
@@ -110,6 +120,21 @@ export function buildValidationRecommendation(
     latestAiConfidence = 'Medium';
     monitoringNotes =
       'Cross-channel social activity exists, but it is only being used as a supporting confidence signal and is not strong enough to justify an automatic buy change.';
+  }
+
+  if (
+    signals.terapeak.previousPobSellThroughPct !== null &&
+    signals.terapeak.previousPobSellThroughPct >= 50
+  ) {
+    monitoringNotes +=
+      ' Previous POB sell-through research suggests the comparable release sold through efficiently.';
+    if (latestAiConfidence !== 'High') {
+      latestAiConfidence = 'Medium';
+    }
+  }
+
+  if (signals.research.previousComebackFirstWeekSales !== null) {
+    monitoringNotes += ` Previous comeback first-week sales reference: ${signals.research.previousComebackFirstWeekSales}.`;
   }
 
   return {

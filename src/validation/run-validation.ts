@@ -3,11 +3,15 @@ import { validationRunRequestSchema } from './schemas.js';
 import type { ValidationRunRequest, ValidationRunResponse } from './types.js';
 import { getEbayValidationSignals } from './providers/ebay.js';
 import { getEbaySoldValidationSignals } from './providers/ebay-sold.js';
+import { getTerapeakValidationSignals } from './providers/terapeak.js';
 import { getSocialValidationSignals } from './providers/social.js';
 import { getChartValidationSignals } from './providers/chart.js';
+import { getPreviousComebackResearchSignals } from './providers/research.js';
 import { buildValidationRecommendation } from './recommendation.js';
 
 type ResolvedSocialSignals = Awaited<ReturnType<typeof getSocialValidationSignals>>;
+type ResolvedTerapeakSignals = Awaited<ReturnType<typeof getTerapeakValidationSignals>>;
+type ResolvedResearchSignals = Awaited<ReturnType<typeof getPreviousComebackResearchSignals>>;
 
 function addMinutes(timestamp: string, minutes: number): string {
   return new Date(new Date(timestamp).getTime() + minutes * 60 * 1000).toISOString();
@@ -36,8 +40,10 @@ function getValidationId(input: unknown): string {
 function buildProviderDebug(
   ebay: Awaited<ReturnType<typeof getEbayValidationSignals>>,
   sold: Awaited<ReturnType<typeof getEbaySoldValidationSignals>>,
+  terapeak: ResolvedTerapeakSignals,
   social: ResolvedSocialSignals,
-  chart: ReturnType<typeof getChartValidationSignals>
+  chart: ReturnType<typeof getChartValidationSignals>,
+  research: ResolvedResearchSignals
 ): Record<string, unknown> {
   return {
     ebay: {
@@ -60,6 +66,19 @@ function buildProviderDebug(
       hasMedianPrice: sold.soldMedianPriceUsd !== null,
       hasVelocity: sold.soldVelocity.daysTracked !== null,
     },
+    terapeak: {
+      provider: terapeak.provider,
+      confidence: terapeak.confidence.toLowerCase(),
+      currentQuery: terapeak.queryDebug.currentQuery,
+      previousPobQuery: terapeak.queryDebug.previousPobQuery,
+      selectedMode: terapeak.queryDebug.selectedMode,
+      currentResultCount: terapeak.queryDebug.currentResultCount,
+      previousPobResultCount: terapeak.queryDebug.previousPobResultCount,
+      hasWatchers: terapeak.avgWatchersPerListing !== null,
+      hasPreviousPobMetrics:
+        terapeak.previousPobAvgPriceUsd !== null || terapeak.previousPobSellThroughPct !== null,
+      notes: terapeak.queryDebug.notes,
+    },
     social: {
       status: social.debug ? 'ok' : 'partial',
       confidence: 'low' as const,
@@ -73,6 +92,13 @@ function buildProviderDebug(
       status: 'stub',
       confidence: 'low',
       hasSignals: Object.keys(chart).length > 0,
+    },
+    research: {
+      confidence: research.confidence.toLowerCase(),
+      previousAlbumTitle: research.previousAlbumTitle,
+      previousComebackFirstWeekSales: research.previousComebackFirstWeekSales,
+      notes: research.notes,
+      sources: research.sources ?? [],
     },
   };
 }
@@ -99,9 +125,16 @@ export async function runValidation(
   try {
     const ebay = await getEbayValidationSignals(api, request);
     const sold = await getEbaySoldValidationSignals(request);
+    const terapeak = await getTerapeakValidationSignals(api, request);
     const social = await getSocialValidationSignals(request);
     const chart = getChartValidationSignals(request);
-    const marketPriceUsd = sold.soldMedianPriceUsd ?? ebay.marketPriceUsd;
+    const research = await getPreviousComebackResearchSignals(request);
+    const mergedAvgWatchers = terapeak.avgWatchersPerListing ?? ebay.avgWatchersPerListing;
+    const mergedPreorderListings = terapeak.preOrderListingsCount ?? ebay.preOrderListingsCount;
+    const marketPriceUsd =
+      terapeak.marketPriceUsd ?? sold.soldMedianPriceUsd ?? ebay.marketPriceUsd;
+    const mergedAvgShippingCostUsd = terapeak.avgShippingCostUsd ?? ebay.avgShippingCostUsd;
+    const mergedCompetitionLevel = terapeak.competitionLevel ?? ebay.competitionLevel;
     const soldVelocity = {
       day1Sold: sold.soldVelocity.day1Sold ?? ebay.soldVelocity.day1Sold,
       day2Sold: sold.soldVelocity.day2Sold ?? ebay.soldVelocity.day2Sold,
@@ -111,8 +144,15 @@ export async function runValidation(
       daysTracked: sold.soldVelocity.daysTracked ?? ebay.soldVelocity.daysTracked,
     };
 
-    const recommendation = buildValidationRecommendation(request, { ebay, sold, social, chart });
-    const mergedSignals = { ebay, sold, social, chart };
+    const recommendation = buildValidationRecommendation(request, {
+      ebay,
+      sold,
+      terapeak,
+      social,
+      chart,
+      research,
+    });
+    const mergedSignals = { ebay, sold, terapeak, social, chart, research };
     const socialWrites = {
       ...(social.twitterTrending !== null ? { twitterTrending: social.twitterTrending } : {}),
       ...(social.youtubeViews24hMillions !== null
@@ -122,17 +162,30 @@ export async function runValidation(
         ? { redditPostsCount7d: social.redditPostsCount7d }
         : {}),
     };
+    const terapeakWrites = {
+      ...(terapeak.previousPobAvgPriceUsd !== null
+        ? { previousPobAvgPriceUsd: terapeak.previousPobAvgPriceUsd }
+        : {}),
+      ...(terapeak.previousPobSellThroughPct !== null
+        ? { previousPobSellThroughPct: terapeak.previousPobSellThroughPct }
+        : {}),
+    };
+    const researchWrites = {
+      ...(research.previousComebackFirstWeekSales !== null
+        ? { previousComebackFirstWeekSales: research.previousComebackFirstWeekSales }
+        : {}),
+    };
 
     return {
       status: 'ok',
       validationId: request.validationId,
       writes: {
-        avgWatchersPerListing: ebay.avgWatchersPerListing,
-        preOrderListingsCount: ebay.preOrderListingsCount,
+        avgWatchersPerListing: mergedAvgWatchers,
+        preOrderListingsCount: mergedPreorderListings,
         ...socialWrites,
         marketPriceUsd,
-        avgShippingCostUsd: ebay.avgShippingCostUsd,
-        competitionLevel: ebay.competitionLevel,
+        avgShippingCostUsd: mergedAvgShippingCostUsd,
+        competitionLevel: mergedCompetitionLevel,
         marketPriceTrend: ebay.marketPriceTrend,
         day1Sold: soldVelocity.day1Sold,
         day2Sold: soldVelocity.day2Sold,
@@ -140,6 +193,8 @@ export async function runValidation(
         day4Sold: soldVelocity.day4Sold,
         day5Sold: soldVelocity.day5Sold,
         daysTracked: soldVelocity.daysTracked,
+        ...terapeakWrites,
+        ...researchWrites,
         monitoringNotes: recommendation.monitoringNotes,
         lastDataSnapshot: JSON.stringify(mergedSignals),
         latestAiRecommendation: recommendation.latestAiRecommendation,
@@ -159,10 +214,13 @@ export async function runValidation(
         queryCandidates: {
           ebay: ebay.queryCandidates ?? [],
           sold: sold.queryCandidates ?? [],
+          terapeak: [terapeak.queryDebug.currentQuery, terapeak.queryDebug.previousPobQuery].filter(
+            (value): value is string => typeof value === 'string' && value.length > 0
+          ),
         },
         sampleSize: ebay.sampleSize,
-        sourceSet: ['ebay', 'sold', 'social', 'chart'],
-        providers: buildProviderDebug(ebay, sold, social, chart),
+        sourceSet: ['ebay', 'sold', 'terapeak', 'social', 'chart', 'research'],
+        providers: buildProviderDebug(ebay, sold, terapeak, social, chart, research),
       },
     };
   } catch (error) {

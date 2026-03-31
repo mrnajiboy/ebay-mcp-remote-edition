@@ -1,5 +1,9 @@
 import axios from 'axios';
-import type { SocialValidationSignals, ValidationRunRequest, ValidationSignalConfidence } from '../types.js';
+import type {
+  SocialValidationSignals,
+  ValidationRunRequest,
+  ValidationSignalConfidence,
+} from '../types.js';
 import { buildValidationQueryCandidates, normalizeWhitespace } from './query-utils.js';
 
 interface TwitterRecentSearchResponse {
@@ -164,7 +168,10 @@ export async function getSocialValidationSignals(
         const publishedDate = publishedAt ? new Date(publishedAt) : null;
         const daysLive =
           publishedDate && Number.isFinite(publishedDate.getTime())
-            ? Math.max(1, Math.floor((Date.now() - publishedDate.getTime()) / (24 * 60 * 60 * 1000)))
+            ? Math.max(
+                1,
+                Math.floor((Date.now() - publishedDate.getTime()) / (24 * 60 * 60 * 1000))
+              )
             : null;
         const avgDailyViews =
           totalViews !== null && daysLive !== null && daysLive > 0 ? totalViews / daysLive : null;

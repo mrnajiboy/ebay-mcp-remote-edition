@@ -139,6 +139,36 @@ export interface SocialValidationSignals {
   };
 }
 
+export interface TerapeakValidationSignals {
+  avgWatchersPerListing: number | null;
+  preOrderListingsCount: number | null;
+  marketPriceUsd: number | null;
+  avgShippingCostUsd: number | null;
+  competitionLevel: number | null;
+  previousPobAvgPriceUsd: number | null;
+  previousPobSellThroughPct: number | null;
+  currentListingsCount: number | null;
+  soldListingsCount: number | null;
+  provider: 'terapeak' | 'ebay_research_ui' | 'none';
+  confidence: ValidationSignalConfidence;
+  queryDebug: {
+    currentQuery?: string | null;
+    previousPobQuery?: string | null;
+    selectedMode?: 'current_market' | 'previous_pob' | 'combined' | null;
+    currentResultCount?: number | null;
+    previousPobResultCount?: number | null;
+    notes?: string | null;
+  };
+}
+
+export interface PreviousComebackResearchSignals {
+  previousAlbumTitle: string | null;
+  previousComebackFirstWeekSales: number | null;
+  confidence: ValidationSignalConfidence;
+  notes: string;
+  sources?: string[];
+}
+
 export interface ChartValidationSignals {
   chartMomentum?: string | null;
 }
@@ -159,6 +189,9 @@ export interface ValidationWrites {
   day4Sold?: number | null;
   day5Sold?: number | null;
   daysTracked?: number | null;
+  previousPobAvgPriceUsd?: number | null;
+  previousPobSellThroughPct?: number | null;
+  previousComebackFirstWeekSales?: number | null;
   monitoringNotes?: string;
   lastDataSnapshot?: string;
   latestAiRecommendation?: string;

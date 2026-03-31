@@ -49,8 +49,9 @@ This is an open-source project provided "as is" without warranty of any kind. Th
   - [OAuth flows](#oauth-flows)
   - [MCP endpoints](#mcp-endpoints)
   - [Validation architecture](#validation-architecture)
-  - [Validation endpoints](#validation-endpoints)
-  - [Validation status and limitations](#validation-status-and-limitations)
+  - [Validation endpoints and auth model](#validation-endpoints-and-auth-model)
+  - [Diagnostics and health endpoints](#diagnostics-and-health-endpoints)
+  - [Validation provider behavior and limitations](#validation-provider-behavior-and-limitations)
   - [Remote client configuration](#remote-client-configuration)
 - [Available tools](#available-tools)
 - [Development](#development)
@@ -311,6 +312,19 @@ VALIDATION_RUNNER_USER_ID_PRODUCTION=
 SOLD_ITEMS_API_URL=
 SOLD_ITEMS_API_KEY=
 
+# Future orchestration-side historical research provider.
+# Currently only used to enable the placeholder research contract.
+PERPLEXITY_API_KEY=
+
+# Optional phase-1 social-signal providers used by hosted validation.
+# These signals are supportive only and should not be treated as authoritative
+# automated buy triggers on their own.
+TWITTER_BEARER_TOKEN=
+YOUTUBE_API_KEY=
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+REDDIT_USER_AGENT=
+
 # Session TTL (optional; default 30 days)
 SESSION_TTL_SECONDS=2592000
 
@@ -446,10 +460,27 @@ Current module layout:
 - [`src/validation/types.ts`](src/validation/types.ts) — request/response contracts for validation runs, decision payloads, debug payloads, and provider signal types
 - [`src/validation/run-validation.ts`](src/validation/run-validation.ts) — orchestration entrypoint that validates input, queries providers, merges signals, and returns writes/decision/debug output
 - [`src/validation/recommendation.ts`](src/validation/recommendation.ts) — recommendation and automation decision logic
-- [`src/validation/providers/ebay.ts`](src/validation/providers/ebay.ts) — live eBay market snapshot provider using the server's existing user-scoped eBay API client
+- [`src/validation/providers/ebay.ts`](src/validation/providers/ebay.ts) — live eBay browse-market snapshot provider using the server's existing user-scoped eBay API client
 - [`src/validation/providers/ebay-sold.ts`](src/validation/providers/ebay-sold.ts) — temporary sold-data provider backed by an external API via `SOLD_ITEMS_API_URL` and `SOLD_ITEMS_API_KEY`
-- [`src/validation/providers/social.ts`](src/validation/providers/social.ts) — stub social-signal provider
-- [`src/validation/providers/chart.ts`](src/validation/providers/chart.ts) — stub chart-signal provider
+- [`src/validation/providers/terapeak.ts`](src/validation/providers/terapeak.ts) — stable Terapeak/eBay research contract provider for current-market and previous-POB metrics; currently a placeholder contract, not a live authenticated research integration yet
+- [`src/validation/providers/query-utils.ts`](src/validation/providers/query-utils.ts) — shared multi-tier query candidate and fallback helpers used by browse and sold providers
+- [`src/validation/providers/social.ts`](src/validation/providers/social.ts) — phase-1 social provider for recent Twitter/X activity, YouTube view-rate proxy data, and Reddit recent-post counts with graceful degradation
+- [`src/validation/providers/chart.ts`](src/validation/providers/chart.ts) — chart-signal stub reserved for later implementation
+- [`src/validation/providers/research.ts`](src/validation/providers/research.ts) — stable previous-comeback research contract provider for orchestration-side historical inference; currently a placeholder contract with optional future `PERPLEXITY_API_KEY` support
+
+Current provider domains called by [`runValidation()`](src/validation/run-validation.ts:106):
+
+- **browse/current-market** via [`src/validation/providers/ebay.ts`](src/validation/providers/ebay.ts)
+- **sold enrichment** via [`src/validation/providers/ebay-sold.ts`](src/validation/providers/ebay-sold.ts)
+- **Terapeak / eBay research contract** via [`src/validation/providers/terapeak.ts`](src/validation/providers/terapeak.ts)
+- **social support signals** via [`src/validation/providers/social.ts`](src/validation/providers/social.ts)
+- **chart support signals** via [`src/validation/providers/chart.ts`](src/validation/providers/chart.ts)
+- **previous comeback research inference** via [`src/validation/providers/research.ts`](src/validation/providers/research.ts)
+
+Architecturally, the validation stack is split into two practical classes of providers:
+
+- **Server-side authenticated providers** — these run with the hosted backend's stored eBay user context and are the right place for authenticated marketplace retrieval. Today that means the live browse/current-market provider in [`src/validation/providers/ebay.ts`](src/validation/providers/ebay.ts), the sold enrichment layer in [`src/validation/providers/ebay-sold.ts`](src/validation/providers/ebay-sold.ts), and the Terapeak/eBay research contract in [`src/validation/providers/terapeak.ts`](src/validation/providers/terapeak.ts).
+- **Orchestration-side research providers** — these run as supporting inference layers inside orchestration rather than as part of the user-scoped eBay API client surface. Today that means previous comeback resolution and external historical-research inference in [`src/validation/providers/research.ts`](src/validation/providers/research.ts), plus non-authoritative support providers such as [`src/validation/providers/social.ts`](src/validation/providers/social.ts) and [`src/validation/providers/chart.ts`](src/validation/providers/chart.ts).
 
 Operationally, validation works like this:
 
@@ -457,12 +488,26 @@ Operationally, validation works like this:
 2. The server resolves the environment (`sandbox` or `production`) from the mounted route tree.
 3. The route looks up the configured validation runner user ID for that environment.
 4. The server loads that user's stored refresh-token-backed credentials from the existing hosted auth store.
-5. The validation orchestrator gathers eBay market data, temporary sold-data enrichment, and stubbed social/chart signals.
-6. The response returns normalized field writes, a buy/track decision block, and provider debug metadata for downstream systems.
+5. The validation orchestrator calls all six provider domains and gathers browse/current-market, sold enrichment, Terapeak/research contract data, social support signals, chart stub output, and previous-comeback research output.
+6. [`runValidation()`](src/validation/run-validation.ts:106) deterministically merges the provider outputs into normalized field writes.
+7. The response returns those writes, a conservative buy/track decision block, and provider debug metadata for downstream systems.
 
-Important auth detail: the validation routes do **not** use MCP OAuth client auth. They reuse the existing hosted multi-user token architecture and require an admin caller plus a stored refresh-token-backed user context for the configured validation runner.
+The validation contract is intentionally split between stable route orchestration and swappable providers. That is why the current sold-data source can be replaced later without changing downstream orchestration or the hosted route contract implemented in [`src/validation/run-validation.ts`](src/validation/run-validation.ts).
 
-### Validation endpoints
+#### Deterministic merge precedence
+
+The current merge order is fixed in [`runValidation()`](src/validation/run-validation.ts:106) so downstream systems can treat the writes as predictable rather than provider-order dependent:
+
+- **Watchers / preorder count / shipping / competition** prefer Terapeak contract output when available, then fall back to the browse/current-market provider.
+- **Market price** prefers Terapeak contract output, then the sold provider's median sold price, then the browse/current-market provider.
+- **Sold day buckets** (`day1Sold` through `day5Sold`, plus `daysTracked`) prefer the sold provider and only fall back to browse-derived values when sold enrichment is missing.
+- **Previous POB metrics** (`previousPobAvgPriceUsd`, `previousPobSellThroughPct`) are written from the Terapeak contract output when available.
+- **Previous comeback first-week sales** (`previousComebackFirstWeekSales`) is written from the orchestration-side research provider when available.
+- **Supportive social fields** are only written when a value is actually resolved, so the pipeline avoids blanking previously stored downstream data.
+
+The validation signal contracts in [`TerapeakValidationSignals`](src/validation/types.ts:142) and [`PreviousComebackResearchSignals`](src/validation/types.ts:164) also back the new write fields in [`ValidationWrites`](src/validation/types.ts:176): `previousPobAvgPriceUsd`, `previousPobSellThroughPct`, and `previousComebackFirstWeekSales`.
+
+### Validation endpoints and auth model
 
 Use the environment-scoped hosted routes for validation:
 
@@ -480,6 +525,15 @@ Both routes require the admin key:
 X-Admin-API-Key: YOUR_ADMIN_API_KEY
 ```
 
+Auth model summary:
+
+- Validation routes are **hosted HTTP backend routes**, not MCP tool endpoints.
+- They do **not** use MCP client auth for execution.
+- They reuse the existing stored refresh-token-backed hosted user architecture.
+- The caller authenticates with `X-Admin-API-Key`, and the server then impersonates the configured validation runner user for the target environment.
+- Validation runner identity comes from `VALIDATION_RUNNER_USER_ID`, `VALIDATION_RUNNER_USER_ID_SANDBOX`, or `VALIDATION_RUNNER_USER_ID_PRODUCTION`.
+- The validation runner must already have stored hosted tokens in the configured token store backend.
+
 #### `POST /validation/run`
 
 Runs the validation pipeline for the target environment.
@@ -491,6 +545,8 @@ Runs the validation pipeline for the target environment.
   - `status: "error"` with `errorCode`, `message`, `retryable`, and `nextCheckAt`
 
 The request/response contract is defined in [`src/validation/types.ts`](src/validation/types.ts), and the orchestration behavior is implemented in [`src/validation/run-validation.ts`](src/validation/run-validation.ts).
+
+The `writes` payload is intentionally non-destructive for supportive social fields: if a social provider cannot resolve data, the orchestration omits those writes instead of overwriting existing downstream values with empty placeholders.
 
 #### `GET /validation/health`
 
@@ -508,25 +564,69 @@ This endpoint is intended for deployment diagnostics and returns:
 
 The diagnostics are especially useful after the OAuth token endpoint fix in [`getOAuthTokenBaseUrl()`](src/config/environment.ts:373) and the debug additions in [`getAuthDebugInfo()`](src/auth/oauth.ts:282). If the validation runner cannot refresh tokens, `/validation/health` shows the resolved token endpoint and any captured upstream response status/body excerpt.
 
-### Validation status and limitations
+### Diagnostics and health endpoints
+
+Use these endpoints together when validating a hosted deployment:
+
+```
+GET /health
+GET /whoami
+GET /sandbox/validation/health
+GET /production/validation/health
+```
+
+Recommended debugging flow:
+
+1. Call `/health` to confirm the HTTP service is up.
+2. Call `/whoami` with a Bearer hosted session token to confirm the active hosted user session, bound environment, expiry, and revocation status.
+3. Call the matching env-scoped `/validation/health` route with `X-Admin-API-Key` to confirm the validation runner user is configured, stored tokens exist, and token refresh succeeds.
+
+`/whoami` is especially useful when an operator wants to verify which hosted session is currently active before registering or troubleshooting the validation runner user. Validation routes themselves still authenticate with the admin key and a stored hosted runner identity, not with MCP auth.
+
+The validation health response is also the main place to verify the OAuth token-endpoint derivation fix from [`getOAuthTokenBaseUrl()`](src/config/environment.ts:373). If a refresh fails, the `authDebug` block exposes the resolved endpoint, credential-presence flags, and captured upstream response excerpts.
+
+### Validation provider behavior and limitations
 
 Current backend status:
 
 - eBay live market snapshot support is implemented and wired into orchestration.
 - Sold-data enrichment is implemented through a **temporary external provider** abstraction.
-- Social and chart providers are currently stubs and do not contribute live third-party signals yet.
+- Terapeak/eBay research and previous-comeback research are both wired into orchestration as **stable placeholder contracts**.
+- Social support signals are implemented in phase 1.
+- Chart data remains a stub.
 - Validation is currently an **admin-operated hosted backend workflow**, not an MCP tool surface.
+
+Provider behavior:
+
+- **Browse/eBay provider:** [`src/validation/providers/ebay.ts`](src/validation/providers/ebay.ts) uses the eBay Browse API plus shared query fallback logic from [`src/validation/providers/query-utils.ts`](src/validation/providers/query-utils.ts). It walks multiple query candidates, records the selected query and tier in debug output, and uses heuristic matching rather than a strict catalog identity join.
+- **Sold provider:** [`src/validation/providers/ebay-sold.ts`](src/validation/providers/ebay-sold.ts) uses a temporary external sold-data source configured by `SOLD_ITEMS_API_URL` and `SOLD_ITEMS_API_KEY`. It uses the same query-fallback strategy as the browse provider and returns sold-price ranges, sample sold items, and recent sold-velocity buckets when available.
+- **Terapeak / eBay research provider:** [`src/validation/providers/terapeak.ts`](src/validation/providers/terapeak.ts) is currently a stable placeholder contract. It already defines the query/debug shape and output fields used by orchestration, including `previousPobAvgPriceUsd` and `previousPobSellThroughPct`, but live authenticated Terapeak/eBay research retrieval is not implemented yet.
+- **Social provider:** [`src/validation/providers/social.ts`](src/validation/providers/social.ts) supports phase-1 Twitter/X recent activity, YouTube average-daily-views proxy data exposed through the `youtubeViews24hMillions` field, and Reddit recent post counts. These signals degrade gracefully on provider/API failure and are used as supportive indicators rather than authoritative demand truth.
+- **Chart provider:** [`src/validation/providers/chart.ts`](src/validation/providers/chart.ts) is still a stub and does not currently contribute chart-based metrics.
+- **Previous comeback research provider:** [`src/validation/providers/research.ts`](src/validation/providers/research.ts) is currently a stable placeholder contract for orchestration-side historical research. It returns the future-facing `previousComebackFirstWeekSales` field shape, and it documents `PERPLEXITY_API_KEY` for a later external-research implementation, but it does not yet perform live historical lookup.
+
+Recommendation behavior:
+
+- [`src/validation/recommendation.ts`](src/validation/recommendation.ts) now accepts Terapeak and research inputs alongside browse, sold, social, and chart signals.
+- The decisioning remains intentionally conservative: Terapeak and research data can improve monitoring notes and confidence context, but the system still avoids aggressive automatic buy-state changes from partial or proxy signals alone.
 
 Known limitations in the current implementation:
 
 - The sold-data provider depends on external configuration via `SOLD_ITEMS_API_URL` and `SOLD_ITEMS_API_KEY`.
 - If those sold-data variables are missing, validation still runs but sold enrichment degrades to an unavailable/error state rather than providing full historical-sales signals.
-- Social and chart confidence remain effectively low because those providers are placeholders.
+- The sold-data provider is temporary and intended to be replaced by an internal implementation later.
+- The Terapeak provider contract is present, but there is no live authenticated Terapeak/eBay research integration yet.
+- The previous-comeback research provider contract is present, but no live historical inference or Perplexity-backed lookup is implemented yet even when `PERPLEXITY_API_KEY` is configured.
+- The browse provider still relies on heuristic query selection and fallback matching.
+- The YouTube-backed `youtubeViews24hMillions` field is currently an **average daily views proxy**, not a true trailing 24-hour delta.
+- Social signals are supportive/proxy data only and should not be presented as decisive automated buy logic.
 - eBay-derived metrics are intentionally practical rather than exhaustive; for example, watchers are not yet populated by the live eBay provider.
 
-Near-term plan:
+### Roadmap note: provider maturation
 
-The current sold-data implementation is explicitly interim. It is isolated behind [`src/validation/providers/ebay-sold.ts`](src/validation/providers/ebay-sold.ts) so we can replace the external-provider-backed implementation with our own internal sales-data system later **without changing downstream validation orchestration or the hosted validation route contract**.
+- The current sold-data implementation is explicitly interim. It is isolated behind [`src/validation/providers/ebay-sold.ts`](src/validation/providers/ebay-sold.ts) so we can replace the external-provider-backed implementation with our own internal sales-data system later **without changing downstream validation orchestration or the hosted validation route contract**.
+- The Terapeak/eBay research layer is intentionally isolated behind [`src/validation/providers/terapeak.ts`](src/validation/providers/terapeak.ts) so a future authenticated research integration can drop in without changing the route contract or downstream writes.
+- The orchestration-side historical research layer is intentionally isolated behind [`src/validation/providers/research.ts`](src/validation/providers/research.ts) so future previous-comeback resolution or external inference providers can be added without rewriting the validation runner.
 
 ### Remote client configuration
 
@@ -744,6 +844,7 @@ Common causes:
 - the validation runner user has no stored refresh-token-backed credentials in the hosted token store
 - the refresh token is expired or revoked upstream
 - `SOLD_ITEMS_API_URL` or `SOLD_ITEMS_API_KEY` is missing, causing sold enrichment to degrade
+- one or more social-provider credentials are absent, which causes the related supportive signal to degrade gracefully instead of failing the entire run
 
 If `authDebug.tokenEndpoint` or the captured upstream response looks wrong, verify the environment-specific OAuth configuration and token-base resolution.
 
