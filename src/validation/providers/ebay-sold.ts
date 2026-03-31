@@ -6,6 +6,7 @@ import type {
   ValidationSignalConfidence,
   ValidationSoldVelocity,
 } from '../types.js';
+import { buildValidationQueryCandidates } from './query-utils.js';
 
 interface SoldProviderProduct {
   title?: string;
@@ -44,25 +45,8 @@ function normalizePrice(value: number | string | undefined): number | null {
   return null;
 }
 
-function buildSoldKeywords(request: ValidationRunRequest): string {
-  const parts = new Set<string>();
-
-  const push = (values: string[]): void => {
-    for (const value of values) {
-      const normalized = value.trim();
-      if (normalized) {
-        parts.add(normalized);
-      }
-    }
-  };
-
-  push([request.item.name]);
-  push(request.item.canonicalArtists.slice(0, 2));
-  push(request.item.relatedAlbums.slice(0, 1));
-  push(request.item.variation.slice(0, 2));
-  push([request.validation.validationType]);
-
-  return Array.from(parts).join(' ').replace(/\s+/g, ' ').trim();
+function buildSoldKeywords(request: ValidationRunRequest): string[] {
+  return buildValidationQueryCandidates(request);
 }
 
 function parseSoldDate(value: string | undefined): string | null {
@@ -151,7 +135,8 @@ function scoreSoldConfidence(
 }
 
 function createEmptySoldSignals(
-  query: string,
+  query: string | null,
+  queryCandidates: string[] = [],
   status: EbaySoldValidationSignals['status'],
   errorMessage?: string
 ): EbaySoldValidationSignals {
@@ -173,6 +158,9 @@ function createEmptySoldSignals(
       daysTracked: null,
     },
     query,
+    queryCandidates,
+    selectedQuery: query ?? undefined,
+    selectedQueryTier: query ? 1 : null,
     responseUrl: null,
     status,
     ...(errorMessage ? { errorMessage } : {}),
@@ -184,10 +172,11 @@ export async function getEbaySoldValidationSignals(
 ): Promise<EbaySoldValidationSignals> {
   const soldApiUrl = process.env.SOLD_ITEMS_API_URL?.trim();
   const soldApiKey = process.env.SOLD_ITEMS_API_KEY?.trim();
-  const query = buildSoldKeywords(request);
+  const queryCandidates = buildSoldKeywords(request);
+  const query = queryCandidates[0] ?? null;
 
   if (!soldApiUrl || !soldApiKey || !query) {
-    return createEmptySoldSignals(query, 'unavailable');
+    return createEmptySoldSignals(query, queryCandidates, 'unavailable');
   }
 
   try {
@@ -196,48 +185,62 @@ export async function getEbaySoldValidationSignals(
       : `${soldApiUrl.replace(/\/$/, '')}/findCompletedItems`;
     const host = new URL(endpoint).host;
 
-    const response = await axios.post<SoldProviderResponse>(
-      endpoint,
-      {
-        keywords: query,
-        excluded_keywords: 'set lot bundle photocard fanmade replica unofficial',
-        max_search_results: 120,
-        remove_outliers: true,
-        site_id: '0',
-      },
-      {
-        timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-rapidapi-key': soldApiKey,
-          'x-rapidapi-host': host,
+    let selectedResult = createEmptySoldSignals(query, queryCandidates, 'unavailable');
+
+    for (const [index, candidate] of queryCandidates.entries()) {
+      const response = await axios.post<SoldProviderResponse>(
+        endpoint,
+        {
+          keywords: candidate,
+          excluded_keywords: 'set lot bundle photocard fanmade replica unofficial',
+          max_search_results: 120,
+          remove_outliers: true,
+          site_id: '0',
         },
+        {
+          timeout: 30000,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-rapidapi-key': soldApiKey,
+            'x-rapidapi-host': host,
+          },
+        }
+      );
+
+      const data = response.data;
+      const soldItemsSample = normalizeProducts(data.products);
+      const soldVelocity = bucketSoldVelocity(soldItemsSample, request.timestamp);
+      const soldResultsCount =
+        typeof data.results === 'number' && Number.isFinite(data.results) ? data.results : null;
+
+      selectedResult = {
+        provider: 'third_party_sold_api',
+        confidence: scoreSoldConfidence(soldResultsCount, soldItemsSample),
+        soldResultsCount,
+        soldAveragePriceUsd: normalizePrice(data.average_price),
+        soldMedianPriceUsd: normalizePrice(data.median_price),
+        soldMinPriceUsd: normalizePrice(data.min_price),
+        soldMaxPriceUsd: normalizePrice(data.max_price),
+        soldItemsSample,
+        soldVelocity,
+        query: candidate,
+        queryCandidates,
+        selectedQuery: candidate,
+        selectedQueryTier: index + 1,
+        responseUrl: typeof data.response_url === 'string' ? data.response_url : null,
+        status: data.success === false ? 'error' : 'ok',
+      };
+
+      if ((soldResultsCount ?? 0) >= 5) {
+        break;
       }
-    );
+    }
 
-    const data = response.data;
-    const soldItemsSample = normalizeProducts(data.products);
-    const soldVelocity = bucketSoldVelocity(soldItemsSample, request.timestamp);
-    const soldResultsCount =
-      typeof data.results === 'number' && Number.isFinite(data.results) ? data.results : null;
-
-    return {
-      provider: 'third_party_sold_api',
-      confidence: scoreSoldConfidence(soldResultsCount, soldItemsSample),
-      soldResultsCount,
-      soldAveragePriceUsd: normalizePrice(data.average_price),
-      soldMedianPriceUsd: normalizePrice(data.median_price),
-      soldMinPriceUsd: normalizePrice(data.min_price),
-      soldMaxPriceUsd: normalizePrice(data.max_price),
-      soldItemsSample,
-      soldVelocity,
-      query,
-      responseUrl: typeof data.response_url === 'string' ? data.response_url : null,
-      status: data.success === false ? 'error' : 'ok',
-    };
+    return selectedResult;
   } catch (error) {
     return createEmptySoldSignals(
       query,
+      queryCandidates,
       'error',
       error instanceof Error ? error.message : String(error)
     );

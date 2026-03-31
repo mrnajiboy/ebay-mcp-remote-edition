@@ -48,6 +48,9 @@ This is an open-source project provided "as is" without warranty of any kind. Th
   - [Deploy to Render](#deploy-to-render)
   - [OAuth flows](#oauth-flows)
   - [MCP endpoints](#mcp-endpoints)
+  - [Validation architecture](#validation-architecture)
+  - [Validation endpoints](#validation-endpoints)
+  - [Validation status and limitations](#validation-status-and-limitations)
   - [Remote client configuration](#remote-client-configuration)
 - [Available tools](#available-tools)
 - [Development](#development)
@@ -295,6 +298,19 @@ UPSTASH_REDIS_REST_TOKEN=
 ADMIN_API_KEY=              # required for admin session endpoints
 OAUTH_START_KEY=            # optional; protects /oauth/start with a shared secret
 
+# Validation runner identity (required for hosted /validation/* routes)
+# Reuses a stored refresh-token-backed user in the existing multi-user auth store.
+# Use the env-specific values when sandbox and production need different runner users.
+VALIDATION_RUNNER_USER_ID=
+VALIDATION_RUNNER_USER_ID_SANDBOX=
+VALIDATION_RUNNER_USER_ID_PRODUCTION=
+
+# Temporary sold-data enrichment provider for validation.
+# This is an interim external abstraction and will be replaced by an internal
+# sales-data implementation without changing the validation orchestration route.
+SOLD_ITEMS_API_URL=
+SOLD_ITEMS_API_KEY=
+
 # Session TTL (optional; default 30 days)
 SESSION_TTL_SECONDS=2592000
 
@@ -401,7 +417,7 @@ POST/GET/DELETE /mcp        # resolves environment from ?env= or EBAY_DEFAULT_EN
 
 ```
 GET  /health                           # Server health check (no auth required)
-GET  /whoami                           # Session identity; requires Bearer token
+GET  /whoami                           # Session identity; requires Bearer session token
 GET  /admin/session/:sessionToken      # View session; requires X-Admin-API-Key
 POST /admin/session/:sessionToken/revoke  # Revoke session
 DELETE /admin/session/:sessionToken    # Delete session
@@ -418,6 +434,99 @@ DELETE /admin/session/:sessionToken    # Delete session
   "revokedAt": null
 }
 ```
+
+`/whoami` is the quickest hosted-session debugging check when an MCP client appears authenticated but requests still fail. It confirms which stored user session is active, which environment it is bound to, and whether the session has expired or been revoked.
+
+### Validation architecture
+
+The hosted backend now includes a deployment-oriented validation pipeline for non-MCP server-side execution. The route handlers live in [`src/server-http.ts`](src/server-http.ts), while the validation module lives under [`src/validation/`](src/validation).
+
+Current module layout:
+
+- [`src/validation/types.ts`](src/validation/types.ts) — request/response contracts for validation runs, decision payloads, debug payloads, and provider signal types
+- [`src/validation/run-validation.ts`](src/validation/run-validation.ts) — orchestration entrypoint that validates input, queries providers, merges signals, and returns writes/decision/debug output
+- [`src/validation/recommendation.ts`](src/validation/recommendation.ts) — recommendation and automation decision logic
+- [`src/validation/providers/ebay.ts`](src/validation/providers/ebay.ts) — live eBay market snapshot provider using the server's existing user-scoped eBay API client
+- [`src/validation/providers/ebay-sold.ts`](src/validation/providers/ebay-sold.ts) — temporary sold-data provider backed by an external API via `SOLD_ITEMS_API_URL` and `SOLD_ITEMS_API_KEY`
+- [`src/validation/providers/social.ts`](src/validation/providers/social.ts) — stub social-signal provider
+- [`src/validation/providers/chart.ts`](src/validation/providers/chart.ts) — stub chart-signal provider
+
+Operationally, validation works like this:
+
+1. An admin caller invokes an environment-scoped validation route.
+2. The server resolves the environment (`sandbox` or `production`) from the mounted route tree.
+3. The route looks up the configured validation runner user ID for that environment.
+4. The server loads that user's stored refresh-token-backed credentials from the existing hosted auth store.
+5. The validation orchestrator gathers eBay market data, temporary sold-data enrichment, and stubbed social/chart signals.
+6. The response returns normalized field writes, a buy/track decision block, and provider debug metadata for downstream systems.
+
+Important auth detail: the validation routes do **not** use MCP OAuth client auth. They reuse the existing hosted multi-user token architecture and require an admin caller plus a stored refresh-token-backed user context for the configured validation runner.
+
+### Validation endpoints
+
+Use the environment-scoped hosted routes for validation:
+
+```
+POST /sandbox/validation/run
+POST /production/validation/run
+
+GET  /sandbox/validation/health
+GET  /production/validation/health
+```
+
+Both routes require the admin key:
+
+```
+X-Admin-API-Key: YOUR_ADMIN_API_KEY
+```
+
+#### `POST /validation/run`
+
+Runs the validation pipeline for the target environment.
+
+- Uses the configured validation runner user ID for that environment
+- Requires that stored refresh-token-backed eBay credentials already exist for that user
+- Returns either:
+  - `status: "ok"` with `writes`, `decision`, and `debug`, or
+  - `status: "error"` with `errorCode`, `message`, `retryable`, and `nextCheckAt`
+
+The request/response contract is defined in [`src/validation/types.ts`](src/validation/types.ts), and the orchestration behavior is implemented in [`src/validation/run-validation.ts`](src/validation/run-validation.ts).
+
+#### `GET /validation/health`
+
+Checks whether the validation runner is operational in the target environment.
+
+This endpoint is intended for deployment diagnostics and returns:
+
+- configured environment
+- configured validation runner user ID
+- whether stored tokens are present
+- whether token refresh/authentication succeeded
+- token status from the user-scoped eBay API client
+- `authDebug` diagnostics including token endpoint resolution and credential presence
+- provider availability summary
+
+The diagnostics are especially useful after the OAuth token endpoint fix in [`getOAuthTokenBaseUrl()`](src/config/environment.ts:373) and the debug additions in [`getAuthDebugInfo()`](src/auth/oauth.ts:282). If the validation runner cannot refresh tokens, `/validation/health` shows the resolved token endpoint and any captured upstream response status/body excerpt.
+
+### Validation status and limitations
+
+Current backend status:
+
+- eBay live market snapshot support is implemented and wired into orchestration.
+- Sold-data enrichment is implemented through a **temporary external provider** abstraction.
+- Social and chart providers are currently stubs and do not contribute live third-party signals yet.
+- Validation is currently an **admin-operated hosted backend workflow**, not an MCP tool surface.
+
+Known limitations in the current implementation:
+
+- The sold-data provider depends on external configuration via `SOLD_ITEMS_API_URL` and `SOLD_ITEMS_API_KEY`.
+- If those sold-data variables are missing, validation still runs but sold enrichment degrades to an unavailable/error state rather than providing full historical-sales signals.
+- Social and chart confidence remain effectively low because those providers are placeholders.
+- eBay-derived metrics are intentionally practical rather than exhaustive; for example, watchers are not yet populated by the live eBay provider.
+
+Near-term plan:
+
+The current sold-data implementation is explicitly interim. It is isolated behind [`src/validation/providers/ebay-sold.ts`](src/validation/providers/ebay-sold.ts) so we can replace the external-provider-backed implementation with our own internal sales-data system later **without changing downstream validation orchestration or the hosted validation route contract**.
 
 ### Remote client configuration
 
@@ -566,6 +675,16 @@ curl https://your-server.com/health
 # Verify a session token
 curl -H "Authorization: Bearer <session-token>" https://your-server.com/whoami
 
+# Verify validation runner health for sandbox
+curl https://your-server.com/sandbox/validation/health \
+  -H "X-Admin-API-Key: YOUR_ADMIN_API_KEY"
+
+# Run a hosted validation job
+curl -X POST https://your-server.com/sandbox/validation/run \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-API-Key: YOUR_ADMIN_API_KEY" \
+  -d '{"validationId":"example-123","runType":"manual","cadence":"Daily","timestamp":"2026-03-31T00:00:00.000Z","item":{"recordId":"1","name":"Example Item","variation":[],"itemType":[],"releaseType":[],"releaseDate":null,"releasePeriod":[],"availability":[],"wholesalePrice":null,"supplierNames":[],"canonicalArtists":[],"relatedAlbums":[]},"validation":{"validationType":"default","buyDecision":"Hold","automationStatus":"Manual","autoCheckEnabled":false,"dDay":null,"artistTier":"unknown","initialBudget":null,"reserveBudget":null,"currentMetrics":{"avgWatchersPerListing":null,"preOrderListingsCount":null,"twitterTrending":false,"youtubeViews24hMillions":null,"redditPostsCount7d":null,"marketPriceUsd":null,"avgShippingCostUsd":null,"competitionLevel":null,"marketPriceTrend":"Stable","day1Sold":null,"day2Sold":null,"day3Sold":null,"day4Sold":null,"day5Sold":null,"daysTracked":null}}}'
+
 # Test MCP endpoint returns auth challenge when no token is provided
 curl -X POST https://your-server.com/sandbox/mcp \
   -H "Content-Type: application/json" \
@@ -609,6 +728,24 @@ Revoke exposed session tokens via the admin endpoint:
 curl -X POST https://your-server.com/admin/session/<token>/revoke \
   -H "X-Admin-API-Key: YOUR_ADMIN_API_KEY"
 ```
+
+### Validation health is degraded
+
+Start with the environment-scoped health endpoint:
+
+```bash
+curl https://your-server.com/sandbox/validation/health \
+  -H "X-Admin-API-Key: YOUR_ADMIN_API_KEY"
+```
+
+Common causes:
+
+- `VALIDATION_RUNNER_USER_ID` or the env-specific override is missing
+- the validation runner user has no stored refresh-token-backed credentials in the hosted token store
+- the refresh token is expired or revoked upstream
+- `SOLD_ITEMS_API_URL` or `SOLD_ITEMS_API_KEY` is missing, causing sold enrichment to degrade
+
+If `authDebug.tokenEndpoint` or the captured upstream response looks wrong, verify the environment-specific OAuth configuration and token-base resolution.
 
 ### Security checklist
 

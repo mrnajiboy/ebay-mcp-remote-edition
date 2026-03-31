@@ -69,6 +69,9 @@ export interface EbayValidationSignals {
   competitionLevel: number | null;
   marketPriceTrend: string;
   ebayQuery: string;
+  queryCandidates?: string[];
+  selectedQuery?: string;
+  selectedQueryTier?: number | null;
   sampleSize: number;
   soldVelocity: ValidationSoldVelocity;
 }
@@ -90,7 +93,10 @@ export interface EbaySoldValidationSignals {
   soldMaxPriceUsd: number | null;
   soldItemsSample: SoldItemSample[];
   soldVelocity: ValidationSoldVelocity;
-  query: string;
+  query: string | null;
+  queryCandidates?: string[];
+  selectedQuery?: string;
+  selectedQueryTier?: number | null;
   responseUrl: string | null;
   status: 'ok' | 'unavailable' | 'error';
   errorMessage?: string;

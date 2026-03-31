@@ -42,6 +42,8 @@ function buildProviderDebug(
       status: ebay.sampleSize > 0 ? 'ok' : 'partial',
       confidence: ebay.sampleSize >= 10 ? 'medium' : 'low',
       sampleSize: ebay.sampleSize,
+      selectedQuery: ebay.selectedQuery,
+      selectedQueryTier: ebay.selectedQueryTier,
       hasMarketPrice: ebay.marketPriceUsd !== null,
       hasShipping: ebay.avgShippingCostUsd !== null,
       hasWatchers: ebay.avgWatchersPerListing !== null,
@@ -51,6 +53,8 @@ function buildProviderDebug(
       provider: sold.provider,
       confidence: sold.confidence.toLowerCase(),
       results: sold.soldResultsCount,
+      selectedQuery: sold.selectedQuery,
+      selectedQueryTier: sold.selectedQueryTier,
       hasMedianPrice: sold.soldMedianPriceUsd !== null,
       hasVelocity: sold.soldVelocity.daysTracked !== null,
     },
@@ -142,6 +146,10 @@ export async function runValidation(
       debug: {
         ebayQuery: ebay.ebayQuery,
         soldQuery: sold.query,
+        queryCandidates: {
+          ebay: ebay.queryCandidates ?? [],
+          sold: sold.queryCandidates ?? [],
+        },
         sampleSize: ebay.sampleSize,
         sourceSet: ['ebay', 'sold', 'social', 'chart'],
         providers: buildProviderDebug(ebay, sold, social, chart),
