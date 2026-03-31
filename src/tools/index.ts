@@ -15,7 +15,7 @@ import {
   tokenManagementTools,
   type ToolDefinition,
 } from '@/tools/definitions/index.js';
-import { chatGptTools } from '@/tools/tool-definitions.js';
+import { chatGptTools } from '@/tools/chat-tools.js';
 import { getApiStatusFeed } from '@/utils/api-status-feed.js';
 import { convertToTimestamp, validateTokenExpiry } from '@/utils/date-converter.js';
 

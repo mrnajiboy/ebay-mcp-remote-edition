@@ -20,7 +20,6 @@ import {
   ruNameToEnvironment,
   type EbayEnvironment,
 } from '@/config/environment.js';
-import { getToolDefinitions, executeTool } from '@/tools/index.js';
 import { getVersion } from '@/utils/version.js';
 import { serverLogger } from '@/utils/logger.js';
 import { MultiUserAuthStore } from '@/auth/multi-user-store.js';
@@ -816,6 +815,7 @@ function mountEnvRouter(
   };
 
   async function createMcpServer(userId: string, environment: EbayEnvironment): Promise<McpServer> {
+    const { getToolDefinitions, executeTool } = await import('./tools/index.js');
     const api = await createUserScopedApi(userId, environment);
     const server = new McpServer({
       name: 'ebay-mcp-remote-edition',
