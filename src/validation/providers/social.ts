@@ -6,6 +6,7 @@ import type {
   YouTubeCandidateClass,
 } from '../types.js';
 import {
+  buildConversationAlbumPhrase,
   buildRedditQueryPlan,
   buildTwitterQueryPlan,
   buildYouTubeQueryPlan,
@@ -86,17 +87,19 @@ interface SocialValidationDebugState {
 }
 
 const REDDIT_PAGE_LIMIT = 100;
-const YOUTUBE_SEARCH_MAX_RESULTS = 5;
-const YOUTUBE_MAX_CANDIDATE_VIDEOS = 15;
+const YOUTUBE_SEARCH_MAX_RESULTS = 10;
+const YOUTUBE_MAX_CANDIDATE_VIDEOS = 30;
 const TWITTER_COUNTS_GRANULARITY = 'day' as const;
 const TWITTER_TRENDING_THRESHOLD = 10;
 const YOUTUBE_OFFICIAL_TITLE_PATTERN =
-  /\bofficial\b|\bmv\b|music video|teaser|concept|highlight medley|performance|special video/;
+  /\bofficial\b|\bmv\b|music video|official audio|teaser|concept|highlight medley|performance|special video|visualizer/;
 const YOUTUBE_DEMOTED_TITLE_PATTERN =
-  /unboxing|shop\b|store\b|merch|haul|reaction|cover|fan cam|fancam|reseller|resale/;
+  /unboxing|shop\b|store\b|merch|haul|reaction|cover|fan cam|fancam|reseller|resale|vinyl|\blp\b|\bcd\b|photocard|pob\b|digipack|platform|jewel|standard\s+ver(?:sion)?|album\s+preview/;
 const YOUTUBE_SHORTS_PATTERN = /shorts?\b/;
 const YOUTUBE_OFFICIAL_CHANNEL_PATTERN = /\bofficial\b|\btopic\b/;
-const YOUTUBE_BRANDED_CHANNEL_PATTERN = /entertainment|music|records|labels?/;
+const YOUTUBE_BRANDED_CHANNEL_PATTERN = /entertainment|music|records|labels?|media|studio|vevo/;
+const YOUTUBE_DEMOTED_CHANNEL_PATTERN =
+  /shop\b|store\b|merch|reseller|resale|unboxing|fan\b|collector|trading|market/;
 
 function getPrimaryArtist(request: ValidationRunRequest): string {
   return request.item.canonicalArtists[0]?.trim() ?? '';
@@ -153,33 +156,33 @@ function scoreYouTubeCandidate(
   const channelTitle = normalizeWhitespace(candidate.channelTitle ?? '').toLowerCase();
   const combinedText = `${title} ${channelTitle}`;
   const normalizedArtist = normalizeWhitespace(primaryArtist).toLowerCase();
-  const normalizedAlbumPhrase = normalizeWhitespace(albumPhrase).toLowerCase();
+  const normalizedAlbumPhrase = buildConversationAlbumPhrase(albumPhrase).toLowerCase();
   const albumMatches = albumKeywords.filter((keyword) => combinedText.includes(keyword)).length;
   const hasOfficialSignal = YOUTUBE_OFFICIAL_TITLE_PATTERN.test(title);
   const hasOfficialChannelSignal = YOUTUBE_OFFICIAL_CHANNEL_PATTERN.test(channelTitle);
   const hasBrandedChannelSignal = YOUTUBE_BRANDED_CHANNEL_PATTERN.test(channelTitle);
   const hasDemotedTitleSignal = YOUTUBE_DEMOTED_TITLE_PATTERN.test(title);
   const hasShortsSignal = YOUTUBE_SHORTS_PATTERN.test(title);
-  const hasDemotedChannelSignal = /shop\b|store\b|merch|reseller|resale|unboxing/.test(
-    channelTitle
-  );
+  const hasDemotedChannelSignal = YOUTUBE_DEMOTED_CHANNEL_PATTERN.test(channelTitle);
   const channelContainsArtist =
     normalizedArtist.length > 0 && channelTitle.includes(normalizedArtist);
   const hasAlbumPhraseMatch =
     normalizedAlbumPhrase.length > 0 && combinedText.includes(normalizedAlbumPhrase);
   const hasArtistAlignment = normalizedArtist.length > 0 && combinedText.includes(normalizedArtist);
-  const queryMatchBoost = candidate.matchedQueries.length * 8;
+  const queryMatchBoost = candidate.matchedQueries.length * 10;
   const viewSignal =
-    candidate.totalViews !== null ? Math.min(8, Math.log10(candidate.totalViews + 1)) : 0;
+    candidate.totalViews !== null ? Math.min(10, Math.log10(candidate.totalViews + 1)) : 0;
+  const freshnessSignal =
+    candidate.daysLive !== null ? Math.max(0, 16 - Math.log2(candidate.daysLive + 1) * 2) : 0;
   const officialReleaseScore =
-    (hasOfficialSignal ? 90 : 0) +
-    (hasOfficialChannelSignal ? 95 : 0) +
-    (hasBrandedChannelSignal && channelContainsArtist ? 35 : 0) +
-    (hasAlbumPhraseMatch ? 20 : 0) +
-    albumMatches * 12 -
-    (hasDemotedTitleSignal ? 120 : 0) -
-    (hasShortsSignal ? 70 : 0) -
-    (hasDemotedChannelSignal ? 90 : 0);
+    (hasOfficialSignal ? 120 : 0) +
+    (hasOfficialChannelSignal ? 140 : 0) +
+    (hasBrandedChannelSignal && channelContainsArtist ? 55 : 0) +
+    (hasAlbumPhraseMatch ? 40 : 0) +
+    albumMatches * 16 -
+    (hasDemotedTitleSignal ? 150 : 0) -
+    (hasShortsSignal ? 90 : 0) -
+    (hasDemotedChannelSignal ? 110 : 0);
   const candidateClass: YouTubeCandidateClass =
     hasDemotedTitleSignal || hasShortsSignal || hasDemotedChannelSignal
       ? 'fallback_adjacent'
@@ -191,12 +194,13 @@ function scoreYouTubeCandidate(
           : 'fallback_adjacent';
   const score =
     officialReleaseScore +
-    (candidateClass === 'official_release' ? 160 : candidateClass === 'branded_media' ? 70 : 0) +
-    (hasArtistAlignment ? 95 : 0) +
-    (hasAlbumPhraseMatch ? 40 : 0) +
-    albumMatches * 18 +
+    (candidateClass === 'official_release' ? 220 : candidateClass === 'branded_media' ? 95 : 0) +
+    (hasArtistAlignment ? 120 : 0) +
+    (hasAlbumPhraseMatch ? 65 : 0) +
+    albumMatches * 20 +
     queryMatchBoost +
-    viewSignal;
+    viewSignal +
+    freshnessSignal;
 
   return {
     candidateClass,

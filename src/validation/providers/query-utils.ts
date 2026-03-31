@@ -40,6 +40,8 @@ const BROWSE_DESCRIPTOR_HINT_PATTERN =
   /\blimited\b|\bdeluxe\b|\bdigipack\b|\bplatform\b|\bjewel\b|\bphotobook\b|\bkit\b|\bpoca\b|\bweverse\b|\bcompact\b|\btarget\b|\bexclusive\b|\bsigned\b|\bvinyl\b|\blp\b|\bstandard\b/i;
 const SOCIAL_CONVERSATION_NOISE_PATTERN =
   /\b(?:lp|vinyl|cd|photobook|digipack|platform|jewel|compact|kit|poca|weverse|standard|limited|deluxe|edition|version|ver\.?)\b/gi;
+const SOCIAL_LISTING_NOISE_PATTERN =
+  /\b(?:set|lot|bundle|sealed|official merch|merch(?:andise)?|shop|store|benefit|photocard|pob|pre\s*order|preorder|fanmade|replica|unofficial|listing|sale)\b/gi;
 
 export function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -91,6 +93,10 @@ export function titleAlreadyContainsArtist(title: string, artist: string): boole
 
 function removeBracketedContent(value: string): string {
   return normalizeWhitespace(value.replace(/\([^)]*\)/g, ' '));
+}
+
+function stripBracketCharacters(value: string): string {
+  return normalizeWhitespace(value.replace(/[\]{}()[]/g, ' '));
 }
 
 function stripArtistsFromText(value: string, artists: string[]): string {
@@ -223,6 +229,21 @@ function buildCompactPhrase(...parts: string[]): string {
   );
 }
 
+export function normalizeSocialSearchPhrase(value: string): string {
+  return sanitizeQueryCandidate(
+    stripBracketCharacters(simplifyItemTitle(value))
+      .replace(/[“”"'`]+/g, ' ')
+      .replace(/[&]+/g, ' and ')
+      .replace(/[,:;/\\|]+/g, ' ')
+      .replace(/[-–—]+/g, ' ')
+      .replace(/[.!?]+/g, ' ')
+      .replace(POB_LIKE_PATTERN, ' ')
+      .replace(LISTING_NOISE_PATTERN, ' ')
+      .replace(SOCIAL_CONVERSATION_NOISE_PATTERN, ' ')
+      .replace(SOCIAL_LISTING_NOISE_PATTERN, ' ')
+  );
+}
+
 function normalizeDescriptorPhrase(value: string): string {
   return sanitizeQueryCandidate(
     removeBracketedContent(simplifyItemTitle(value))
@@ -310,10 +331,14 @@ function finalizeConversationQueryPlan(
   );
 }
 
-function buildConversationAlbumPhrase(albumPhrase: string): string {
-  const primarySegment = sanitizeQueryCandidate(albumPhrase.split(',')[0] ?? albumPhrase);
+export function buildConversationAlbumPhrase(albumPhrase: string): string {
+  const primarySegment = normalizeSocialSearchPhrase(albumPhrase.split(',')[0] ?? albumPhrase);
 
-  return sanitizeQueryCandidate(primarySegment.replace(SOCIAL_CONVERSATION_NOISE_PATTERN, ' '));
+  if (extractSemanticTokens(primarySegment).length > 0) {
+    return primarySegment;
+  }
+
+  return normalizeSocialSearchPhrase(albumPhrase);
 }
 
 function finalizeQueryPlan(
@@ -421,21 +446,21 @@ export function buildSoldQueryCandidates(request: ValidationRunRequest): string[
 
 export function buildTwitterQueryPlan(request: ValidationRunRequest): ProviderQueryCandidate[] {
   const { primaryArtist, albumPhrase } = buildCorePhrases(request);
-  const compactArtist = buildCompactPhrase(primaryArtist);
-  const compactAlbum = buildCompactPhrase(buildConversationAlbumPhrase(albumPhrase));
+  const compactArtist = normalizeSocialSearchPhrase(primaryArtist);
+  const compactAlbum = stripPrimaryArtist(
+    buildConversationAlbumPhrase(albumPhrase),
+    compactArtist || primaryArtist
+  );
+  const artistAlbum = buildCompactPhrase(compactArtist, compactAlbum);
 
   return finalizeConversationQueryPlan([
     {
       family: 'artist_album_conversation',
-      query: buildCompactPhrase(compactArtist, compactAlbum),
+      query: artistAlbum,
     },
     {
       family: 'quoted_artist_album',
-      query: compactArtist && compactAlbum ? `"${compactArtist}" "${compactAlbum}"` : '',
-    },
-    {
-      family: 'artist_album_keyword',
-      query: buildCompactPhrase(compactArtist, 'album'),
+      query: artistAlbum ? `"${artistAlbum}"` : '',
     },
     { family: 'artist_only_fallback', query: compactArtist },
     { family: 'album_only_fallback', query: compactAlbum },
@@ -448,19 +473,21 @@ export function buildTwitterQueryCandidates(request: ValidationRunRequest): stri
 
 export function buildYouTubeQueryPlan(request: ValidationRunRequest): ProviderQueryCandidate[] {
   const { primaryArtist, albumPhrase } = buildCorePhrases(request);
-  const artistAlbum = buildCompactPhrase(primaryArtist, albumPhrase);
+  const compactArtist = normalizeSocialSearchPhrase(primaryArtist);
+  const compactAlbum = stripPrimaryArtist(
+    buildConversationAlbumPhrase(albumPhrase),
+    compactArtist || primaryArtist
+  );
+  const artistAlbum = buildCompactPhrase(compactArtist, compactAlbum);
 
-  return finalizeQueryPlan(
+  return finalizeConversationQueryPlan(
     [
       { family: 'artist_album_media_core', query: artistAlbum },
       { family: 'artist_album_official', query: buildCompactPhrase(artistAlbum, 'official') },
       { family: 'artist_album_mv', query: buildCompactPhrase(artistAlbum, 'mv') },
       { family: 'artist_album_music_video', query: buildCompactPhrase(artistAlbum, 'music video') },
       { family: 'artist_album_teaser', query: buildCompactPhrase(artistAlbum, 'teaser') },
-      { family: 'artist_album_performance', query: buildCompactPhrase(artistAlbum, 'performance') },
-    ],
-    primaryArtist,
-    albumPhrase
+    ]
   );
 }
 
