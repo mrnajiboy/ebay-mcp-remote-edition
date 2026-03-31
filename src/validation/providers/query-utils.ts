@@ -96,7 +96,9 @@ function stripPrimaryArtist(candidate: string, primaryArtist: string): string {
     return sanitizeQueryCandidate(candidate);
   }
 
-  return sanitizeQueryCandidate(candidate.replace(new RegExp(escapeRegExp(sanitizedArtist), 'ig'), ' '));
+  return sanitizeQueryCandidate(
+    candidate.replace(new RegExp(escapeRegExp(sanitizedArtist), 'ig'), ' ')
+  );
 }
 
 function dedupeQueries(candidates: string[]): string[] {

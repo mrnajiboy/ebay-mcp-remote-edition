@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { getBaseUrl } from '@/config/environment.js';
 import type { EbaySellerApi } from '@/api/index.js';
 import type { EbayValidationSignals, ValidationRunRequest } from '../types.js';
@@ -41,6 +42,35 @@ function median(values: number[]): number | null {
     return (sorted[middle - 1] + sorted[middle]) / 2;
   }
   return sorted[middle];
+}
+
+function getAxiosFailureDebug(error: unknown): {
+  responseStatus: number | null;
+  responseBodyExcerpt: string | null;
+} {
+  if (!axios.isAxiosError(error)) {
+    return {
+      responseStatus: null,
+      responseBodyExcerpt: null,
+    };
+  }
+
+  const responseStatus = error.response?.status ?? null;
+  const rawBody: unknown = error.response?.data;
+
+  if (rawBody === undefined) {
+    return {
+      responseStatus,
+      responseBodyExcerpt: null,
+    };
+  }
+
+  const bodyText = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody, null, 2);
+
+  return {
+    responseStatus,
+    responseBodyExcerpt: bodyText.slice(0, 500),
+  };
 }
 
 export async function getEbayValidationSignals(
@@ -168,11 +198,15 @@ export async function getEbayValidationSignals(
         selectedResult.selectionReason ??
         'Browse selection completed without a stronger candidate than the highest-priority cleaned query.',
     };
-  } catch {
+  } catch (error) {
+    const failureDebug = getAxiosFailureDebug(error);
     return {
       ...emptyResult,
       selectionReason:
         'Browse query execution failed before result selection could complete; returning the cleaned fallback candidate set for debug traceability.',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      responseStatus: failureDebug.responseStatus,
+      responseBodyExcerpt: failureDebug.responseBodyExcerpt,
     };
   }
 }

@@ -47,7 +47,10 @@ function isMeaningfulWriteValue(value: unknown): boolean {
   return typeof value !== 'string' || value.length > 0;
 }
 
-function getFieldPresence(fields: Record<string, unknown>): { contributed: string[]; omitted: string[] } {
+function getFieldPresence(fields: Record<string, unknown>): {
+  contributed: string[];
+  omitted: string[];
+} {
   const contributed: string[] = [];
   const omitted: string[] = [];
 
@@ -113,7 +116,11 @@ function buildProviderDebug(
   });
 
   const ebayStatus: ProviderDebugStatus =
-    (ebay.queryCandidates?.length ?? 0) === 0 ? 'unavailable' : ebay.sampleSize > 0 ? 'ok' : 'partial';
+    (ebay.queryCandidates?.length ?? 0) === 0
+      ? 'unavailable'
+      : ebay.sampleSize > 0
+        ? 'ok'
+        : 'partial';
   const socialStatus: ProviderDebugStatus =
     socialFields.contributed.length > 0 ? 'ok' : social.debug ? 'partial' : 'unavailable';
   const terapeakStatus: ProviderDebugStatus =
@@ -137,6 +144,9 @@ function buildProviderDebug(
       selectedQueryTier: ebay.selectedQueryTier,
       queryDiagnostics: ebay.queryDiagnostics ?? [],
       selectionReason: ebay.selectionReason,
+      errorMessage: ebay.errorMessage,
+      responseStatus: ebay.responseStatus,
+      responseBodyExcerpt: ebay.responseBodyExcerpt,
       contributedFields: ebayFields.contributed,
       omittedFields: ebayFields.omitted,
     },
@@ -156,9 +166,10 @@ function buildProviderDebug(
       status: terapeakStatus,
       provider: terapeak.provider,
       confidence: terapeak.confidence.toLowerCase(),
-      queryCandidates: [terapeak.queryDebug.currentQuery, terapeak.queryDebug.previousPobQuery].filter(
-        (value): value is string => typeof value === 'string' && value.length > 0
-      ),
+      queryCandidates: [
+        terapeak.queryDebug.currentQuery,
+        terapeak.queryDebug.previousPobQuery,
+      ].filter((value): value is string => typeof value === 'string' && value.length > 0),
       currentQuery: terapeak.queryDebug.currentQuery,
       previousPobQuery: terapeak.queryDebug.previousPobQuery,
       selectedMode: terapeak.queryDebug.selectedMode,
@@ -293,15 +304,25 @@ export async function runValidation(
       youtubeViews24hMillions: getWriteSource(social.youtubeViews24hMillions, 'social'),
       redditPostsCount7d: getWriteSource(social.redditPostsCount7d, 'social'),
       day1Sold:
-        sold.soldVelocity.day1Sold !== null ? 'sold' : getWriteSource(ebay.soldVelocity.day1Sold, 'ebay'),
+        sold.soldVelocity.day1Sold !== null
+          ? 'sold'
+          : getWriteSource(ebay.soldVelocity.day1Sold, 'ebay'),
       day2Sold:
-        sold.soldVelocity.day2Sold !== null ? 'sold' : getWriteSource(ebay.soldVelocity.day2Sold, 'ebay'),
+        sold.soldVelocity.day2Sold !== null
+          ? 'sold'
+          : getWriteSource(ebay.soldVelocity.day2Sold, 'ebay'),
       day3Sold:
-        sold.soldVelocity.day3Sold !== null ? 'sold' : getWriteSource(ebay.soldVelocity.day3Sold, 'ebay'),
+        sold.soldVelocity.day3Sold !== null
+          ? 'sold'
+          : getWriteSource(ebay.soldVelocity.day3Sold, 'ebay'),
       day4Sold:
-        sold.soldVelocity.day4Sold !== null ? 'sold' : getWriteSource(ebay.soldVelocity.day4Sold, 'ebay'),
+        sold.soldVelocity.day4Sold !== null
+          ? 'sold'
+          : getWriteSource(ebay.soldVelocity.day4Sold, 'ebay'),
       day5Sold:
-        sold.soldVelocity.day5Sold !== null ? 'sold' : getWriteSource(ebay.soldVelocity.day5Sold, 'ebay'),
+        sold.soldVelocity.day5Sold !== null
+          ? 'sold'
+          : getWriteSource(ebay.soldVelocity.day5Sold, 'ebay'),
       daysTracked:
         sold.soldVelocity.daysTracked !== null
           ? 'sold'

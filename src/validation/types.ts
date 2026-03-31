@@ -72,13 +72,16 @@ export interface EbayValidationSignals {
   queryCandidates?: string[];
   selectedQuery?: string;
   selectedQueryTier?: number | null;
-  queryDiagnostics?: Array<{
+  queryDiagnostics?: {
     query: string;
     tier: number;
     itemSummaryCount: number;
     totalListings: number;
-  }>;
+  }[];
   selectionReason?: string;
+  errorMessage?: string;
+  responseStatus?: number | null;
+  responseBodyExcerpt?: string | null;
   sampleSize: number;
   soldVelocity: ValidationSoldVelocity;
 }
@@ -118,6 +121,10 @@ export interface SocialValidationSignals {
       checked: boolean;
       query?: string;
       searchUrl?: string;
+      queryCandidates?: string[];
+      selectedQuery?: string;
+      totalTweetCount?: number | null;
+      granularity?: 'minute' | 'hour' | 'day';
       recentResultCount?: number | null;
       confidence?: ValidationSignalConfidence;
       note?: string;
@@ -126,6 +133,27 @@ export interface SocialValidationSignals {
       checked: boolean;
       query?: string;
       searchUrl?: string;
+      queryCandidates?: string[];
+      selectedQuery?: string;
+      resultsExamined?: number;
+      selectedVideoId?: string | null;
+      selectedVideoTitle?: string | null;
+      selectedVideoUrl?: string | null;
+      selectedVideoViews?: number | null;
+      selectedVideoPublishedAt?: string | null;
+      selectedVideoDaysLive?: number | null;
+      selectedVideoAvgDailyViews?: number | null;
+      candidateVideos?: {
+        videoId: string;
+        title: string | null;
+        url: string;
+        channelTitle: string | null;
+        totalViews: number | null;
+        publishedAt: string | null;
+        avgDailyViews: number | null;
+        relevanceScore: number;
+        matchedQueries: string[];
+      }[];
       topVideoTitle?: string | null;
       topVideoUrl?: string | null;
       publishedAt?: string | null;
