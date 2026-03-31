@@ -7,6 +7,8 @@ import { getSocialValidationSignals } from './providers/social.js';
 import { getChartValidationSignals } from './providers/chart.js';
 import { buildValidationRecommendation } from './recommendation.js';
 
+type ResolvedSocialSignals = Awaited<ReturnType<typeof getSocialValidationSignals>>;
+
 function addMinutes(timestamp: string, minutes: number): string {
   return new Date(new Date(timestamp).getTime() + minutes * 60 * 1000).toISOString();
 }
@@ -34,7 +36,7 @@ function getValidationId(input: unknown): string {
 function buildProviderDebug(
   ebay: Awaited<ReturnType<typeof getEbayValidationSignals>>,
   sold: Awaited<ReturnType<typeof getEbaySoldValidationSignals>>,
-  social: ReturnType<typeof getSocialValidationSignals>,
+  social: ResolvedSocialSignals,
   chart: ReturnType<typeof getChartValidationSignals>
 ): Record<string, unknown> {
   return {
@@ -59,12 +61,13 @@ function buildProviderDebug(
       hasVelocity: sold.soldVelocity.daysTracked !== null,
     },
     social: {
-      status: 'stub',
-      confidence: 'low',
+      status: social.debug ? 'ok' : 'partial',
+      confidence: 'low' as const,
       hasSignals:
-        social.twitterTrending ||
+        social.twitterTrending === true ||
         social.youtubeViews24hMillions !== null ||
         social.redditPostsCount7d !== null,
+      details: social.debug,
     },
     chart: {
       status: 'stub',
@@ -96,7 +99,7 @@ export async function runValidation(
   try {
     const ebay = await getEbayValidationSignals(api, request);
     const sold = await getEbaySoldValidationSignals(request);
-    const social = getSocialValidationSignals(request);
+    const social = await getSocialValidationSignals(request);
     const chart = getChartValidationSignals(request);
     const marketPriceUsd = sold.soldMedianPriceUsd ?? ebay.marketPriceUsd;
     const soldVelocity = {
@@ -110,6 +113,15 @@ export async function runValidation(
 
     const recommendation = buildValidationRecommendation(request, { ebay, sold, social, chart });
     const mergedSignals = { ebay, sold, social, chart };
+    const socialWrites = {
+      ...(social.twitterTrending !== null ? { twitterTrending: social.twitterTrending } : {}),
+      ...(social.youtubeViews24hMillions !== null
+        ? { youtubeViews24hMillions: social.youtubeViews24hMillions }
+        : {}),
+      ...(social.redditPostsCount7d !== null
+        ? { redditPostsCount7d: social.redditPostsCount7d }
+        : {}),
+    };
 
     return {
       status: 'ok',
@@ -117,9 +129,7 @@ export async function runValidation(
       writes: {
         avgWatchersPerListing: ebay.avgWatchersPerListing,
         preOrderListingsCount: ebay.preOrderListingsCount,
-        twitterTrending: social.twitterTrending,
-        youtubeViews24hMillions: social.youtubeViews24hMillions,
-        redditPostsCount7d: social.redditPostsCount7d,
+        ...socialWrites,
         marketPriceUsd,
         avgShippingCostUsd: ebay.avgShippingCostUsd,
         competitionLevel: ebay.competitionLevel,

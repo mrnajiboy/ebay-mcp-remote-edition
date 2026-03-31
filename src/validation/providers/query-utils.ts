@@ -11,6 +11,14 @@ export function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+export function sanitizeQueryCandidate(query: string): string {
+  return normalizeWhitespace(query)
+    .replace(/^[\s\-–—:;,./]+/, '')
+    .replace(/[\s\-–—:;,./]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function simplifyItemTitle(title: string): string {
   let simplified = title;
   for (const pattern of NOISY_VERSION_PATTERNS) {
@@ -34,7 +42,7 @@ function dedupeQueries(candidates: string[]): string[] {
   const result: string[] = [];
 
   for (const candidate of candidates) {
-    const normalized = normalizeWhitespace(candidate);
+    const normalized = sanitizeQueryCandidate(candidate);
     if (!normalized) {
       continue;
     }
@@ -69,6 +77,51 @@ function getPrimaryAlbumPhrase(request: ValidationRunRequest): string {
   return normalizeWhitespace(removeBracketedContent(withoutArtist));
 }
 
+function extractMeaningfulTitleToken(value: string): string {
+  const tokens = sanitizeQueryCandidate(value)
+    .split(' ')
+    .map((token) => token.replace(/[^a-zA-Z0-9]+/g, ''))
+    .filter((token) => token.length >= 3);
+
+  return tokens[0] ?? '';
+}
+
+function ensureArtistRetention(candidate: string, primaryArtist: string): string {
+  if (!primaryArtist) {
+    return sanitizeQueryCandidate(candidate);
+  }
+
+  const sanitized = sanitizeQueryCandidate(candidate);
+  if (!sanitized) {
+    return sanitizeQueryCandidate(primaryArtist);
+  }
+
+  if (titleAlreadyContainsArtist(sanitized, primaryArtist)) {
+    return sanitized;
+  }
+
+  return sanitizeQueryCandidate(`${primaryArtist} ${sanitized}`);
+}
+
+function isValidCandidate(candidate: string, primaryArtist: string, albumPhrase: string): boolean {
+  const sanitized = sanitizeQueryCandidate(candidate);
+  if (sanitized.length < 8) {
+    return false;
+  }
+
+  if (!/[a-zA-Z]/.test(sanitized)) {
+    return false;
+  }
+
+  const meaningfulAlbumToken = extractMeaningfulTitleToken(albumPhrase);
+  const hasArtist = primaryArtist ? titleAlreadyContainsArtist(sanitized, primaryArtist) : false;
+  const hasAlbumToken = meaningfulAlbumToken
+    ? sanitized.toLowerCase().includes(meaningfulAlbumToken.toLowerCase())
+    : false;
+
+  return hasArtist || hasAlbumToken;
+}
+
 export function buildValidationQueryCandidates(request: ValidationRunRequest): string[] {
   const title = normalizeWhitespace(request.item.name);
   const simplifiedTitle = simplifyItemTitle(title);
@@ -77,24 +130,37 @@ export function buildValidationQueryCandidates(request: ValidationRunRequest): s
   const primaryAlbumPhrase = getPrimaryAlbumPhrase(request);
   const validationType = request.validation.validationType.trim();
 
-  const tier1 = simplifiedTitle || title;
-  const tier2 = titleWithoutParens || tier1;
-  const tier3 = normalizeWhitespace(
-    [
-      titleAlreadyContainsArtist(tier2, primaryArtist) ? '' : primaryArtist,
-      primaryAlbumPhrase,
-      validationType,
-    ].join(' ')
+  const tier1 = ensureArtistRetention(simplifiedTitle || title, primaryArtist);
+  const tier2 = ensureArtistRetention(titleWithoutParens || tier1, primaryArtist);
+  const tier3 = ensureArtistRetention(
+    normalizeWhitespace(
+      [
+        titleAlreadyContainsArtist(tier2, primaryArtist) ? '' : primaryArtist,
+        primaryAlbumPhrase,
+        validationType,
+      ].join(' ')
+    ),
+    primaryArtist
   );
-  const tier4 = normalizeWhitespace(
-    [
-      titleAlreadyContainsArtist(primaryAlbumPhrase, primaryArtist) ? '' : primaryArtist,
-      primaryAlbumPhrase,
-    ].join(' ')
+  const tier4 = ensureArtistRetention(
+    normalizeWhitespace(
+      [
+        titleAlreadyContainsArtist(primaryAlbumPhrase, primaryArtist) ? '' : primaryArtist,
+        primaryAlbumPhrase,
+      ].join(' ')
+    ),
+    primaryArtist
   );
-  const tier5 = normalizeWhitespace(
-    [primaryArtist, request.item.releaseType[0] ?? '', primaryAlbumPhrase].join(' ')
+  const tier5 = ensureArtistRetention(
+    [
+      primaryArtist,
+      request.item.releaseType[0] ?? '',
+      primaryAlbumPhrase,
+    ].join(' '),
+    primaryArtist
   );
 
-  return dedupeQueries([tier1, tier2, tier3, tier4, tier5]);
+  return dedupeQueries([tier1, tier2, tier3, tier4, tier5]).filter((candidate) =>
+    isValidCandidate(candidate, primaryArtist, primaryAlbumPhrase)
+  );
 }

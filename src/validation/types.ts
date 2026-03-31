@@ -103,9 +103,40 @@ export interface EbaySoldValidationSignals {
 }
 
 export interface SocialValidationSignals {
-  twitterTrending: boolean;
+  twitterTrending: boolean | null;
   youtubeViews24hMillions: number | null;
   redditPostsCount7d: number | null;
+  debug?: {
+    twitter?: {
+      checked: boolean;
+      query?: string;
+      searchUrl?: string;
+      recentResultCount?: number | null;
+      confidence?: ValidationSignalConfidence;
+      note?: string;
+    };
+    youtube?: {
+      checked: boolean;
+      query?: string;
+      searchUrl?: string;
+      topVideoTitle?: string | null;
+      topVideoUrl?: string | null;
+      publishedAt?: string | null;
+      totalViews?: number | null;
+      daysLive?: number | null;
+      avgDailyViews?: number | null;
+      confidence?: ValidationSignalConfidence;
+      note?: string;
+    };
+    reddit?: {
+      checked: boolean;
+      query?: string;
+      searchUrl?: string;
+      recentResultCount?: number | null;
+      confidence?: ValidationSignalConfidence;
+      note?: string;
+    };
+  };
 }
 
 export interface ChartValidationSignals {

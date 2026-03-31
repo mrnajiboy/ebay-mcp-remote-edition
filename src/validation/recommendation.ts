@@ -101,14 +101,15 @@ export function buildValidationRecommendation(
     monitoringNotes =
       'Temporary sold-provider data is present, but sample depth is not yet strong enough to justify an automatic buy-decision change.';
   } else if (
-    signals.social.youtubeViews24hMillions !== null ||
-    signals.social.redditPostsCount7d !== null
+    signals.social.twitterTrending === true ||
+    (signals.social.youtubeViews24hMillions !== null && signals.social.youtubeViews24hMillions >= 0.1) ||
+    (signals.social.redditPostsCount7d !== null && signals.social.redditPostsCount7d >= 5)
   ) {
     latestAiRecommendation =
       'Demand signals are mixed. Keep monitoring until eBay pricing and social momentum become more decisive.';
     latestAiConfidence = 'Medium';
     monitoringNotes =
-      'Cross-channel activity exists, but the combined signal is not strong enough for an automatic buy change.';
+      'Cross-channel social activity exists, but it is only being used as a supporting confidence signal and is not strong enough to justify an automatic buy change.';
   }
 
   return {
