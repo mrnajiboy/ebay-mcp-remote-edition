@@ -582,7 +582,7 @@ function mountEnvRouter(
       }
     }
 
-    res.json({
+    const healthResponse = {
       status: authenticated ? 'ok' : 'degraded',
       environment,
       validationRunnerUserId,
@@ -597,7 +597,23 @@ function mountEnvRouter(
         socialConfig,
       },
       ...(authError ? { authError } : {}),
+    };
+
+    serverLogger.info('Validation health response emitted', {
+      environment,
+      path: req.originalUrl,
+      status: healthResponse.status,
+      version: getVersion(),
+      hasSocialConfigAtRoot: Object.prototype.hasOwnProperty.call(healthResponse, 'socialConfig'),
+      hasSocialConfigUnderProviders: Object.prototype.hasOwnProperty.call(
+        healthResponse.providers,
+        'socialConfig'
+      ),
+      providerKeys: Object.keys(healthResponse.providers),
+      socialConfig,
     });
+
+    res.json(healthResponse);
   });
 
   // ── RFC 8414 – Authorization Server Metadata ──────────────────────────
