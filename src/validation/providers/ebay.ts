@@ -115,7 +115,9 @@ export async function getEbayValidationSignals(
 
     const marketPriceUsd = median(prices);
     const avgShippingCostUsd =
-      shipping.length > 0 ? shipping.reduce((sum, value) => sum + value, 0) / shipping.length : null;
+      shipping.length > 0
+        ? shipping.reduce((sum, value) => sum + value, 0) / shipping.length
+        : null;
     const totalListings =
       typeof response.total === 'number' && Number.isFinite(response.total)
         ? response.total

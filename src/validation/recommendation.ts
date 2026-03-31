@@ -39,12 +39,11 @@ export function buildValidationRecommendation(
     request.validation.buyDecision === 'Watching';
 
   const trackingCadence: TrackingCadence = shouldAutoTrack ? baseCadence : 'Off';
-  const nextCheckAt =
-    !shouldAutoTrack
-      ? null
-      : trackingCadence === 'Hourly'
-        ? addHours(request.timestamp, 1)
-        : addHours(request.timestamp, 24);
+  const nextCheckAt = !shouldAutoTrack
+    ? null
+    : trackingCadence === 'Hourly'
+      ? addHours(request.timestamp, 1)
+      : addHours(request.timestamp, 24);
 
   const marketPrice = signals.ebay.marketPriceUsd;
   const wholesale = request.item.wholesalePrice;
@@ -58,9 +57,11 @@ export function buildValidationRecommendation(
   let monitoringNotes = 'Baseline recommendation generated from current validation state.';
 
   if (!shouldAutoTrack) {
-    latestAiRecommendation = 'Automatic tracking paused because the validation is no longer in a watchable state.';
+    latestAiRecommendation =
+      'Automatic tracking paused because the validation is no longer in a watchable state.';
     latestAiConfidence = 'High';
-    monitoringNotes = 'Stop conditions were met, so automation will not schedule another validation run.';
+    monitoringNotes =
+      'Stop conditions were met, so automation will not schedule another validation run.';
   } else if (
     marginRatio !== null &&
     marginRatio >= 1 &&
@@ -70,12 +71,17 @@ export function buildValidationRecommendation(
     latestAiRecommendation =
       'Demand and pricing look constructive. Continue tracking closely and be ready to upgrade from watch status if sell-through strengthens.';
     latestAiConfidence = 'High';
-    monitoringNotes = 'Healthy active-listing volume and strong projected margin support continued monitoring.';
-  } else if (signals.social.youtubeViews24hMillions !== null || signals.social.redditPostsCount7d !== null) {
+    monitoringNotes =
+      'Healthy active-listing volume and strong projected margin support continued monitoring.';
+  } else if (
+    signals.social.youtubeViews24hMillions !== null ||
+    signals.social.redditPostsCount7d !== null
+  ) {
     latestAiRecommendation =
       'Demand signals are mixed. Keep monitoring until eBay pricing and social momentum become more decisive.';
     latestAiConfidence = 'Medium';
-    monitoringNotes = 'Cross-channel activity exists, but the combined signal is not strong enough for an automatic buy change.';
+    monitoringNotes =
+      'Cross-channel activity exists, but the combined signal is not strong enough for an automatic buy change.';
   }
 
   return {

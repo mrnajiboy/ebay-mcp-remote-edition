@@ -30,6 +30,36 @@ function getValidationId(input: unknown): string {
   return '';
 }
 
+function buildProviderDebug(
+  ebay: Awaited<ReturnType<typeof getEbayValidationSignals>>,
+  social: ReturnType<typeof getSocialValidationSignals>,
+  chart: ReturnType<typeof getChartValidationSignals>
+): Record<string, unknown> {
+  return {
+    ebay: {
+      status: ebay.sampleSize > 0 ? 'ok' : 'partial',
+      confidence: ebay.sampleSize >= 10 ? 'medium' : 'low',
+      sampleSize: ebay.sampleSize,
+      hasMarketPrice: ebay.marketPriceUsd !== null,
+      hasShipping: ebay.avgShippingCostUsd !== null,
+      hasWatchers: ebay.avgWatchersPerListing !== null,
+    },
+    social: {
+      status: 'stub',
+      confidence: 'low',
+      hasSignals:
+        social.twitterTrending ||
+        social.youtubeViews24hMillions !== null ||
+        social.redditPostsCount7d !== null,
+    },
+    chart: {
+      status: 'stub',
+      confidence: 'low',
+      hasSignals: Object.keys(chart).length > 0,
+    },
+  };
+}
+
 export async function runValidation(
   api: EbaySellerApi,
   input: unknown
@@ -93,6 +123,7 @@ export async function runValidation(
         ebayQuery: ebay.ebayQuery,
         sampleSize: ebay.sampleSize,
         sourceSet: ['ebay', 'social', 'chart'],
+        providers: buildProviderDebug(ebay, social, chart),
       },
     };
   } catch (error) {

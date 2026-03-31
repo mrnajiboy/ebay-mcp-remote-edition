@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getBaseUrl } from '@/config/environment.js';
+import { getIdentityBaseUrl } from '@/config/environment.js';
 import type {
   EbayAppAccessTokenResponse,
   EbayConfig,
@@ -19,6 +19,10 @@ export class EbayOAuthClient {
     private context?: { userId?: string; environment?: 'production' | 'sandbox' }
   ) {}
 
+  private getTokenEndpoint(): string {
+    return `${getIdentityBaseUrl(this.config.environment)}/identity/v1/oauth2/token`;
+  }
+
   async initialize(): Promise<void> {
     if (this.context?.userId && this.context.environment) {
       const stored = await this.authStore.getUserTokens(
@@ -35,7 +39,7 @@ export class EbayOAuthClient {
     const envRefreshToken = process.env.EBAY_USER_REFRESH_TOKEN;
     if (envRefreshToken) {
       try {
-        const authUrl = `${getBaseUrl(this.config.environment)}/identity/v1/oauth2/token`;
+        const authUrl = this.getTokenEndpoint();
         const credentials = Buffer.from(
           `${this.config.clientId}:${this.config.clientSecret}`
         ).toString('base64');
@@ -144,7 +148,7 @@ export class EbayOAuthClient {
       return this.appAccessToken;
     }
 
-    const authUrl = `${getBaseUrl(this.config.environment)}/identity/v1/oauth2/token`;
+    const authUrl = this.getTokenEndpoint();
     const credentials = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
       'base64'
     );
@@ -173,7 +177,7 @@ export class EbayOAuthClient {
       throw new Error('Redirect URI is required for authorization code exchange');
     }
 
-    const tokenUrl = `${getBaseUrl(this.config.environment)}/identity/v1/oauth2/token`;
+    const tokenUrl = this.getTokenEndpoint();
     const credentials = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
       'base64'
     );
@@ -228,7 +232,7 @@ export class EbayOAuthClient {
       throw new Error('No user tokens available to refresh');
     }
 
-    const authUrl = `${getBaseUrl(this.config.environment)}/identity/v1/oauth2/token`;
+    const authUrl = this.getTokenEndpoint();
     const credentials = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
       'base64'
     );

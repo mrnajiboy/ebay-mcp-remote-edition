@@ -69,8 +69,16 @@ function getValidationIdFromBody(body: unknown): string {
 }
 
 function getRetryTimestampFromBody(body: unknown): string {
-  if (typeof body === 'object' && body !== null && 'timestamp' in body && typeof body.timestamp === 'string') {
-    return new Date(new Date(body.timestamp).getTime() + 30 * 60 * 1000).toISOString();
+  if (
+    typeof body === 'object' &&
+    body !== null &&
+    'timestamp' in body &&
+    typeof body.timestamp === 'string'
+  ) {
+    const parsed = new Date(body.timestamp);
+    if (Number.isFinite(parsed.getTime())) {
+      return new Date(parsed.getTime() + 30 * 60 * 1000).toISOString();
+    }
   }
   return new Date(Date.now() + 30 * 60 * 1000).toISOString();
 }
@@ -472,6 +480,44 @@ function mountEnvRouter(
         nextCheckAt: getRetryTimestampFromBody(req.body),
       });
     }
+  });
+
+  router.get('/validation/health', requireAdmin, async (req, res) => {
+    const environment = resolveEnv(req);
+    const validationRunnerUserId = getValidationRunnerUserId(environment);
+    const storedTokens = validationRunnerUserId
+      ? await authStore.getUserTokens(validationRunnerUserId, environment)
+      : null;
+
+    let authenticated = false;
+    let authError: string | null = null;
+    let tokenStatus: ReturnType<EbaySellerApi['getTokenInfo']> | null = null;
+
+    if (validationRunnerUserId && storedTokens?.tokenData) {
+      try {
+        const api = await createUserScopedApi(validationRunnerUserId, environment);
+        await api.getAuthClient().getOAuthClient().getAccessToken();
+        authenticated = true;
+        tokenStatus = api.getTokenInfo();
+      } catch (error) {
+        authError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    res.json({
+      status: authenticated ? 'ok' : 'degraded',
+      environment,
+      validationRunnerUserId,
+      hasStoredTokens: !!storedTokens?.tokenData,
+      authenticated,
+      tokenStatus,
+      providers: {
+        ebay: { available: true, implemented: true, confidence: 'medium' },
+        social: { available: false, implemented: false, confidence: 'low' },
+        chart: { available: false, implemented: false, confidence: 'low' },
+      },
+      ...(authError ? { authError } : {}),
+    });
   });
 
   // ── RFC 8414 – Authorization Server Metadata ──────────────────────────
@@ -927,7 +973,9 @@ function mountEnvRouter(
           async (args: Record<string, unknown>) => {
             try {
               const result = await executeTool(api, toolDef.name, args);
-              return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+              return {
+                content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+              };
             } catch (error) {
               return {
                 content: [
