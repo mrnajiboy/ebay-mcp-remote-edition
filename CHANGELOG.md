@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.2.0...ebay-mcp-remote-edition-v3.3.0) (2026-04-01)
+
+
+### Features
+
+* improve provider logic for social signals ([bd1b3ae](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/bd1b3aeea706b9f12e7774a7eb16e0928b2f0f06))
+
+
+### Bug Fixes
+
+* change initial thresholds for social trending (will adjust for tiers soon) ([0745b27](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/0745b2798192facb0161197b732359e5091a5f9d))
+* change validation/health package ([c501cee](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/c501ceeddfa3d4e29352d7a349b939616c8fff9b))
+* cleanup validation prep ([381b981](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/381b981daca42ec0aba099db7606c56cdec53f6b))
+* improve human query nature ([fb472a8](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/fb472a8dd9ef169f9cf4d828febe76f57c92a81d))
+* linting ([80d7edf](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/80d7edf28a985d883f5c6799423e783d56c8b408))
+* social call structures and response schema ([7d449be](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7d449bea9333cbd3633501786863eb2cc8a5c92f))
+* social calls ([9a2c3a5](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/9a2c3a5423258adfc9d534475a93d559b977e98b))
+* social health indicators and higher reddit page limits ([c97b1c8](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/c97b1c8df55ce4aed056bc5a0869eff637c60f41))
+* social validation elements ([b623488](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b623488b8fa5f500ccf83ba7391058b72b3be0d0))
+* terapeak information prep, perplexity implementation for previous sales data search ([bf9b057](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/bf9b0579ba7cf872671ed3ab1979c36f22c1a9ef))
+* validation endpoint search query fallbacks, was too verbose, gave dumber options ([cdea101](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/cdea101f1f2194dce4bb65881cebd5c9d5bceb2a))
+* youtube and twitter organization ([0d2471a](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/0d2471a66cc96d6c7441565cfef08205555cb545))
+
 ## [3.2.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.1.2...ebay-mcp-remote-edition-v3.2.0) (2026-03-31)
 
 
