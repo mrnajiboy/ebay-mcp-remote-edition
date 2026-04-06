@@ -83,7 +83,7 @@ export class TradingApiClient {
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown HTTP error';
-      throw new Error(`Trading API ${callName} request failed: ${message}`);
+      throw new Error(`Trading API ${callName} request failed: ${message}`, { cause: error });
     }
 
     let parsed: Record<string, unknown>;
@@ -91,7 +91,8 @@ export class TradingApiClient {
       parsed = this.parser.parse(response.data) as Record<string, unknown>;
     } catch (e) {
       throw new Error(
-        `Failed to parse Trading API ${callName} response: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to parse Trading API ${callName} response: ${e instanceof Error ? e.message : String(e)}`,
+        { cause: e }
       );
     }
     const result = (parsed[responseTag] || parsed) as Record<string, unknown>;

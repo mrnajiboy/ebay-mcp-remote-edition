@@ -40,7 +40,8 @@ export class FeedbackApi {
       return await this.client.get(`${this.basePath}/awaiting_feedback`, params);
     } catch (error) {
       throw new Error(
-        `Failed to get awaiting feedback: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get awaiting feedback: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -61,7 +62,8 @@ export class FeedbackApi {
       });
     } catch (error) {
       throw new Error(
-        `Failed to get feedback: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get feedback: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -76,7 +78,8 @@ export class FeedbackApi {
       return await this.client.get(`${this.basePath}/feedback_rating_summary`);
     } catch (error) {
       throw new Error(
-        `Failed to get feedback rating summary: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get feedback rating summary: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -95,7 +98,8 @@ export class FeedbackApi {
       return await this.client.post(`${this.basePath}/feedback`, feedbackData);
     } catch (error) {
       throw new Error(
-        `Failed to leave feedback: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to leave feedback: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -120,7 +124,8 @@ export class FeedbackApi {
       });
     } catch (error) {
       throw new Error(
-        `Failed to respond to feedback: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to respond to feedback: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }

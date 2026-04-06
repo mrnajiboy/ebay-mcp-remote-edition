@@ -23,7 +23,8 @@ export class MessageApi {
       return await this.client.post(`${this.basePath}/bulk_update_conversation`, updateData);
     } catch (error) {
       throw new Error(
-        `Failed to bulk update conversation: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to bulk update conversation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -59,7 +60,8 @@ export class MessageApi {
       return await this.client.get(`${this.basePath}/conversation`, params);
     } catch (error) {
       throw new Error(
-        `Failed to get conversations: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get conversations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -78,7 +80,8 @@ export class MessageApi {
       return await this.client.get(`${this.basePath}/conversation/${conversationId}`);
     } catch (error) {
       throw new Error(
-        `Failed to get conversation: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get conversation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -97,7 +100,8 @@ export class MessageApi {
       return await this.client.post(`${this.basePath}/send_message`, messageData);
     } catch (error) {
       throw new Error(
-        `Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -116,7 +120,8 @@ export class MessageApi {
       return await this.client.post(`${this.basePath}/update_conversation`, updateData);
     } catch (error) {
       throw new Error(
-        `Failed to update conversation: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to update conversation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }

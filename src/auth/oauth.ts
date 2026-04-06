@@ -227,10 +227,10 @@ export class EbayOAuthClient {
       if (axios.isAxiosError(error) && error.response?.data) {
         const data = error.response.data as { error?: string; error_description?: string };
         if (data.error_description) {
-          throw new Error(data.error_description);
+          throw new Error(data.error_description, { cause: error });
         }
         if (data.error) {
-          throw new Error(data.error);
+          throw new Error(data.error, { cause: error });
         }
       }
       throw error;

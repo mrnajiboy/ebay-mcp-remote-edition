@@ -40,7 +40,8 @@ export class NegotiationApi {
       return await this.client.get(`${this.basePath}/find_eligible_items`, params);
     } catch (error) {
       throw new Error(
-        `Failed to find eligible items: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to find eligible items: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -59,7 +60,8 @@ export class NegotiationApi {
       return await this.client.post(`${this.basePath}/send_offer_to_interested_buyers`, offerData);
     } catch (error) {
       throw new Error(
-        `Failed to send offer to interested buyers: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to send offer to interested buyers: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -99,7 +101,8 @@ export class NegotiationApi {
       return await this.client.get(`${this.basePath}/offer/${offerId}`);
     } catch (error) {
       throw new Error(
-        `Failed to get offer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get offer: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }

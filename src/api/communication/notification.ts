@@ -22,7 +22,8 @@ export class NotificationApi {
       return await this.client.get(`${this.basePath}/public_key/${publicKeyId}`);
     } catch (error) {
       throw new Error(
-        `Failed to get public key: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get public key: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -36,7 +37,8 @@ export class NotificationApi {
       return await this.client.get(`${this.basePath}/config`);
     } catch (error) {
       throw new Error(
-        `Failed to get config: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get config: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -54,7 +56,8 @@ export class NotificationApi {
       return await this.client.put(`${this.basePath}/config`, config);
     } catch (error) {
       throw new Error(
-        `Failed to update config: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to update config: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -72,7 +75,8 @@ export class NotificationApi {
       return await this.client.get(`${this.basePath}/destination`, params);
     } catch (error) {
       throw new Error(
-        `Failed to get destinations: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get destinations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -90,7 +94,8 @@ export class NotificationApi {
       return await this.client.get(`${this.basePath}/destination/${destinationId}`);
     } catch (error) {
       throw new Error(
-        `Failed to get destination: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get destination: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -108,7 +113,8 @@ export class NotificationApi {
       return await this.client.post(`${this.basePath}/destination`, destination);
     } catch (error) {
       throw new Error(
-        `Failed to create destination: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create destination: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -129,7 +135,8 @@ export class NotificationApi {
       return await this.client.put(`${this.basePath}/destination/${destinationId}`, destination);
     } catch (error) {
       throw new Error(
-        `Failed to update destination: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to update destination: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -147,7 +154,8 @@ export class NotificationApi {
       return await this.client.delete(`${this.basePath}/destination/${destinationId}`);
     } catch (error) {
       throw new Error(
-        `Failed to delete destination: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete destination: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -177,7 +185,8 @@ export class NotificationApi {
       return await this.client.get(`${this.basePath}/subscription`, params);
     } catch (error) {
       throw new Error(
-        `Failed to get subscriptions: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get subscriptions: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -196,7 +205,8 @@ export class NotificationApi {
       return await this.client.post(`${this.basePath}/subscription`, subscription);
     } catch (error) {
       throw new Error(
-        `Failed to create subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create subscription: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -215,7 +225,8 @@ export class NotificationApi {
       return await this.client.get(`${this.basePath}/subscription/${subscriptionId}`);
     } catch (error) {
       throw new Error(
-        `Failed to get subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get subscription: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -237,7 +248,8 @@ export class NotificationApi {
       return await this.client.put(`${this.basePath}/subscription/${subscriptionId}`, subscription);
     } catch (error) {
       throw new Error(
-        `Failed to update subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to update subscription: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -256,7 +268,8 @@ export class NotificationApi {
       return await this.client.delete(`${this.basePath}/subscription/${subscriptionId}`);
     } catch (error) {
       throw new Error(
-        `Failed to delete subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete subscription: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -275,7 +288,8 @@ export class NotificationApi {
       return await this.client.post(`${this.basePath}/subscription/${subscriptionId}/disable`, {});
     } catch (error) {
       throw new Error(
-        `Failed to disable subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to disable subscription: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -294,7 +308,8 @@ export class NotificationApi {
       return await this.client.post(`${this.basePath}/subscription/${subscriptionId}/enable`, {});
     } catch (error) {
       throw new Error(
-        `Failed to enable subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to enable subscription: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -313,7 +328,8 @@ export class NotificationApi {
       return await this.client.post(`${this.basePath}/subscription/${subscriptionId}/test`, {});
     } catch (error) {
       throw new Error(
-        `Failed to test subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to test subscription: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -332,7 +348,8 @@ export class NotificationApi {
       return await this.client.get(`${this.basePath}/topic/${topicId}`);
     } catch (error) {
       throw new Error(
-        `Failed to get topic: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get topic: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -362,7 +379,8 @@ export class NotificationApi {
       return await this.client.get(`${this.basePath}/topic`, params);
     } catch (error) {
       throw new Error(
-        `Failed to get topics: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get topics: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -387,7 +405,8 @@ export class NotificationApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to create subscription filter: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create subscription filter: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -411,7 +430,8 @@ export class NotificationApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get subscription filter: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get subscription filter: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -435,7 +455,8 @@ export class NotificationApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to delete subscription filter: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete subscription filter: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }

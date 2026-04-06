@@ -45,7 +45,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get inventory items: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get inventory items: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -65,7 +66,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get inventory item: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get inventory item: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -86,7 +88,8 @@ export class InventoryApi {
       return await this.client.put<void>(`${this.basePath}/inventory_item/${sku}`, inventoryItem);
     } catch (error) {
       throw new Error(
-        `Failed to create or replace inventory item: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create or replace inventory item: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -104,7 +107,8 @@ export class InventoryApi {
       return await this.client.delete<void>(`${this.basePath}/inventory_item/${sku}`);
     } catch (error) {
       throw new Error(
-        `Failed to delete inventory item: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete inventory item: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -126,7 +130,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to bulk create or replace inventory items: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to bulk create or replace inventory items: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -145,7 +150,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/bulk_get_inventory_item`, requests);
     } catch (error) {
       throw new Error(
-        `Failed to bulk get inventory items: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to bulk get inventory items: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -164,7 +170,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/bulk_update_price_quantity`, requests);
     } catch (error) {
       throw new Error(
-        `Failed to bulk update price and quantity: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to bulk update price and quantity: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -183,7 +190,8 @@ export class InventoryApi {
       return await this.client.get(`${this.basePath}/inventory_item/${sku}/product_compatibility`);
     } catch (error) {
       throw new Error(
-        `Failed to get product compatibility: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get product compatibility: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -211,7 +219,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to create or replace product compatibility: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create or replace product compatibility: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -232,7 +241,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to delete product compatibility: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete product compatibility: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -253,7 +263,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -281,7 +292,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to create or replace inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create or replace inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -302,7 +314,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to delete inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -332,7 +345,8 @@ export class InventoryApi {
       return await this.client.get(`${this.basePath}/location`, params);
     } catch (error) {
       throw new Error(
-        `Failed to get inventory locations: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get inventory locations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -351,7 +365,8 @@ export class InventoryApi {
       return await this.client.get(`${this.basePath}/location/${merchantLocationKey}`);
     } catch (error) {
       throw new Error(
-        `Failed to get inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -376,7 +391,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/location/${merchantLocationKey}`, location);
     } catch (error) {
       throw new Error(
-        `Failed to create or replace inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create or replace inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -395,7 +411,8 @@ export class InventoryApi {
       return await this.client.delete(`${this.basePath}/location/${merchantLocationKey}`);
     } catch (error) {
       throw new Error(
-        `Failed to delete inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -414,7 +431,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/location/${merchantLocationKey}/disable`, {});
     } catch (error) {
       throw new Error(
-        `Failed to disable inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to disable inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -433,7 +451,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/location/${merchantLocationKey}/enable`, {});
     } catch (error) {
       throw new Error(
-        `Failed to enable inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to enable inventory location: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -461,7 +480,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to update location details: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to update location details: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -500,7 +520,8 @@ export class InventoryApi {
       return await this.client.get<GetOffersResponse>(`${this.basePath}/offer`, params);
     } catch (error) {
       throw new Error(
-        `Failed to get offers: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get offers: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -519,7 +540,8 @@ export class InventoryApi {
       return await this.client.get(`${this.basePath}/offer/${offerId}`);
     } catch (error) {
       throw new Error(
-        `Failed to get offer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get offer: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -537,7 +559,8 @@ export class InventoryApi {
       return await this.client.post<CreateOfferResponse>(`${this.basePath}/offer`, offer);
     } catch (error) {
       throw new Error(
-        `Failed to create offer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create offer: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -559,7 +582,8 @@ export class InventoryApi {
       return await this.client.put(`${this.basePath}/offer/${offerId}`, offer);
     } catch (error) {
       throw new Error(
-        `Failed to update offer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to update offer: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -578,7 +602,8 @@ export class InventoryApi {
       return await this.client.delete(`${this.basePath}/offer/${offerId}`);
     } catch (error) {
       throw new Error(
-        `Failed to delete offer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete offer: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -596,7 +621,8 @@ export class InventoryApi {
       return await this.client.post<PublishResponse>(`${this.basePath}/offer/${offerId}/publish`);
     } catch (error) {
       throw new Error(
-        `Failed to publish offer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to publish offer: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -615,7 +641,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/offer/${offerId}/withdraw`, {});
     } catch (error) {
       throw new Error(
-        `Failed to withdraw offer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to withdraw offer: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -634,7 +661,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/bulk_create_offer`, requests);
     } catch (error) {
       throw new Error(
-        `Failed to bulk create offers: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to bulk create offers: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -653,7 +681,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/bulk_publish_offer`, requests);
     } catch (error) {
       throw new Error(
-        `Failed to bulk publish offers: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to bulk publish offers: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -672,7 +701,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/offer/get_listing_fees`, offers);
     } catch (error) {
       throw new Error(
-        `Failed to get listing fees: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get listing fees: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -691,7 +721,8 @@ export class InventoryApi {
       return await this.client.post(`${this.basePath}/bulk_migrate_listing`, requests);
     } catch (error) {
       throw new Error(
-        `Failed to bulk migrate listings: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to bulk migrate listings: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -713,7 +744,8 @@ export class InventoryApi {
       return await this.client.get(`${this.basePath}/listing/${listingId}/sku/${sku}/locations`);
     } catch (error) {
       throw new Error(
-        `Failed to get listing locations: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get listing locations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -745,7 +777,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to create or replace SKU location mapping: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to create or replace SKU location mapping: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -762,7 +795,8 @@ export class InventoryApi {
       return await this.client.delete(`${this.basePath}/listing/${listingId}/sku/${sku}/locations`);
     } catch (error) {
       throw new Error(
-        `Failed to delete SKU location mapping: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to delete SKU location mapping: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -784,7 +818,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to publish offer by inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to publish offer by inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -806,7 +841,8 @@ export class InventoryApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to withdraw offer by inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to withdraw offer by inventory item group: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }

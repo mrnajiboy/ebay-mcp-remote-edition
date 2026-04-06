@@ -32,7 +32,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get automotive parts compatibility policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get automotive parts compatibility policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -60,7 +61,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get category policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get category policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -88,7 +90,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get extended producer responsibility policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get extended producer responsibility policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -109,7 +112,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get hazardous materials labels: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get hazardous materials labels: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -137,7 +141,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get item condition policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get item condition policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -165,7 +170,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get listing structure policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get listing structure policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -193,7 +199,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get negotiated price policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get negotiated price policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -214,7 +221,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get product safety labels: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get product safety labels: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -242,7 +250,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get regulatory policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get regulatory policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -270,7 +279,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get return policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get return policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -298,7 +308,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get shipping cost type policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get shipping cost type policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -326,7 +337,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get classified ad policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get classified ad policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -345,7 +357,8 @@ export class MetadataApi {
       return await this.client.get(`${this.basePath}/marketplace/${marketplaceId}/get_currencies`);
     } catch (error) {
       throw new Error(
-        `Failed to get currencies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get currencies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -373,7 +386,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get listing type policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get listing type policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -401,7 +415,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get motors listing policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get motors listing policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -429,7 +444,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get shipping policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get shipping policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -457,7 +473,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get site visibility policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get site visibility policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -479,7 +496,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get compatibilities by specification: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get compatibilities by specification: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -501,7 +519,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get compatibility property names: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get compatibility property names: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -523,7 +542,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get compatibility property values: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get compatibility property values: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -545,7 +565,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get multi compatibility property values: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get multi compatibility property values: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -567,7 +588,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get product compatibilities: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get product compatibilities: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -588,7 +610,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get sales tax jurisdictions: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get sales tax jurisdictions: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -616,7 +639,8 @@ export class MetadataApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get product compliance policies: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get product compliance policies: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }

@@ -63,7 +63,8 @@ export class TokenVerifier {
         this.metadata = response.data;
       } catch (error) {
         throw new Error(
-          `Failed to load OAuth server metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
+          `Failed to load OAuth server metadata: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          { cause: error }
         );
       }
     } else {
@@ -167,7 +168,8 @@ export class TokenVerifier {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         throw new Error(
-          `Token introspection failed: ${error.response?.data?.error_description || error.message}`
+          `Token introspection failed: ${error.response?.data?.error_description || error.message}`,
+          { cause: error }
         );
       }
       throw error;
@@ -227,7 +229,8 @@ export class TokenVerifier {
       };
     } catch (error) {
       throw new Error(
-        `JWT verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `JWT verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }

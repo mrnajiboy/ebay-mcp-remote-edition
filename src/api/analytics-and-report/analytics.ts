@@ -39,7 +39,8 @@ export class AnalyticsApi {
       return await this.client.get(`${this.basePath}/traffic_report`, params);
     } catch (error) {
       throw new Error(
-        `Failed to get traffic report: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get traffic report: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -54,7 +55,8 @@ export class AnalyticsApi {
       return await this.client.get(`${this.basePath}/seller_standards_profile`);
     } catch (error) {
       throw new Error(
-        `Failed to find seller standards profiles: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to find seller standards profiles: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -77,7 +79,8 @@ export class AnalyticsApi {
       return await this.client.get(`${this.basePath}/seller_standards_profile/${program}/${cycle}`);
     } catch (error) {
       throw new Error(
-        `Failed to get seller standards profile: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get seller standards profile: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }
@@ -114,7 +117,8 @@ export class AnalyticsApi {
       );
     } catch (error) {
       throw new Error(
-        `Failed to get customer service metric: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to get customer service metric: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error }
       );
     }
   }

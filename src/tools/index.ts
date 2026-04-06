@@ -308,7 +308,8 @@ export async function executeTool(
         };
       } catch (error) {
         throw new Error(
-          `Failed to convert date: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to convert date: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error }
         );
       }
     }
@@ -334,7 +335,8 @@ export async function executeTool(
         };
       } catch (error) {
         throw new Error(
-          `Failed to validate token expiry: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to validate token expiry: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error }
         );
       }
     }
@@ -401,7 +403,8 @@ export async function executeTool(
         };
       } catch (error) {
         throw new Error(
-          `Failed to set user tokens: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to set user tokens: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error }
         );
       }
     }
@@ -511,7 +514,8 @@ export async function executeTool(
         };
       } catch (error) {
         throw new Error(
-          `Failed to exchange authorization code: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to exchange authorization code: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error }
         );
       }
     }
@@ -552,7 +556,8 @@ export async function executeTool(
         };
       } catch (error) {
         throw new Error(
-          `Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error }
         );
       }
     }
