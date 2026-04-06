@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.3.0...ebay-mcp-remote-edition-v3.3.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* added event first-class object ([7c30357](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7c303574580b24f5192d0a42f5835f595e6346c3))
+* added schema for event driven queries ([47372e7](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/47372e71d0e7e2001fa9611c12778e69f0f5aafb))
+* direct query prioritization ([0b669d2](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/0b669d24275c73238b131c10da99b7a21740e65c))
+* tweak social prioritzation on artist only requests ([ca5ae16](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/ca5ae16a74bd82c1378515816cc1aee55cd6e5d7))
+
+
+### Documentation
+
+* update docs with validation route terminology ([bffc69c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/bffc69c4bba7490a62f1c8b6c867d0c65e3892a3))
+
 ## [3.3.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.2.0...ebay-mcp-remote-edition-v3.3.0) (2026-04-06)
 
 
