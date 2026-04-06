@@ -6,6 +6,7 @@ import type {
   SocialValidationSignals,
   TerapeakValidationSignals,
   TrackingCadence,
+  ValidationEffectiveContext,
   ValidationRunRequest,
 } from './types.js';
 
@@ -16,6 +17,7 @@ interface ValidationRecommendationInput {
   social: SocialValidationSignals;
   chart: ChartValidationSignals;
   research: PreviousComebackResearchSignals;
+  effectiveContext: ValidationEffectiveContext;
 }
 
 function addHours(timestamp: string, hours: number): string {
@@ -57,11 +59,20 @@ export function buildValidationRecommendation(
     signals.ebay.marketPriceUsd;
   const preorderListingsCount =
     signals.terapeak.preOrderListingsCount ?? signals.ebay.preOrderListingsCount;
-  const wholesale = request.item.wholesalePrice;
+  const wholesale = signals.effectiveContext.hasItem ? request.item.wholesalePrice : null;
   const marginRatio =
     marketPrice !== null && wholesale !== null && wholesale > 0
       ? (marketPrice - wholesale) / wholesale
       : null;
+  const subjectLabel =
+    signals.effectiveContext.sourceType === 'event'
+      ? (signals.effectiveContext.searchEvent ??
+        signals.effectiveContext.effectiveSearchQuery ??
+        'event opportunity')
+      : (signals.effectiveContext.searchAlbum ??
+        signals.effectiveContext.searchItem ??
+        request.item.name ??
+        'release');
   const recentSoldCount = [
     signals.sold.soldVelocity.day1Sold,
     signals.sold.soldVelocity.day2Sold,
@@ -70,14 +81,13 @@ export function buildValidationRecommendation(
 
   let latestAiRecommendation = 'Continue watching until stronger market signal appears.';
   let latestAiConfidence: 'High' | 'Medium' | 'Low' = 'Medium';
-  let monitoringNotes = 'Baseline recommendation generated from current validation state.';
+  let monitoringNotes = `Baseline recommendation generated from current ${signals.effectiveContext.mode} validation state for ${subjectLabel}.`;
 
   if (!shouldAutoTrack) {
     latestAiRecommendation =
       'Automatic tracking paused because the validation is no longer in a watchable state.';
     latestAiConfidence = 'High';
-    monitoringNotes =
-      'Stop conditions were met, so automation will not schedule another validation run.';
+    monitoringNotes = `Stop conditions were met, so automation will not schedule another ${signals.effectiveContext.mode} validation run for ${subjectLabel}.`;
   } else if (
     marginRatio !== null &&
     marginRatio >= 1 &&

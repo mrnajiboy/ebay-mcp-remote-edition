@@ -33,9 +33,37 @@ export interface ValidationCurrentMetrics {
 
 export interface ValidationQueryContext {
   directQueryActive?: boolean | null;
+  directSearchQuery?: string | null;
+  resolvedSearchArtist?: string | null;
+  resolvedSearchItem?: string | null;
+  resolvedSearchEvent?: string | null;
+  resolvedSearchLocation?: string | null;
   resolvedSearchQuery?: string | null;
   validationScope?: string | null;
   queryScope?: string | null;
+}
+
+export interface ValidationEffectiveContext {
+  sourceType: 'item' | 'event';
+  mode: 'item' | 'event';
+  validationScope: string | null;
+  queryScope: string | null;
+  directQueryActive: boolean;
+  resolvedSearchQuery: string | null;
+  effectiveSearchQuery: string | null;
+  searchArtist: string | null;
+  searchAlbum: string | null;
+  searchItem: string | null;
+  searchEvent: string | null;
+  searchLocation: string | null;
+  hasItem: boolean;
+  hasEvent: boolean;
+  itemRecordId: string | null;
+  eventRecordId: string | null;
+  itemName: string | null;
+  eventDate: string | null;
+  dDay: number | null;
+  requestTimestamp: string;
 }
 
 export interface ValidationSourceContext {
@@ -75,6 +103,7 @@ export interface ValidationRunRequest {
   cadence: TrackingCadence;
   timestamp: string;
   sourceContext?: ValidationSourceContext;
+  effectiveContext?: ValidationEffectiveContext;
   item: ValidationItem;
   validation: {
     validationType: string;

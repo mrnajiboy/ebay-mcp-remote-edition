@@ -1,4 +1,5 @@
 import type { PreviousComebackResearchSignals, ValidationRunRequest } from '../types.js';
+import { getValidationEffectiveContext } from '../effective-context.js';
 
 export async function getPreviousComebackResearchSignals(
   request: ValidationRunRequest
@@ -6,7 +7,9 @@ export async function getPreviousComebackResearchSignals(
   await Promise.resolve();
 
   const hasPerplexityKey = (process.env.PERPLEXITY_API_KEY ?? '').trim().length > 0;
-  const primaryAlbum = request.item.relatedAlbums[0] ?? null;
+  const effectiveContext = getValidationEffectiveContext(request);
+  const primaryAlbum =
+    effectiveContext.searchAlbum ?? effectiveContext.searchEvent ?? effectiveContext.searchItem;
 
   return {
     previousAlbumTitle: null,

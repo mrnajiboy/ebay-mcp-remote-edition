@@ -3,6 +3,7 @@ import type {
   ValidationQueryContext,
   ValidationRunRequest,
 } from '../types.js';
+import { getValidationEffectiveContext } from '../effective-context.js';
 
 export interface ProviderQueryCandidate {
   family: string;
@@ -161,16 +162,38 @@ function dedupeQueries(candidates: string[]): string[] {
 }
 
 function getPrimaryArtist(request: ValidationRunRequest): string {
-  return request.item.canonicalArtists[0]?.trim() ?? '';
+  return (
+    getValidationEffectiveContext(request).searchArtist ??
+    request.item.canonicalArtists[0]?.trim() ??
+    ''
+  );
 }
 
 export function getPrimaryAlbumPhrase(request: ValidationRunRequest): string {
-  const relatedAlbum = sanitizeQueryCandidate(request.item.relatedAlbums[0]?.trim() ?? '');
+  const effectiveContext = getValidationEffectiveContext(request);
+
+  if (effectiveContext.sourceType === 'event') {
+    const eventPhrase = sanitizeQueryCandidate(effectiveContext.searchEvent ?? '');
+    if (eventPhrase && extractSemanticTokens(eventPhrase).length > 0) {
+      return eventPhrase;
+    }
+
+    const itemPhrase = sanitizeQueryCandidate(effectiveContext.searchItem ?? '');
+    if (itemPhrase && extractSemanticTokens(itemPhrase).length > 0) {
+      return itemPhrase;
+    }
+
+    return sanitizeQueryCandidate(effectiveContext.searchLocation ?? '');
+  }
+
+  const relatedAlbum = sanitizeQueryCandidate(
+    effectiveContext.searchAlbum ?? request.item.relatedAlbums[0]?.trim() ?? ''
+  );
   if (relatedAlbum && extractSemanticTokens(relatedAlbum).length > 0) {
     return relatedAlbum;
   }
 
-  const simplifiedTitle = simplifyItemTitle(request.item.name);
+  const simplifiedTitle = simplifyItemTitle(effectiveContext.searchItem ?? request.item.name);
   const withoutArtist = stripArtistsFromText(simplifiedTitle, request.item.canonicalArtists);
   const cleanedWithoutArtist = sanitizeQueryCandidate(removeBracketedContent(withoutArtist));
   if (extractSemanticTokens(cleanedWithoutArtist).length > 0) {
@@ -182,6 +205,22 @@ export function getPrimaryAlbumPhrase(request: ValidationRunRequest): string {
 }
 
 export function getPrimarySocialAlbumPhrase(request: ValidationRunRequest): string {
+  const effectiveContext = getValidationEffectiveContext(request);
+
+  if (effectiveContext.sourceType === 'event') {
+    const eventPhrase = buildConversationAlbumPhrase(
+      buildCompactPhrase(
+        effectiveContext.searchEvent ?? '',
+        effectiveContext.searchItem ?? '',
+        effectiveContext.searchLocation ?? ''
+      )
+    );
+
+    if (extractSemanticTokens(eventPhrase).length > 0) {
+      return eventPhrase;
+    }
+  }
+
   for (const relatedAlbum of request.item.relatedAlbums) {
     const sanitizedRelatedAlbum = sanitizeQueryCandidate(relatedAlbum?.trim() ?? '');
     if (!sanitizedRelatedAlbum) {
@@ -296,6 +335,21 @@ function collectDescriptorPhrases(
     browseFocused: boolean;
   }
 ): string[] {
+  const effectiveContext = getValidationEffectiveContext(request);
+
+  if (effectiveContext.sourceType === 'event') {
+    const eventDescriptors = [
+      effectiveContext.searchItem,
+      effectiveContext.searchLocation,
+      options.includeValidationType ? request.validation.validationType : null,
+    ]
+      .map((value) => normalizeDescriptorPhrase(value ?? ''))
+      .filter(Boolean)
+      .filter((value) => !GENERIC_DESCRIPTOR_PATTERN.test(value.toLowerCase()));
+
+    return dedupeQueries(eventDescriptors).slice(0, 3);
+  }
+
   const rawValues = [
     ...request.item.variation,
     ...request.item.itemType,
@@ -571,11 +625,20 @@ function buildCorePhrases(request: ValidationRunRequest): {
   artistAlbumPhrase: string;
   titleWithArtist: string;
 } {
+  const effectiveContext = getValidationEffectiveContext(request);
   const primaryArtist = getPrimaryArtist(request);
   const albumPhrase = getPrimaryAlbumPhrase(request);
-  const simplifiedTitle = sanitizeQueryCandidate(
-    removeBracketedContent(simplifyItemTitle(request.item.name))
-  );
+  const simplifiedTitle =
+    effectiveContext.sourceType === 'event'
+      ? sanitizeQueryCandidate(
+          buildCompactPhrase(
+            primaryArtist,
+            effectiveContext.searchEvent ?? '',
+            effectiveContext.searchItem ?? '',
+            effectiveContext.searchLocation ?? ''
+          )
+        )
+      : sanitizeQueryCandidate(removeBracketedContent(simplifyItemTitle(request.item.name)));
   const artistAlbumPhrase = ensureArtistRetention(
     buildCompactPhrase(primaryArtist, albumPhrase),
     primaryArtist

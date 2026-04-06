@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildValidationEffectiveContext } from '@/validation/effective-context.js';
 import { validationRunRequestSchema } from '@/validation/schemas.js';
 import type { ValidationRunRequest } from '@/validation/types.js';
 import {
@@ -12,7 +13,8 @@ import {
 
 function createRequest(
   queryContext: ValidationRunRequest['validation']['queryContext'],
-  itemOverrides: Partial<ValidationRunRequest['item']> = {}
+  itemOverrides: Partial<ValidationRunRequest['item']> = {},
+  requestOverrides: Partial<ValidationRunRequest> = {}
 ): ValidationRunRequest {
   return {
     validationId: 'val_123',
@@ -62,6 +64,7 @@ function createRequest(
         daysTracked: null,
       },
     },
+    ...requestOverrides,
   };
 }
 
@@ -165,5 +168,96 @@ describe('validation query context schema', () => {
     );
 
     expect(parsed.validation.queryContext?.directQueryActive).toBe(true);
+  });
+
+  it('accepts resolved event context fields in the request payload', () => {
+    const parsed = validationRunRequestSchema.parse(
+      createRequest({
+        resolvedSearchArtist: 'IU',
+        resolvedSearchEvent: 'H.E.R. World Tour',
+        resolvedSearchLocation: 'Seoul',
+        resolvedSearchItem: 'VIP package',
+      })
+    );
+
+    expect(parsed.validation.queryContext?.resolvedSearchArtist).toBe('IU');
+    expect(parsed.validation.queryContext?.resolvedSearchEvent).toBe('H.E.R. World Tour');
+    expect(parsed.validation.queryContext?.resolvedSearchLocation).toBe('Seoul');
+    expect(parsed.validation.queryContext?.resolvedSearchItem).toBe('VIP package');
+  });
+});
+
+describe('effective validation context', () => {
+  it('builds first-class event context without requiring item identity', () => {
+    const request = createRequest(
+      {
+        resolvedSearchArtist: 'IU',
+        resolvedSearchEvent: 'H.E.R. World Tour',
+        resolvedSearchLocation: 'Seoul',
+        resolvedSearchItem: 'VIP package',
+      },
+      {
+        recordId: null,
+        name: '',
+        canonicalArtists: [],
+        relatedAlbums: [],
+      },
+      {
+        sourceContext: {
+          sourceType: 'event',
+          hasItem: false,
+          hasEvent: true,
+          eventRecordId: 'evt_123',
+        },
+      }
+    );
+
+    const effectiveContext = buildValidationEffectiveContext(request);
+
+    expect(effectiveContext.sourceType).toBe('event');
+    expect(effectiveContext.mode).toBe('event');
+    expect(effectiveContext.searchArtist).toBe('IU');
+    expect(effectiveContext.searchEvent).toBe('H.E.R. World Tour');
+    expect(effectiveContext.searchLocation).toBe('Seoul');
+    expect(effectiveContext.searchItem).toBe('VIP package');
+    expect(effectiveContext.hasItem).toBe(false);
+    expect(effectiveContext.hasEvent).toBe(true);
+    expect(effectiveContext.effectiveSearchQuery).toContain('IU');
+    expect(effectiveContext.effectiveSearchQuery).toContain('H.E.R. World Tour');
+  });
+
+  it('builds event fallback queries from normalized event context', () => {
+    const request = createRequest(
+      {
+        resolvedSearchArtist: 'IU',
+        resolvedSearchEvent: 'H.E.R. World Tour',
+        resolvedSearchLocation: 'Seoul',
+      },
+      {
+        recordId: null,
+        name: '',
+        canonicalArtists: [],
+        relatedAlbums: [],
+      },
+      {
+        sourceContext: {
+          sourceType: 'event',
+          hasItem: false,
+          hasEvent: true,
+          eventRecordId: 'evt_123',
+        },
+      }
+    );
+
+    const plan = buildResolvedBrowseQueryPlan({
+      ...request,
+      effectiveContext: buildValidationEffectiveContext(request),
+    });
+
+    expect(plan.queryPlan.length).toBeGreaterThan(0);
+    expect(plan.queryPlan[0]?.query).toContain('IU');
+    expect(plan.queryPlan.some((candidate) => candidate.query.includes('H.E.R. World Tour'))).toBe(
+      true
+    );
   });
 });

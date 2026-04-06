@@ -9,6 +9,7 @@ import { getChartValidationSignals } from './providers/chart.js';
 import { getPreviousComebackResearchSignals } from './providers/research.js';
 import { buildProviderQueryResolutionDebug } from './providers/query-utils.js';
 import { buildValidationRecommendation } from './recommendation.js';
+import { buildValidationEffectiveContext } from './effective-context.js';
 
 type ResolvedSocialSignals = Awaited<ReturnType<typeof getSocialValidationSignals>>;
 type ResolvedTerapeakSignals = Awaited<ReturnType<typeof getTerapeakValidationSignals>>;
@@ -265,12 +266,17 @@ export async function runValidation(
   }
 
   try {
-    const ebay = await getEbayValidationSignals(api, request);
-    const sold = await getEbaySoldValidationSignals(request);
-    const terapeak = await getTerapeakValidationSignals(api, request);
-    const social = await getSocialValidationSignals(request);
-    const chart = getChartValidationSignals(request);
-    const research = await getPreviousComebackResearchSignals(request);
+    const effectiveContext = buildValidationEffectiveContext(request);
+    const effectiveRequest: ValidationRunRequest = {
+      ...request,
+      effectiveContext,
+    };
+    const ebay = await getEbayValidationSignals(api, effectiveRequest);
+    const sold = await getEbaySoldValidationSignals(effectiveRequest);
+    const terapeak = await getTerapeakValidationSignals(api, effectiveRequest);
+    const social = await getSocialValidationSignals(effectiveRequest);
+    const chart = getChartValidationSignals(effectiveRequest);
+    const research = await getPreviousComebackResearchSignals(effectiveRequest);
     const mergedAvgWatchers = terapeak.avgWatchersPerListing ?? ebay.avgWatchersPerListing;
     const mergedPreorderListings = terapeak.preOrderListingsCount ?? ebay.preOrderListingsCount;
     const marketPriceUsd =
@@ -286,19 +292,20 @@ export async function runValidation(
       daysTracked: sold.soldVelocity.daysTracked ?? ebay.soldVelocity.daysTracked,
     };
 
-    const recommendation = buildValidationRecommendation(request, {
+    const recommendation = buildValidationRecommendation(effectiveRequest, {
       ebay,
       sold,
       terapeak,
       social,
       chart,
       research,
+      effectiveContext,
     });
     const requestQueryResolution = buildProviderQueryResolutionDebug(
-      request,
+      effectiveRequest,
       Boolean(ebay.queryResolution?.queryContextUsed)
     );
-    const mergedSignals = { ebay, sold, terapeak, social, chart, research };
+    const mergedSignals = { effectiveContext, ebay, sold, terapeak, social, chart, research };
     const socialWrites = {
       ...(social.twitterTrending !== null ? { twitterTrending: social.twitterTrending } : {}),
       ...(social.youtubeViews24hMillions !== null
@@ -415,7 +422,13 @@ export async function runValidation(
         nextCheckAt: recommendation.nextCheckAt,
       },
       debug: {
-        sourceContext: request.sourceContext ?? null,
+        sourceContext: effectiveRequest.sourceContext ?? null,
+        effectiveSourceType: effectiveContext.sourceType,
+        effectiveContextMode: effectiveContext.mode,
+        effectiveSearchQuery: effectiveContext.effectiveSearchQuery,
+        hasItem: effectiveContext.hasItem,
+        hasEvent: effectiveContext.hasEvent,
+        effectiveContext,
         ebayQuery: ebay.ebayQuery,
         soldQuery: sold.query,
         queryCandidates: {
@@ -430,7 +443,15 @@ export async function runValidation(
         omittedOptionalWrites,
         writeResolution,
         sourceSet: ['ebay', 'sold', 'terapeak', 'social', 'chart', 'research'],
-        providers: buildProviderDebug(request, ebay, sold, terapeak, social, chart, research),
+        providers: buildProviderDebug(
+          effectiveRequest,
+          ebay,
+          sold,
+          terapeak,
+          social,
+          chart,
+          research
+        ),
         queryContextUsed: requestQueryResolution.queryContextUsed,
         querySource: requestQueryResolution.querySource,
         resolvedSearchQuery: requestQueryResolution.resolvedSearchQuery,

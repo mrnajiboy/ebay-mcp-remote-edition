@@ -16,6 +16,7 @@ import {
   normalizeWhitespace,
 } from './query-utils.js';
 import type { ProviderQueryCandidate } from './query-utils.js';
+import { getValidationEffectiveContext } from '../effective-context.js';
 
 type ResolvedQueryPlanBuilder = (request: ValidationRunRequest) => unknown;
 type RequestStringBuilder = (request: ValidationRunRequest) => unknown;
@@ -244,7 +245,11 @@ const YOUTUBE_DEMOTED_CHANNEL_PATTERN =
   /shop\b|store\b|merch|reseller|resale|unboxing|fan\b|collector|trading|market/;
 
 function getPrimaryArtist(request: ValidationRunRequest): string {
-  return request.item.canonicalArtists[0]?.trim() ?? '';
+  return (
+    getValidationEffectiveContext(request).searchArtist ??
+    request.item.canonicalArtists[0]?.trim() ??
+    ''
+  );
 }
 
 function buildTwitterCountsUrl(query: string): string {
