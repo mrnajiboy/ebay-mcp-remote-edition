@@ -3,16 +3,18 @@
 Auto-updated snapshot from the [eBay API Status RSS feed](https://developer.ebay.com/rss/api-status).
 Full list: [developer.ebay.com/support/api-status](https://developer.ebay.com/support/api-status).
 
-*Last updated: 2026-03-30T09:15:52.191Z*
+*Last updated: 2026-04-06T09:11:48.461Z*
 
 | Title | API | Site | Status | Last updated | Link |
 |-------|-----|------|--------|--------------|------|
-| feed files | feed files | Production | Unresolved | Sat Mar 28 2026 | [Details](https://developer.ebay.com/support/api-status/Production/feed-files-are-unavailable) |
-| Sandbox | Sandbox | Sandbox | Resolved | Tue Mar 03 2026 | [Details](https://developer.ebay.com/support/api-status/Sandbox/application-keyset-page-is-not-displaying-the-existing-sandbox-keyset) |
+| Inventory Mapping API | Inventory Mapping API | Production | Resolved | Tue Mar 31 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-inventory-mapping-api-outage) |
+| Feed Files | Feed Files | Production | Resolved | Tue Mar 31 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-feed-files-are-unavailable-1) |
+| feed files | feed files | Production | Resolved | Mon Mar 30 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-feed-files-are-unavailable) |
+| Sandbox | Sandbox | Sandbox | Resolved | Tue Mar 03 2026 | [Details](https://developer.ebay.com/support/api-status/Sandbox/resolved-application-keyset-page-is-not-displaying-the-existing-sandbox-keyset) |
 | Trading API | Trading API | Production | Resolved | Mon Feb 09 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-addorder-trading-api-returns-http-500-during-invoice-generation-blocking-invoicing) |
-| Developer portal | Developer portal | Production | Resolved | Thu Feb 05 2026 | [Details](https://developer.ebay.com/support/api-status/Production/application-keysets-page-not-showing-production-keyset-and-create-new-keyset-is-not-working) |
-| Marketing API | Marketing API | Production | Resolved | Wed Jan 28 2026 | [Details](https://developer.ebay.com/support/api-status/Production/internal-server-error-bulkcreateadsbylistingid) |
-| Trading API | Trading API | Production | Resolved | Wed Jan 28 2026 | [Details](https://developer.ebay.com/support/api-status/Production/getitemtransactionsresponse-transactionarray-missing-from-auctioncheckoutcomplete-notifications) |
+| Developer portal | Developer portal | Production | Resolved | Thu Feb 05 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-application-keysets-page-not-showing-production-keyset-and-create-new-keyset-is-not-working) |
+| Marketing API | Marketing API | Production | Resolved | Wed Jan 28 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-internal-server-error-bulkcreateadsbylistingid) |
+| Trading API | Trading API | Production | Resolved | Wed Jan 28 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getitemtransactionsresponse-transactionarray-missing-from-auctioncheckoutcomplete-notifications) |
 | Trading API | Trading API | Production | Resolved | Wed Oct 29 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-trading-api-reviseitem-reviseinventorystatus-enditem-api-calls-returning-seller-not-found-error) |
 | Inventory API | Inventory API | Production | Resolved | Thu Oct 23 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-inventory-api-returning-invalid-tax-information-you-need-to-specify-the-tax-state) |
 | Trading API | Trading API | Production | Resolved | Tue Oct 21 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-trading-api-getstore-method-returns-store-not-found-for-user) |
@@ -20,8 +22,6 @@ Full list: [developer.ebay.com/support/api-status](https://developer.ebay.com/su
 | Developer Portal | Developer Portal | Production | Resolved | Mon Oct 13 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-activate-developer-account-support-is-not-working) |
 | Notification API | Notification API | Production | Resolved | Mon Sep 29 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-gettopics-api-returning-500-internal-server-error) |
 | getItemConditionPolicies | getItemConditionPolicies | Production | Resolved | Fri Sep 26 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getitemconditionpolicies-api-currently-not-working-and-is-returning-404-response) |
-| AddMemberMessageRTQ  AddMemberMessageAAQToPartner APIs | AddMemberMessageRTQ  AddMemberMessageAAQToPartner APIs | Production | Resolved | Tue Sep 23 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-discrepancies-in-newline-character-display-between-messages-on-ui-and-email-content) |
-| Sandbox | Sandbox | Sandbox | Resolved | Fri Sep 19 2025 | [Details](https://developer.ebay.com/support/api-status/Sandbox/resolved-sandbox-user-creation-issue) |
 
 ---
 
