@@ -11,7 +11,8 @@ import {
 } from '@/validation/providers/query-utils.js';
 
 function createRequest(
-  queryContext: ValidationRunRequest['validation']['queryContext']
+  queryContext: ValidationRunRequest['validation']['queryContext'],
+  itemOverrides: Partial<ValidationRunRequest['item']> = {}
 ): ValidationRunRequest {
   return {
     validationId: 'val_123',
@@ -31,6 +32,7 @@ function createRequest(
       supplierNames: [],
       canonicalArtists: ['BTS'],
       relatedAlbums: ['ARIRANG'],
+      ...itemOverrides,
     },
     validation: {
       validationType: 'Album Validation',
@@ -85,10 +87,60 @@ describe('resolved validation query plans', () => {
     }
   });
 
-  it('still prepends fallback candidates when the resolved query is not an exclusive direct override', () => {
+  it('constrains Artist Only fallbacks to artist-only candidates across providers', () => {
+    const request = createRequest(
+      {
+        directQueryActive: false,
+        queryScope: 'Artist Only',
+        resolvedSearchQuery: 'ive',
+      },
+      {
+        name: 'IVE Official Light Stick',
+        canonicalArtists: ['IVE'],
+        relatedAlbums: ['IVE EMPATHY'],
+      }
+    );
+
+    expect(buildResolvedBrowseQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'ive' },
+    ]);
+    expect(buildResolvedSoldQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'ive' },
+    ]);
+    expect(buildResolvedValidationQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'ive' },
+    ]);
+
+    expect(buildResolvedTwitterQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'ive' },
+    ]);
+    expect(buildResolvedYouTubeQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'ive' },
+    ]);
+    expect(buildResolvedRedditQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'ive' },
+    ]);
+  });
+
+  it('suppresses unrelated fallback expansion for location-scoped resolved queries', () => {
     const request = createRequest({
       directQueryActive: false,
-      queryScope: 'Album Query',
+      queryScope: 'Artist + City / Country / State/Province',
+      resolvedSearchQuery: 'ive seoul',
+    });
+
+    expect(buildResolvedSoldQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'ive seoul' },
+    ]);
+    expect(buildResolvedYouTubeQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'ive seoul' },
+    ]);
+  });
+
+  it('still prepends fallback candidates for album-scoped resolved queries', () => {
+    const request = createRequest({
+      directQueryActive: false,
+      queryScope: 'Artist + Album',
       resolvedSearchQuery: 'test',
     });
 

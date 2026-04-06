@@ -14,6 +14,16 @@ export interface ResolvedProviderQueryPlan {
   queryResolution: ProviderQueryResolutionDebug;
 }
 
+type DeclaredQueryScope =
+  | 'artist_only'
+  | 'artist_item'
+  | 'artist_album'
+  | 'artist_event'
+  | 'artist_location'
+  | 'artist_item_location'
+  | 'direct_query'
+  | 'unknown';
+
 const NOISY_VERSION_PATTERNS = [
   /\((?:weverse albums?|weverse|digipack|platform|photobook|poca|poca album|kit)\s+ver\.?\)/gi,
   /\((?:weverse albums?|weverse|digipack|platform|photobook|poca|poca album|kit)\s+version\)/gi,
@@ -363,13 +373,125 @@ export function getResolvedSearchQuery(request: ValidationRunRequest): string | 
   return sanitizeQueryContextValue(getQueryContext(request)?.resolvedSearchQuery);
 }
 
+function getUsableResolvedSearchQuery(request: ValidationRunRequest): string | null {
+  const resolvedSearchQuery = getResolvedSearchQuery(request);
+
+  return resolvedSearchQuery && !isRejectedResolvedQuery(resolvedSearchQuery)
+    ? resolvedSearchQuery
+    : null;
+}
+
+function getNormalizedQueryScope(request: ValidationRunRequest): string | null {
+  return sanitizeQueryContextValue(getQueryContext(request)?.queryScope)?.toLowerCase() ?? null;
+}
+
+function resolveDeclaredQueryScope(request: ValidationRunRequest): DeclaredQueryScope {
+  const normalizedQueryScope = getNormalizedQueryScope(request);
+
+  if (!normalizedQueryScope) {
+    return 'unknown';
+  }
+
+  if (normalizedQueryScope.includes('direct query')) {
+    return 'direct_query';
+  }
+
+  const hasArtist = normalizedQueryScope.includes('artist');
+  const hasItem = normalizedQueryScope.includes('item');
+  const hasAlbum = normalizedQueryScope.includes('album');
+  const hasEvent = normalizedQueryScope.includes('event');
+  const hasLocation =
+    normalizedQueryScope.includes('city') ||
+    normalizedQueryScope.includes('country') ||
+    normalizedQueryScope.includes('state') ||
+    normalizedQueryScope.includes('province') ||
+    normalizedQueryScope.includes('location');
+
+  if (hasArtist && hasItem && hasLocation) {
+    return 'artist_item_location';
+  }
+
+  if (hasArtist && hasLocation) {
+    return 'artist_location';
+  }
+
+  if (hasArtist && hasEvent) {
+    return 'artist_event';
+  }
+
+  if (hasArtist && hasAlbum) {
+    return 'artist_album';
+  }
+
+  if (hasArtist && hasItem) {
+    return 'artist_item';
+  }
+
+  if (normalizedQueryScope === 'artist only' || normalizedQueryScope === 'artist') {
+    return 'artist_only';
+  }
+
+  return 'unknown';
+}
+
 function hasExclusiveDirectQueryOverride(request: ValidationRunRequest): boolean {
   const queryContext = getQueryContext(request);
 
   return (
-    queryContext?.directQueryActive === true &&
-    sanitizeQueryContextValue(queryContext.queryScope)?.toLowerCase() === 'direct query'
+    queryContext?.directQueryActive === true && getNormalizedQueryScope(request) === 'direct query'
   );
+}
+
+function finalizeLooseQueryPlan(candidates: ProviderQueryCandidate[]): ProviderQueryCandidate[] {
+  return dedupeQueryPlan(candidates).filter((candidate) =>
+    isValidConversationQuery(candidate.query)
+  );
+}
+
+function buildArtistOnlyCommerceFallbackPlan(
+  request: ValidationRunRequest
+): ProviderQueryCandidate[] {
+  return finalizeLooseQueryPlan([
+    {
+      family: 'artist_only_fallback',
+      query: getPrimaryArtist(request),
+    },
+  ]);
+}
+
+function buildArtistOnlySocialFallbackPlan(
+  request: ValidationRunRequest
+): ProviderQueryCandidate[] {
+  return finalizeLooseQueryPlan([
+    {
+      family: 'artist_only_fallback',
+      query: normalizeSocialSearchPhrase(getPrimaryArtist(request)),
+    },
+  ]);
+}
+
+function constrainFallbackPlanForScope(
+  request: ValidationRunRequest,
+  fallbackPlan: ProviderQueryCandidate[],
+  scopeSpecificFallbackPlan: ProviderQueryCandidate[]
+): ProviderQueryCandidate[] {
+  if (getUsableResolvedSearchQuery(request) === null) {
+    return fallbackPlan;
+  }
+
+  switch (resolveDeclaredQueryScope(request)) {
+    case 'artist_only':
+      return scopeSpecificFallbackPlan;
+    case 'artist_item':
+    case 'artist_album':
+    case 'unknown':
+      return fallbackPlan;
+    case 'artist_event':
+    case 'artist_location':
+    case 'artist_item_location':
+    case 'direct_query':
+      return [];
+  }
 }
 
 export function buildProviderQueryResolutionDebug(
@@ -392,11 +514,7 @@ export function prependResolvedQueryCandidate(
   request: ValidationRunRequest,
   fallbackPlan: ProviderQueryCandidate[]
 ): ResolvedProviderQueryPlan {
-  const resolvedSearchQuery = getResolvedSearchQuery(request);
-  const usableResolvedQuery =
-    resolvedSearchQuery && !isRejectedResolvedQuery(resolvedSearchQuery)
-      ? resolvedSearchQuery
-      : null;
+  const usableResolvedQuery = getUsableResolvedSearchQuery(request);
   const queryPlan = usableResolvedQuery
     ? hasExclusiveDirectQueryOverride(request)
       ? [{ family: 'resolved_query_context', query: usableResolvedQuery }]
@@ -505,7 +623,14 @@ export function buildBrowseQueryPlan(request: ValidationRunRequest): ProviderQue
 export function buildResolvedBrowseQueryPlan(
   request: ValidationRunRequest
 ): ResolvedProviderQueryPlan {
-  return prependResolvedQueryCandidate(request, buildBrowseQueryPlan(request));
+  return prependResolvedQueryCandidate(
+    request,
+    constrainFallbackPlanForScope(
+      request,
+      buildBrowseQueryPlan(request),
+      buildArtistOnlyCommerceFallbackPlan(request)
+    )
+  );
 }
 
 export function buildBrowseQueryCandidates(request: ValidationRunRequest): string[] {
@@ -544,7 +669,14 @@ export function buildSoldQueryPlan(request: ValidationRunRequest): ProviderQuery
 export function buildResolvedSoldQueryPlan(
   request: ValidationRunRequest
 ): ResolvedProviderQueryPlan {
-  return prependResolvedQueryCandidate(request, buildSoldQueryPlan(request));
+  return prependResolvedQueryCandidate(
+    request,
+    constrainFallbackPlanForScope(
+      request,
+      buildSoldQueryPlan(request),
+      buildArtistOnlyCommerceFallbackPlan(request)
+    )
+  );
 }
 
 export function buildSoldQueryCandidates(request: ValidationRunRequest): string[] {
@@ -584,7 +716,14 @@ export function buildTwitterQueryPlan(request: ValidationRunRequest): ProviderQu
 export function buildResolvedTwitterQueryPlan(
   request: ValidationRunRequest
 ): ResolvedProviderQueryPlan {
-  return prependResolvedQueryCandidate(request, buildTwitterQueryPlan(request));
+  return prependResolvedQueryCandidate(
+    request,
+    constrainFallbackPlanForScope(
+      request,
+      buildTwitterQueryPlan(request),
+      buildArtistOnlySocialFallbackPlan(request)
+    )
+  );
 }
 
 export function buildTwitterQueryCandidates(request: ValidationRunRequest): string[] {
@@ -619,7 +758,14 @@ export function buildYouTubeQueryPlan(request: ValidationRunRequest): ProviderQu
 export function buildResolvedYouTubeQueryPlan(
   request: ValidationRunRequest
 ): ResolvedProviderQueryPlan {
-  return prependResolvedQueryCandidate(request, buildYouTubeQueryPlan(request));
+  return prependResolvedQueryCandidate(
+    request,
+    constrainFallbackPlanForScope(
+      request,
+      buildYouTubeQueryPlan(request),
+      buildArtistOnlySocialFallbackPlan(request)
+    )
+  );
 }
 
 export function buildYouTubeQueryCandidates(request: ValidationRunRequest): string[] {
@@ -651,7 +797,14 @@ export function buildRedditQueryPlan(request: ValidationRunRequest): ProviderQue
 export function buildResolvedRedditQueryPlan(
   request: ValidationRunRequest
 ): ResolvedProviderQueryPlan {
-  return prependResolvedQueryCandidate(request, buildRedditQueryPlan(request));
+  return prependResolvedQueryCandidate(
+    request,
+    constrainFallbackPlanForScope(
+      request,
+      buildRedditQueryPlan(request),
+      buildArtistOnlySocialFallbackPlan(request)
+    )
+  );
 }
 
 export function buildRedditQueryCandidates(request: ValidationRunRequest): string[] {
@@ -665,5 +818,12 @@ export function buildValidationQueryCandidates(request: ValidationRunRequest): s
 export function buildResolvedValidationQueryPlan(
   request: ValidationRunRequest
 ): ResolvedProviderQueryPlan {
-  return prependResolvedQueryCandidate(request, buildSoldQueryPlan(request));
+  return prependResolvedQueryCandidate(
+    request,
+    constrainFallbackPlanForScope(
+      request,
+      buildSoldQueryPlan(request),
+      buildArtistOnlyCommerceFallbackPlan(request)
+    )
+  );
 }
