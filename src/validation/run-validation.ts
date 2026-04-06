@@ -415,6 +415,7 @@ export async function runValidation(
         nextCheckAt: recommendation.nextCheckAt,
       },
       debug: {
+        sourceContext: request.sourceContext ?? null,
         ebayQuery: ebay.ebayQuery,
         soldQuery: sold.query,
         queryCandidates: {

@@ -27,38 +27,75 @@ export const validationQueryContextSchema = z.object({
   queryScope: z.string().nullable().optional(),
 });
 
-export const validationRunRequestSchema = z.object({
-  validationId: z.string().min(1),
-  runType: z.enum(['scheduled', 'manual']),
-  cadence: trackingCadenceSchema,
-  timestamp: z.string().datetime({ offset: true }),
-  item: z.object({
-    recordId: z.string().min(1),
-    name: z.string().min(1),
-    variation: z.array(z.string()),
-    itemType: z.array(z.string()),
-    releaseType: z.array(z.string()),
-    releaseDate: z.string().datetime({ offset: true }).nullable(),
-    releasePeriod: z.array(z.string()),
-    availability: z.array(z.string()),
-    wholesalePrice: z.number().nullable(),
-    supplierNames: z.array(z.string()),
-    canonicalArtists: z.array(z.string()),
-    relatedAlbums: z.array(z.string()),
-  }),
-  validation: z.object({
-    validationType: z.string(),
-    buyDecision: z.string(),
-    automationStatus: z.string(),
-    autoCheckEnabled: z.boolean(),
-    dDay: z.number().nullable(),
-    artistTier: z.string(),
-    initialBudget: z.number().nullable(),
-    reserveBudget: z.number().nullable(),
-    queryContext: validationQueryContextSchema.optional(),
-    currentMetrics: validationCurrentMetricsSchema,
-  }),
+export const validationSourceContextSchema = z.object({
+  sourceType: z.enum(['item', 'event']).optional(),
+  hasItem: z.boolean().optional(),
+  hasEvent: z.boolean().optional(),
+  itemRecordId: z.string().nullable().optional(),
+  eventRecordId: z.string().nullable().optional(),
 });
+
+const validationItemSchema = z.object({
+  recordId: z.string().min(1).nullable(),
+  name: z.string(),
+  variation: z.array(z.string()),
+  itemType: z.array(z.string()),
+  releaseType: z.array(z.string()),
+  releaseDate: z.string().datetime({ offset: true }).nullable(),
+  releasePeriod: z.array(z.string()),
+  availability: z.array(z.string()),
+  wholesalePrice: z.number().nullable(),
+  supplierNames: z.array(z.string()),
+  canonicalArtists: z.array(z.string()),
+  relatedAlbums: z.array(z.string()),
+});
+
+export const validationRunRequestSchema = z
+  .object({
+    validationId: z.string().min(1),
+    runType: z.enum(['scheduled', 'manual']),
+    cadence: trackingCadenceSchema,
+    timestamp: z.string().datetime({ offset: true }),
+    sourceContext: validationSourceContextSchema.optional(),
+    item: validationItemSchema,
+    validation: z.object({
+      validationType: z.string(),
+      buyDecision: z.string(),
+      automationStatus: z.string(),
+      autoCheckEnabled: z.boolean(),
+      dDay: z.number().nullable(),
+      artistTier: z.string(),
+      initialBudget: z.number().nullable(),
+      reserveBudget: z.number().nullable(),
+      queryContext: validationQueryContextSchema.optional(),
+      currentMetrics: validationCurrentMetricsSchema,
+    }),
+  })
+  .superRefine((value, ctx) => {
+    const sourceType = value.sourceContext?.sourceType ?? 'item';
+    const itemRecordId = value.item.recordId?.trim() ?? '';
+    const itemName = value.item.name.trim();
+
+    if (sourceType === 'event') {
+      return;
+    }
+
+    if (itemRecordId.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['item', 'recordId'],
+        message: 'Item-driven validations require item.recordId.',
+      });
+    }
+
+    if (itemName.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['item', 'name'],
+        message: 'Item-driven validations require item.name.',
+      });
+    }
+  });
 
 export const validationWritesSchema = z.object({
   avgWatchersPerListing: z.number().nullable().optional(),

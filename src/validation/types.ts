@@ -38,6 +38,29 @@ export interface ValidationQueryContext {
   queryScope?: string | null;
 }
 
+export interface ValidationSourceContext {
+  sourceType?: 'item' | 'event';
+  hasItem?: boolean;
+  hasEvent?: boolean;
+  itemRecordId?: string | null;
+  eventRecordId?: string | null;
+}
+
+export interface ValidationItem {
+  recordId: string | null;
+  name: string;
+  variation: string[];
+  itemType: string[];
+  releaseType: string[];
+  releaseDate: string | null;
+  releasePeriod: string[];
+  availability: string[];
+  wholesalePrice: number | null;
+  supplierNames: string[];
+  canonicalArtists: string[];
+  relatedAlbums: string[];
+}
+
 export interface ProviderQueryResolutionDebug {
   queryContextUsed: boolean;
   querySource: 'resolved_query_context' | 'provider_fallback';
@@ -51,20 +74,8 @@ export interface ValidationRunRequest {
   runType: 'scheduled' | 'manual';
   cadence: TrackingCadence;
   timestamp: string;
-  item: {
-    recordId: string;
-    name: string;
-    variation: string[];
-    itemType: string[];
-    releaseType: string[];
-    releaseDate: string | null;
-    releasePeriod: string[];
-    availability: string[];
-    wholesalePrice: number | null;
-    supplierNames: string[];
-    canonicalArtists: string[];
-    relatedAlbums: string[];
-  };
+  sourceContext?: ValidationSourceContext;
+  item: ValidationItem;
   validation: {
     validationType: string;
     buyDecision: string;
