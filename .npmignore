@@ -75,6 +75,7 @@ package-lock.json
 tmp/
 temp/
 *.log
+.airtable/
 
 # MCP config (not needed in published package)
 .mcp.json

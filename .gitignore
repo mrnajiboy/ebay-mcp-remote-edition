@@ -201,6 +201,7 @@ credentials.json
 GEMINI.md
 .claude
 .mcp.json
+.airtable/
 
 # Generated reports
 dev-sync-report.json
