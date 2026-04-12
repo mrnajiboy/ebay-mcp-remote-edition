@@ -13,6 +13,30 @@ export interface ValidationSoldVelocity {
   daysTracked: number | null;
 }
 
+export interface SoldBucketDebug {
+  status: 'ok' | 'partial' | 'skipped';
+  notes: string[];
+  totalItemsExamined: number;
+  withSoldAt: number;
+  missingSoldAt: number;
+  dateParseFailures: number;
+  futureDated: number;
+  bucketedItems: number;
+}
+
+export interface SoldQueryDiagnostic {
+  query: string;
+  tier: number;
+  family?: string;
+  soldResultsCount: number | null;
+  recentSoldCount7d: number | null;
+  titleMatchScore: number | null;
+  subtypeAligned?: boolean;
+  tooNarrow?: boolean;
+  status: 'ok' | 'error';
+  note?: string;
+}
+
 export interface ValidationCurrentMetrics {
   avgWatchersPerListing: number | null;
   preOrderListingsCount: number | null;
@@ -163,18 +187,17 @@ export interface EbaySoldValidationSignals {
   soldMaxPriceUsd: number | null;
   soldItemsSample: SoldItemSample[];
   soldVelocity: ValidationSoldVelocity;
+  recentSoldCount7d?: number | null;
+  soldBucketDebug?: SoldBucketDebug;
   query: string | null;
   queryCandidates?: string[];
-  queryDiagnostics?: {
-    query: string;
-    tier: number;
-    family?: string;
-    soldResultsCount: number | null;
-    status: 'ok' | 'error';
-    note?: string;
-  }[];
+  queryDiagnostics?: SoldQueryDiagnostic[];
   selectedQuery?: string;
   selectedQueryTier?: number | null;
+  selectedQueryFamily?: string | null;
+  broadAlbumQuery?: string | null;
+  subtypeSpecificQuery?: string | null;
+  querySelectionReason?: string;
   responseUrl: string | null;
   status: 'ok' | 'unavailable' | 'error';
   errorMessage?: string;

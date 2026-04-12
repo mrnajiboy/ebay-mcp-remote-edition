@@ -654,6 +654,58 @@ function buildCorePhrases(request: ValidationRunRequest): {
   };
 }
 
+function getValidationTypeClassification(
+  request: ValidationRunRequest
+): 'pob' | 'preorder' | 'standard' | 'other' {
+  const normalizedValidationType = sanitizeQueryCandidate(
+    request.validation.validationType
+  ).toLowerCase();
+  const normalizedValidationScope = sanitizeQueryCandidate(
+    getQueryContext(request)?.validationScope ?? ''
+  ).toLowerCase();
+  const combined = `${normalizedValidationScope} ${normalizedValidationType}`.trim();
+
+  if (/\bpob\b|benefit|photocard/.test(combined)) {
+    return 'pob';
+  }
+
+  if (/pre\s*order|preorder/.test(combined)) {
+    return 'preorder';
+  }
+
+  if (/\bstandard\b/.test(combined)) {
+    return 'standard';
+  }
+
+  return 'other';
+}
+
+function getAlbumSubtypeToken(request: ValidationRunRequest): string | null {
+  switch (getValidationTypeClassification(request)) {
+    case 'pob':
+      return 'POB';
+    case 'preorder':
+      return 'preorder';
+    default:
+      return null;
+  }
+}
+
+function isAlbumScopedValidation(request: ValidationRunRequest): boolean {
+  const normalizedValidationScope = sanitizeQueryCandidate(
+    getQueryContext(request)?.validationScope ?? ''
+  ).toLowerCase();
+  const normalizedQueryScope = sanitizeQueryCandidate(
+    getQueryContext(request)?.queryScope ?? ''
+  ).toLowerCase();
+
+  if (normalizedValidationScope.includes('album')) {
+    return true;
+  }
+
+  return normalizedQueryScope.includes('album');
+}
+
 export function buildBrowseQueryPlan(request: ValidationRunRequest): ProviderQueryCandidate[] {
   const { primaryArtist, albumPhrase, simplifiedTitle, artistAlbumPhrase, titleWithArtist } =
     buildCorePhrases(request);
@@ -709,6 +761,44 @@ export function buildSoldQueryPlan(request: ValidationRunRequest): ProviderQuery
     browseFocused: false,
   });
   const validationType = sanitizeQueryCandidate(request.validation.validationType);
+  const subtypeToken = getAlbumSubtypeToken(request);
+
+  if (isAlbumScopedValidation(request)) {
+    return finalizeQueryPlan(
+      [
+        ...(subtypeToken
+          ? [
+              {
+                family: 'artist_album_subtype',
+                query: buildCompactPhrase(primaryArtist, albumPhrase, subtypeToken),
+              },
+            ]
+          : []),
+        ...soldDescriptors.map((descriptor) => ({
+          family: 'artist_album_descriptor',
+          query: buildCompactPhrase(artistAlbumPhrase, descriptor),
+        })),
+        {
+          family: 'artist_album_validation_type',
+          query: buildCompactPhrase(primaryArtist, albumPhrase, validationType),
+        },
+        { family: 'artist_album_core', query: artistAlbumPhrase },
+        { family: 'artist_title_listing', query: titleWithArtist },
+        ...(subtypeToken
+          ? [
+              {
+                family: 'album_subtype_only',
+                query: buildCompactPhrase(albumPhrase, subtypeToken),
+              },
+            ]
+          : []),
+        { family: 'album_descriptor_only', query: buildCompactPhrase(albumPhrase, validationType) },
+        { family: 'album_only_fallback', query: buildCompactPhrase(albumPhrase) },
+      ],
+      primaryArtist,
+      albumPhrase
+    );
+  }
 
   return finalizeQueryPlan(
     [
@@ -723,6 +813,7 @@ export function buildSoldQueryPlan(request: ValidationRunRequest): ProviderQuery
       },
       { family: 'artist_title_listing', query: titleWithArtist },
       { family: 'album_descriptor_only', query: buildCompactPhrase(albumPhrase, validationType) },
+      { family: 'album_only_fallback', query: buildCompactPhrase(albumPhrase) },
     ],
     primaryArtist,
     albumPhrase
