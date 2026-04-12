@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.3.1...ebay-mcp-remote-edition-v4.0.0) (2026-04-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* replace placeholder terapeak path with full authenticated eBay research orchestration.
+
+### Features
+
+* fully tighten the sold data logic and ruling. ([f6c2f19](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/f6c2f199ac9fcf811d80d563769335a5a81ec833))
+
+
+### Bug Fixes
+
+* replace placeholder terapeak path with full authenticated eBay research orchestration. ([5cb63f7](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/5cb63f760d8223be3f368cc6546e088b6a70d815))
+
 ## [3.3.1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.3.0...ebay-mcp-remote-edition-v3.3.1) (2026-04-06)
 
 
