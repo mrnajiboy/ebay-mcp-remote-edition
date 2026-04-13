@@ -1,0 +1,27 @@
+[providers]
+node = true
+
+[phases.setup]
+aptPkgs = [
+  "...",
+  "ca-certificates",
+  "curl"
+]
+
+[phases.install]
+cmds = [
+  "corepack enable",
+  "pnpm install --frozen-lockfile"
+]
+cacheDirectories = [
+  "/root/.local/share/pnpm/store/v3"
+]
+
+[phases.build]
+cmds = [
+  "pnpm run build",
+  "npx -y playwright@1.59.1 install --with-deps chromium"
+]
+
+[start]
+cmd = "pnpm run start:http"

@@ -358,7 +358,7 @@ Store eBay credentials in a mounted secret file rather than raw environment vari
 }
 ```
 
-### Deploy to Render
+### Deploy to Render / Railway / other Nixpacks hosts
 
 1. Connect your repo to Render as a **Web Service**
 2. Set **Build command:**
@@ -373,6 +373,12 @@ Store eBay credentials in a mounted secret file rather than raw environment vari
 5. Add the `ebay-config.json` secret file
 
 The server starts on the port Render assigns via `$PORT` and logs the active KV backend on startup.
+
+For Nixpacks-based platforms such as Railway and Coolify:
+
+- The repository now includes `nixpacks.toml` so the generated image uses `pnpm install --frozen-lockfile`, runs `pnpm run build`, installs Chromium for the Playwright-backed validation paths, and starts with `pnpm run start:http`.
+- Runtime secrets should be configured in the platform dashboard as runtime environment variables or mounted secret files. Do not bake secrets into Docker build arguments or `ENV` layers.
+- Keep `pnpm-lock.yaml` committed and in sync with `package.json`; Nixpacks installs with a frozen lockfile.
 
 ### OAuth flows
 

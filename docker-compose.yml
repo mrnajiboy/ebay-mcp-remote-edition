@@ -7,12 +7,19 @@ services:
       dockerfile: Dockerfile
     container_name: ebay-mcp-server
     restart: unless-stopped
+    command: pnpm run start:http
     env_file:
       - .env
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch(`http://127.0.0.1:${process.env.PORT || 3000}/health`).then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
