@@ -101,9 +101,9 @@ function buildValidationPayload(): string {
 }
 
 async function readFixture(relativePath: string): Promise<string> {
-  const fs = (await vi.importActual('node:fs/promises')) as {
+  const fs = await vi.importActual<{
     readFile: (path: URL, encoding: string) => Promise<string>;
-  };
+  }>('node:fs/promises');
   return await fs.readFile(new URL(relativePath, import.meta.url), 'utf8');
 }
 

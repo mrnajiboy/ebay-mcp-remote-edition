@@ -1370,7 +1370,7 @@ function consumeJsonChunks(buffer: string): {
   let working = buffer.trim();
 
   while (working.length > 0) {
-    const firstJsonIndex = working.search(/[\[{]/u);
+    const firstJsonIndex = working.search(/[[{]/u);
     if (firstJsonIndex === -1) {
       parseErrors.push(`Skipped non-JSON payload fragment: ${working.slice(0, 120)}`);
       return { chunks, remainder: '', parseErrors };
