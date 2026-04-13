@@ -71,16 +71,14 @@ function getWriteSource(value: unknown, source: string): string {
   return isMeaningfulWriteValue(value) ? source : 'none';
 }
 
-function hasSoldVelocityEvidence(
-  soldVelocity: {
-    day1Sold: number | null;
-    day2Sold: number | null;
-    day3Sold: number | null;
-    day4Sold: number | null;
-    day5Sold: number | null;
-    daysTracked: number | null;
-  }
-): boolean {
+function hasSoldVelocityEvidence(soldVelocity: {
+  day1Sold: number | null;
+  day2Sold: number | null;
+  day3Sold: number | null;
+  day4Sold: number | null;
+  day5Sold: number | null;
+  daysTracked: number | null;
+}): boolean {
   return Object.values(soldVelocity).some((value) => value !== null);
 }
 
@@ -115,7 +113,9 @@ function createSkippedSoldSignals(): Awaited<ReturnType<typeof getEbaySoldValida
     recentSoldCount7d: null,
     soldBucketDebug: {
       status: 'skipped',
-      notes: ['legacy sold fallback was skipped because first-party research sold signals were sufficient'],
+      notes: [
+        'legacy sold fallback was skipped because first-party research sold signals were sufficient',
+      ],
       totalItemsExamined: 0,
       withSoldAt: 0,
       missingSoldAt: 0,
@@ -500,7 +500,8 @@ export async function runValidation(
     const providerResolution = {
       activeSource,
       soldSource,
-      soldFallbackUsed: !primaryResearchSoldSignalsAvailable && soldSource === 'third_party_sold_api',
+      soldFallbackUsed:
+        !primaryResearchSoldSignalsAvailable && soldSource === 'third_party_sold_api',
       fallbackReason: primaryResearchSoldSignalsAvailable
         ? null
         : soldSource === 'third_party_sold_api'
