@@ -518,10 +518,7 @@ function getCookieExpiryMs(cookies: ResearchCookie[]): number | null {
   return expiriesMs.length > 0 ? Math.min(...expiriesMs) : null;
 }
 
-function getResearchAuthValidationCacheKey(
-  marketplace: string,
-  cookies: ResearchCookie[]
-): string {
+function getResearchAuthValidationCacheKey(marketplace: string, cookies: ResearchCookie[]): string {
   return createHash('sha1')
     .update(
       JSON.stringify({
@@ -560,7 +557,7 @@ async function readResearchStorageStateFromKv(
     return null;
   }
 
-  let parsed: ResearchStorageState | null = null;
+  let parsed: ResearchStorageState | null;
   try {
     parsed = normalizeStorageState(JSON.parse(rawValue) as unknown);
   } catch {
@@ -608,7 +605,11 @@ async function persistResearchSessionToKv(options: {
   );
 
   await Promise.all([
-    store.put(getResearchStorageStateKvKey(options.marketplace), serializedStorageState, ttlSeconds),
+    store.put(
+      getResearchStorageStateKvKey(options.marketplace),
+      serializedStorageState,
+      ttlSeconds
+    ),
     store.put(getResearchStorageStateUpdatedAtKvKey(options.marketplace), updatedAt, ttlSeconds),
     store.put(
       getResearchStorageStateSourceKvKey(options.marketplace),
@@ -1670,27 +1671,27 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
               `${RESEARCH_STORAGE_STATE_ENV_KEY} was ignored because validation against the ACTIVE endpoint failed.`
             );
           } else {
-          const value: ResearchAuthState = {
-            cookies: resolvedSession.cookies,
-            storageState: resolvedSession.storageState,
-            authState: 'loaded',
-            sessionStrategy: 'storage_state',
-            ...diagnostics,
-            sessionSource: 'env',
-            notes,
-          };
-          await persistResearchSessionToKv({
-            marketplace,
-            cookies: resolvedSession.cookies,
-            storageState: resolvedSession.storageState,
-            source: value.sessionStrategy,
-            sessionSource: value.sessionSource,
-          });
-          researchAuthCache[marketplace] = {
-            expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
-            value,
-          };
-          return value;
+            const value: ResearchAuthState = {
+              cookies: resolvedSession.cookies,
+              storageState: resolvedSession.storageState,
+              authState: 'loaded',
+              sessionStrategy: 'storage_state',
+              ...diagnostics,
+              sessionSource: 'env',
+              notes,
+            };
+            await persistResearchSessionToKv({
+              marketplace,
+              cookies: resolvedSession.cookies,
+              storageState: resolvedSession.storageState,
+              source: value.sessionStrategy,
+              sessionSource: value.sessionSource,
+            });
+            researchAuthCache[marketplace] = {
+              expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+              value,
+            };
+            return value;
           }
         }
       } else {
@@ -1722,27 +1723,27 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
             'EBAY_RESEARCH_COOKIES_JSON was ignored because validation against the ACTIVE endpoint failed.'
           );
         } else {
-        const value: ResearchAuthState = {
-          cookies,
-          storageState: storageStateFromCookies(cookies),
-          authState: 'loaded',
-          sessionStrategy: 'env_cookies',
-          ...diagnostics,
-          sessionSource: 'env',
-          notes,
-        };
-        await persistResearchSessionToKv({
-          marketplace,
-          cookies,
-          storageState: value.storageState,
-          source: value.sessionStrategy,
-          sessionSource: value.sessionSource,
-        });
-        researchAuthCache[marketplace] = {
-          expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
-          value,
-        };
-        return value;
+          const value: ResearchAuthState = {
+            cookies,
+            storageState: storageStateFromCookies(cookies),
+            authState: 'loaded',
+            sessionStrategy: 'env_cookies',
+            ...diagnostics,
+            sessionSource: 'env',
+            notes,
+          };
+          await persistResearchSessionToKv({
+            marketplace,
+            cookies,
+            storageState: value.storageState,
+            source: value.sessionStrategy,
+            sessionSource: value.sessionSource,
+          });
+          researchAuthCache[marketplace] = {
+            expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+            value,
+          };
+          return value;
         }
       }
       notes.push('EBAY_RESEARCH_COOKIES_JSON did not contain any usable cookies.');
@@ -1775,27 +1776,27 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
           `Storage state file at ${storageStatePath} was ignored because validation against the ACTIVE endpoint failed.`
         );
       } else {
-      const value: ResearchAuthState = {
-        cookies: resolvedSession.cookies,
-        storageState: resolvedSession.storageState,
-        authState: 'loaded',
-        sessionStrategy: 'storage_state',
-        ...diagnostics,
-        sessionSource: 'filesystem',
-        notes,
-      };
-      await persistResearchSessionToKv({
-        marketplace,
-        cookies: resolvedSession.cookies,
-        storageState: resolvedSession.storageState,
-        source: value.sessionStrategy,
-        sessionSource: value.sessionSource,
-      });
-      researchAuthCache[marketplace] = {
-        expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
-        value,
-      };
-      return value;
+        const value: ResearchAuthState = {
+          cookies: resolvedSession.cookies,
+          storageState: resolvedSession.storageState,
+          authState: 'loaded',
+          sessionStrategy: 'storage_state',
+          ...diagnostics,
+          sessionSource: 'filesystem',
+          notes,
+        };
+        await persistResearchSessionToKv({
+          marketplace,
+          cookies: resolvedSession.cookies,
+          storageState: resolvedSession.storageState,
+          source: value.sessionStrategy,
+          sessionSource: value.sessionSource,
+        });
+        researchAuthCache[marketplace] = {
+          expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+          value,
+        };
+        return value;
       }
     }
   } else {
@@ -1820,27 +1821,27 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
         `Playwright profile at ${profileDir} was ignored because validation against the ACTIVE endpoint failed.`
       );
     } else {
-    const value: ResearchAuthState = {
-      cookies: profileState.cookies,
-      storageState: profileState.storageState,
-      authState: 'loaded',
-      sessionStrategy: 'playwright_profile',
-      ...diagnostics,
-      sessionSource: 'playwright_profile',
-      notes,
-    };
-    await persistResearchSessionToKv({
-      marketplace,
-      cookies: profileState.cookies,
-      storageState: profileState.storageState,
-      source: value.sessionStrategy,
-      sessionSource: value.sessionSource,
-    });
-    researchAuthCache[marketplace] = {
-      expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
-      value,
-    };
-    return value;
+      const value: ResearchAuthState = {
+        cookies: profileState.cookies,
+        storageState: profileState.storageState,
+        authState: 'loaded',
+        sessionStrategy: 'playwright_profile',
+        ...diagnostics,
+        sessionSource: 'playwright_profile',
+        notes,
+      };
+      await persistResearchSessionToKv({
+        marketplace,
+        cookies: profileState.cookies,
+        storageState: profileState.storageState,
+        source: value.sessionStrategy,
+        sessionSource: value.sessionSource,
+      });
+      researchAuthCache[marketplace] = {
+        expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+        value,
+      };
+      return value;
     }
   }
 
