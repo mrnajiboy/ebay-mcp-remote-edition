@@ -47,15 +47,26 @@ async function main(): Promise<void> {
       'Sign in to eBay Research in the opened browser window, confirm the research UI is accessible, then press Enter to persist storage state to KV. '
     );
 
+    await page.goto(researchUrl, { waitUntil: 'domcontentloaded' });
+    if (!page.url().includes('/sh/research')) {
+      throw new Error(
+        `Research UI access could not be confirmed before persistence (currentUrl=${page.url()}).`
+      );
+    }
+
     const storageState = await context.storageState<ResearchStorageState>();
     await storeEbayResearchSessionToKv(marketplace, storageState, 'storage_state');
     clearEbayResearchAuthCache();
 
     const verification: EbayResearchAuthInspection =
       await inspectEbayResearchAuthState(marketplace);
-    if (verification.authState !== 'authenticated' || verification.sessionSource !== 'kv') {
+    if (
+      verification.authState !== 'loaded' ||
+      verification.sessionSource !== 'kv' ||
+      verification.authValidationSucceeded !== true
+    ) {
       throw new Error(
-        `eBay Research session bootstrap verification failed (authState=${verification.authState}, sessionSource=${verification.sessionSource ?? 'none'}, cookieCount=${verification.cookieCount}).`
+        `eBay Research session bootstrap verification failed (authState=${verification.authState}, sessionSource=${verification.sessionSource ?? 'none'}, authValidationSucceeded=${verification.authValidationSucceeded}, cookieCount=${verification.cookieCount}).`
       );
     }
 
@@ -65,6 +76,7 @@ async function main(): Promise<void> {
           ok: true,
           marketplace,
           persistedTo: 'kv',
+          refreshCommand: 'pnpm run research:bootstrap',
           verification,
         },
         null,

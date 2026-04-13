@@ -16,6 +16,15 @@ export interface ResearchStorageState {
   }[];
 }
 
+type ResearchDebugAuthState = 'loaded' | 'authenticated' | 'missing' | 'expired' | 'unavailable';
+type ResearchSessionStrategy =
+  | 'env_cookies'
+  | 'kv_store'
+  | 'storage_state'
+  | 'playwright_profile'
+  | 'none';
+type ResearchSessionSource = 'kv' | 'env' | 'filesystem' | 'playwright_profile' | null;
+
 export interface EbayResearchListingRow {
   title: string;
   itemId: string | null;
@@ -70,17 +79,20 @@ export interface EbayResearchResponse {
     fetchedAt: string;
     modulesSeen: string[];
     pageErrors: string[];
-    authState: 'authenticated' | 'missing' | 'expired' | 'unavailable';
-    sessionStrategy: 'env_cookies' | 'kv_store' | 'storage_state' | 'playwright_profile' | 'none';
-    sessionSource: 'kv' | 'env' | 'filesystem' | 'playwright_profile' | null;
+    authState: ResearchDebugAuthState;
+    sessionStrategy: ResearchSessionStrategy;
+    sessionSource: ResearchSessionSource;
     kvLoadAttempted: boolean;
     kvLoadSucceeded: boolean;
+    kvStorageStateBytes: number | null;
     envLoadAttempted: boolean;
     envLoadSucceeded: boolean;
     filesystemLoadAttempted: boolean;
     filesystemLoadSucceeded: boolean;
     profileLoadAttempted: boolean;
     profileLoadSucceeded: boolean;
+    authValidationAttempted: boolean;
+    authValidationSucceeded: boolean;
     notes: string[];
   };
 }
@@ -126,17 +138,20 @@ interface ResearchCacheEntry {
 interface ResearchAuthState {
   cookies: ResearchCookie[];
   storageState: ResearchStorageState | null;
-  authState: 'authenticated' | 'missing' | 'expired' | 'unavailable';
-  sessionStrategy: 'env_cookies' | 'kv_store' | 'storage_state' | 'playwright_profile' | 'none';
-  sessionSource: 'kv' | 'env' | 'filesystem' | 'playwright_profile' | null;
+  authState: ResearchDebugAuthState;
+  sessionStrategy: ResearchSessionStrategy;
+  sessionSource: ResearchSessionSource;
   kvLoadAttempted: boolean;
   kvLoadSucceeded: boolean;
+  kvStorageStateBytes: number | null;
   envLoadAttempted: boolean;
   envLoadSucceeded: boolean;
   filesystemLoadAttempted: boolean;
   filesystemLoadSucceeded: boolean;
   profileLoadAttempted: boolean;
   profileLoadSucceeded: boolean;
+  authValidationAttempted: boolean;
+  authValidationSucceeded: boolean;
   notes: string[];
 }
 
@@ -146,8 +161,27 @@ interface PersistedResearchSession {
   updatedAt: string;
   expiresAt: string | null;
   marketplace: string;
-  source: ResearchAuthState['sessionStrategy'];
-  sessionSource?: ResearchAuthState['sessionSource'];
+  source: ResearchSessionStrategy;
+  sessionSource?: ResearchSessionSource;
+}
+
+interface PersistedKvStorageStateRecord {
+  raw: string;
+  parsed: ResearchStorageState | null;
+  bytes: number;
+  updatedAt: string | null;
+  source: string | null;
+}
+
+interface ResearchSessionValidationResult {
+  ok: boolean;
+  responseStatus: number | null;
+  modulesSeen: string[];
+  note: string;
+}
+
+function isExplicitResearchAuthRejection(validation: ResearchSessionValidationResult): boolean {
+  return validation.responseStatus === 401 || validation.responseStatus === 403;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -163,9 +197,13 @@ const RESEARCH_STORAGE_STATE_PATH =
 const RESEARCH_PROFILE_DIR =
   process.env.EBAY_RESEARCH_PROFILE_DIR?.trim() ?? '.ebay-research/profile';
 const RESEARCH_COOKIE_CACHE_TTL_MS = 5 * 60 * 1000;
+const RESEARCH_AUTH_VALIDATION_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESEARCH_SESSION_KEY_PREFIX = 'ebay-research:session';
 const RESEARCH_SESSION_FALLBACK_TTL_S = 30 * 24 * 60 * 60;
 const RESEARCH_STORAGE_STATE_ENV_KEY = 'EBAY_RESEARCH_STORAGE_STATE_JSON';
+const RESEARCH_STORAGE_STATE_KV_KEY = 'ebay_research_storage_state_json';
+const RESEARCH_STORAGE_STATE_UPDATED_AT_KV_KEY = 'ebay_research_storage_state_updated_at';
+const RESEARCH_STORAGE_STATE_SOURCE_KV_KEY = 'ebay_research_storage_state_source';
 const EBAY_HOSTNAME_PATTERN = /(^|\.)ebay\.[a-z.]+$/i;
 
 type ResearchAuthCache = Record<
@@ -176,8 +214,17 @@ type ResearchAuthCache = Record<
   }
 >;
 
+type ResearchAuthValidationCache = Record<
+  string,
+  {
+    expiresAt: number;
+    value: ResearchSessionValidationResult;
+  }
+>;
+
 const researchResponseCache = new Map<string, ResearchCacheEntry>();
 let researchAuthCache: ResearchAuthCache = {};
+let researchAuthValidationCache: ResearchAuthValidationCache = {};
 let researchSessionStoreSingleton: KVStore | null | undefined;
 
 export class EbayResearchAuthError extends Error {
@@ -227,6 +274,27 @@ function getResearchSessionStore(): KVStore | null {
 function getResearchSessionKey(marketplace: string): string {
   const environment = (process.env.EBAY_ENVIRONMENT ?? 'production').trim() || 'production';
   return `${RESEARCH_SESSION_KEY_PREFIX}:${environment}:${marketplace}`;
+}
+
+function getResearchStorageStateScopedKey(baseKey: string, marketplace: string): string {
+  const environment = (process.env.EBAY_ENVIRONMENT ?? 'production').trim() || 'production';
+  if (environment === 'production' && marketplace === DEFAULT_MARKETPLACE) {
+    return baseKey;
+  }
+
+  return `${baseKey}:${environment}:${marketplace}`;
+}
+
+function getResearchStorageStateKvKey(marketplace: string): string {
+  return getResearchStorageStateScopedKey(RESEARCH_STORAGE_STATE_KV_KEY, marketplace);
+}
+
+function getResearchStorageStateUpdatedAtKvKey(marketplace: string): string {
+  return getResearchStorageStateScopedKey(RESEARCH_STORAGE_STATE_UPDATED_AT_KV_KEY, marketplace);
+}
+
+function getResearchStorageStateSourceKvKey(marketplace: string): string {
+  return getResearchStorageStateScopedKey(RESEARCH_STORAGE_STATE_SOURCE_KV_KEY, marketplace);
 }
 
 function getResearchAuthFingerprint(authState: ResearchAuthState): string {
@@ -368,12 +436,15 @@ function buildResearchAuthDebug(
     sessionSource: authState.sessionSource,
     kvLoadAttempted: authState.kvLoadAttempted,
     kvLoadSucceeded: authState.kvLoadSucceeded,
+    kvStorageStateBytes: authState.kvStorageStateBytes,
     envLoadAttempted: authState.envLoadAttempted,
     envLoadSucceeded: authState.envLoadSucceeded,
     filesystemLoadAttempted: authState.filesystemLoadAttempted,
     filesystemLoadSucceeded: authState.filesystemLoadSucceeded,
     profileLoadAttempted: authState.profileLoadAttempted,
     profileLoadSucceeded: authState.profileLoadSucceeded,
+    authValidationAttempted: authState.authValidationAttempted,
+    authValidationSucceeded: authState.authValidationSucceeded,
   };
 }
 
@@ -447,6 +518,20 @@ function getCookieExpiryMs(cookies: ResearchCookie[]): number | null {
   return expiriesMs.length > 0 ? Math.min(...expiriesMs) : null;
 }
 
+function getResearchAuthValidationCacheKey(
+  marketplace: string,
+  cookies: ResearchCookie[]
+): string {
+  return createHash('sha1')
+    .update(
+      JSON.stringify({
+        marketplace,
+        cookieHeader: buildCookieHeader(cookies),
+      })
+    )
+    .digest('hex');
+}
+
 async function readResearchSessionFromKv(
   marketplace: string
 ): Promise<PersistedResearchSession | null> {
@@ -458,12 +543,45 @@ async function readResearchSessionFromKv(
   return await store.get<PersistedResearchSession>(getResearchSessionKey(marketplace));
 }
 
+async function readResearchStorageStateFromKv(
+  marketplace: string
+): Promise<PersistedKvStorageStateRecord | null> {
+  const store = getResearchSessionStore();
+  if (!store) {
+    return null;
+  }
+
+  const [rawValue, updatedAt, source] = await Promise.all([
+    store.get<string>(getResearchStorageStateKvKey(marketplace)),
+    store.get<string>(getResearchStorageStateUpdatedAtKvKey(marketplace)),
+    store.get<string>(getResearchStorageStateSourceKvKey(marketplace)),
+  ]);
+  if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
+    return null;
+  }
+
+  let parsed: ResearchStorageState | null = null;
+  try {
+    parsed = normalizeStorageState(JSON.parse(rawValue) as unknown);
+  } catch {
+    parsed = null;
+  }
+
+  return {
+    raw: rawValue,
+    parsed,
+    bytes: Buffer.byteLength(rawValue, 'utf8'),
+    updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
+    source: typeof source === 'string' ? source : null,
+  };
+}
+
 async function persistResearchSessionToKv(options: {
   marketplace: string;
   cookies: ResearchCookie[];
   storageState?: ResearchStorageState | null;
-  source: ResearchAuthState['sessionStrategy'];
-  sessionSource?: ResearchAuthState['sessionSource'];
+  source: ResearchSessionStrategy;
+  sessionSource?: ResearchSessionSource;
 }): Promise<void> {
   const store = getResearchSessionStore();
   const persistedStorageState = options.storageState
@@ -484,20 +602,33 @@ async function persistResearchSessionToKv(options: {
         Math.min(RESEARCH_SESSION_FALLBACK_TTL_S, Math.floor((expiryMs - Date.now()) / 1000))
       )
     : RESEARCH_SESSION_FALLBACK_TTL_S;
-
-  await store.put(
-    getResearchSessionKey(options.marketplace),
-    {
-      cookies: persistedCookies,
-      storageState: persistedStorageState ?? storageStateFromCookies(persistedCookies),
-      updatedAt: new Date().toISOString(),
-      expiresAt: expiryMs ? new Date(expiryMs).toISOString() : null,
-      marketplace: options.marketplace,
-      source: options.source,
-      sessionSource: options.sessionSource ?? 'kv',
-    } satisfies PersistedResearchSession,
-    ttlSeconds
+  const updatedAt = new Date().toISOString();
+  const serializedStorageState = JSON.stringify(
+    persistedStorageState ?? storageStateFromCookies(persistedCookies)
   );
+
+  await Promise.all([
+    store.put(getResearchStorageStateKvKey(options.marketplace), serializedStorageState, ttlSeconds),
+    store.put(getResearchStorageStateUpdatedAtKvKey(options.marketplace), updatedAt, ttlSeconds),
+    store.put(
+      getResearchStorageStateSourceKvKey(options.marketplace),
+      options.sessionSource ?? options.source ?? 'kv',
+      ttlSeconds
+    ),
+    store.put(
+      getResearchSessionKey(options.marketplace),
+      {
+        cookies: persistedCookies,
+        storageState: persistedStorageState ?? storageStateFromCookies(persistedCookies),
+        updatedAt,
+        expiresAt: expiryMs ? new Date(expiryMs).toISOString() : null,
+        marketplace: options.marketplace,
+        source: options.source,
+        sessionSource: options.sessionSource ?? 'kv',
+      } satisfies PersistedResearchSession,
+      ttlSeconds
+    ),
+  ]);
 }
 
 async function deleteResearchSessionFromKv(marketplace: string): Promise<void> {
@@ -507,9 +638,123 @@ async function deleteResearchSessionFromKv(marketplace: string): Promise<void> {
   }
 
   try {
-    await store.delete(getResearchSessionKey(marketplace));
+    await Promise.all([
+      store.delete(getResearchStorageStateKvKey(marketplace)),
+      store.delete(getResearchStorageStateUpdatedAtKvKey(marketplace)),
+      store.delete(getResearchStorageStateSourceKvKey(marketplace)),
+      store.delete(getResearchSessionKey(marketplace)),
+    ]);
   } catch {
     // Ignore KV invalidation failures so auth diagnostics can still surface.
+  }
+}
+
+async function deleteCanonicalResearchStorageStateFromKv(marketplace: string): Promise<void> {
+  const store = getResearchSessionStore();
+  if (!store) {
+    return;
+  }
+
+  try {
+    await Promise.all([
+      store.delete(getResearchStorageStateKvKey(marketplace)),
+      store.delete(getResearchStorageStateUpdatedAtKvKey(marketplace)),
+      store.delete(getResearchStorageStateSourceKvKey(marketplace)),
+    ]);
+  } catch {
+    // Ignore KV invalidation failures so auth diagnostics can still surface.
+  }
+}
+
+function invalidateResearchAuthValidationCache(
+  marketplace: string,
+  cookies: ResearchCookie[]
+): void {
+  delete researchAuthValidationCache[getResearchAuthValidationCacheKey(marketplace, cookies)];
+}
+
+async function validateResearchAuthState(options: {
+  marketplace: string;
+  cookies: ResearchCookie[];
+  sourceLabel: string;
+}): Promise<ResearchSessionValidationResult> {
+  const cacheKey = getResearchAuthValidationCacheKey(options.marketplace, options.cookies);
+  const cached = researchAuthValidationCache[cacheKey];
+  if (cached && cached.expiresAt > Date.now()) {
+    return {
+      ...cached.value,
+      note: `${cached.value.note} (validation cache reused).`,
+    };
+  }
+
+  const validationUrl = buildResearchUrl('pokemon', 'ACTIVE', {
+    marketplace: options.marketplace,
+    dayRange: 30,
+    timezone: DEFAULT_TIMEZONE,
+    startDate: Date.now() - 30 * DAY_MS,
+    endDate: Date.now(),
+    offset: 0,
+    limit: 1,
+  });
+  const cookieHeader = buildCookieHeader(options.cookies);
+  if (!cookieHeader) {
+    return {
+      ok: false,
+      responseStatus: null,
+      modulesSeen: [],
+      note: `${options.sourceLabel} did not provide any usable cookies for validation.`,
+    };
+  }
+
+  try {
+    const response = await axios.get<string>(validationUrl, {
+      responseType: 'text',
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        cookie: cookieHeader,
+        'x-requested-with': 'XMLHttpRequest',
+        'user-agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+      },
+      validateStatus: (status) => status >= 200 && status < 500,
+    });
+    const modules = parseResearchModules(response.data);
+    const modulesSeen = uniqueStrings(modules.map((module) => module.moduleName));
+    const ok = response.status >= 200 && response.status < 300 && modulesSeen.length > 0;
+    const result: ResearchSessionValidationResult = ok
+      ? {
+          ok: true,
+          responseStatus: response.status,
+          modulesSeen,
+          note: `${options.sourceLabel} passed ACTIVE endpoint validation with ${modulesSeen.length} research modules.`,
+        }
+      : {
+          ok: false,
+          responseStatus: response.status,
+          modulesSeen,
+          note:
+            response.status === 401 || response.status === 403
+              ? `${options.sourceLabel} was rejected by the ACTIVE endpoint with status ${response.status}.`
+              : `${options.sourceLabel} reached the ACTIVE endpoint but did not return usable research modules.`,
+        };
+
+    researchAuthValidationCache[cacheKey] = {
+      expiresAt: Date.now() + RESEARCH_AUTH_VALIDATION_CACHE_TTL_MS,
+      value: result,
+    };
+    return result;
+  } catch (error) {
+    const result: ResearchSessionValidationResult = {
+      ok: false,
+      responseStatus: null,
+      modulesSeen: [],
+      note: `${options.sourceLabel} validation failed before research modules could be confirmed (${error instanceof Error ? error.message : String(error)}).`,
+    };
+    researchAuthValidationCache[cacheKey] = {
+      expiresAt: Date.now() + RESEARCH_AUTH_VALIDATION_CACHE_TTL_MS,
+      value: result,
+    };
+    return result;
   }
 }
 
@@ -1206,44 +1451,182 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
     | 'sessionSource'
     | 'kvLoadAttempted'
     | 'kvLoadSucceeded'
+    | 'kvStorageStateBytes'
     | 'envLoadAttempted'
     | 'envLoadSucceeded'
     | 'filesystemLoadAttempted'
     | 'filesystemLoadSucceeded'
     | 'profileLoadAttempted'
     | 'profileLoadSucceeded'
+    | 'authValidationAttempted'
+    | 'authValidationSucceeded'
   > = {
     sessionSource: null,
     kvLoadAttempted: false,
     kvLoadSucceeded: false,
+    kvStorageStateBytes: null,
     envLoadAttempted: false,
     envLoadSucceeded: false,
     filesystemLoadAttempted: false,
     filesystemLoadSucceeded: false,
     profileLoadAttempted: false,
     profileLoadSucceeded: false,
+    authValidationAttempted: false,
+    authValidationSucceeded: false,
   };
 
   diagnostics.kvLoadAttempted = true;
   const store = getResearchSessionStore();
   if (store !== null) {
+    const kvStorageStateRecord = await readResearchStorageStateFromKv(marketplace);
+    let shouldAttemptLegacyKvFallback = true;
+    if (kvStorageStateRecord) {
+      diagnostics.kvStorageStateBytes = kvStorageStateRecord.bytes;
+      if (kvStorageStateRecord.parsed) {
+        const resolvedSession = await resolveStorageStateCookies(
+          kvStorageStateRecord.parsed,
+          `${store.backendName} KV storage state`,
+          notes
+        );
+        if (resolvedSession && resolvedSession.cookies.length > 0) {
+          diagnostics.kvLoadSucceeded = true;
+          diagnostics.authValidationAttempted = true;
+          const validation = await validateResearchAuthState({
+            marketplace,
+            cookies: resolvedSession.cookies,
+            sourceLabel: `${store.backendName} KV storage state`,
+          });
+          diagnostics.authValidationSucceeded = validation.ok;
+          notes.push(validation.note);
+          if (validation.ok) {
+            const value: ResearchAuthState = {
+              cookies: resolvedSession.cookies,
+              storageState: resolvedSession.storageState,
+              authState: 'loaded',
+              sessionStrategy: 'storage_state',
+              ...diagnostics,
+              sessionSource: 'kv',
+              notes: [
+                ...notes,
+                `Restored canonical eBay Research storage state from ${store.backendName}${kvStorageStateRecord.updatedAt ? ` (updated ${kvStorageStateRecord.updatedAt})` : ''}.`,
+              ],
+            };
+            researchAuthCache[marketplace] = {
+              expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+              value,
+            };
+            return value;
+          }
+          shouldAttemptLegacyKvFallback = false;
+          if (isExplicitResearchAuthRejection(validation)) {
+            await deleteResearchSessionFromKv(marketplace);
+            notes.push(
+              `Deleted invalid canonical eBay Research storage state from ${store.backendName} after explicit auth rejection.`
+            );
+          } else {
+            notes.push(
+              `Preserved canonical eBay Research storage state in ${store.backendName} because validation did not return an explicit auth rejection.`
+            );
+          }
+        } else {
+          await deleteCanonicalResearchStorageStateFromKv(marketplace);
+          notes.push(
+            `Deleted unusable canonical eBay Research storage state from ${store.backendName} because no usable cookies could be restored.`
+          );
+        }
+      } else {
+        notes.push(
+          `Canonical eBay Research storage state in ${store.backendName} could not be parsed as Playwright storage-state JSON.`
+        );
+        await deleteCanonicalResearchStorageStateFromKv(marketplace);
+        notes.push(
+          `Deleted malformed canonical eBay Research storage state from ${store.backendName} before attempting legacy fallback.`
+        );
+      }
+    }
+
     const persistedSession = await readResearchSessionFromKv(marketplace);
-    if (persistedSession?.storageState) {
+    if (shouldAttemptLegacyKvFallback && persistedSession?.storageState) {
       const resolvedSession = await resolveStorageStateCookies(
         persistedSession.storageState,
-        `${store.backendName} KV storage state`,
+        `${store.backendName} legacy KV storage state`,
         notes
       );
       if (resolvedSession && resolvedSession.cookies.length > 0) {
         diagnostics.kvLoadSucceeded = true;
-        const value: ResearchAuthState = {
+        diagnostics.kvStorageStateBytes = Buffer.byteLength(
+          JSON.stringify(persistedSession.storageState),
+          'utf8'
+        );
+        diagnostics.authValidationAttempted = true;
+        const validation = await validateResearchAuthState({
+          marketplace,
           cookies: resolvedSession.cookies,
-          storageState: resolvedSession.storageState,
-          authState: 'authenticated',
-          sessionStrategy: 'storage_state',
+          sourceLabel: `${store.backendName} legacy KV storage state`,
+        });
+        diagnostics.authValidationSucceeded = validation.ok;
+        notes.push(validation.note);
+        if (!validation.ok) {
+          if (isExplicitResearchAuthRejection(validation)) {
+            await deleteResearchSessionFromKv(marketplace);
+            notes.push(
+              `Deleted invalid legacy eBay Research KV session from ${store.backendName} after explicit auth rejection.`
+            );
+          } else {
+            notes.push(
+              `Preserved legacy eBay Research KV session in ${store.backendName} because validation did not return an explicit auth rejection.`
+            );
+          }
+        } else {
+          const value: ResearchAuthState = {
+            cookies: resolvedSession.cookies,
+            storageState: resolvedSession.storageState,
+            authState: 'loaded',
+            sessionStrategy: 'storage_state',
+            ...diagnostics,
+            sessionSource: 'kv',
+            notes: [...notes, `Restored eBay Research storage state from ${store.backendName}.`],
+          };
+          researchAuthCache[marketplace] = {
+            expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+            value,
+          };
+          return value;
+        }
+      }
+    }
+
+    if (shouldAttemptLegacyKvFallback && persistedSession?.cookies?.length) {
+      diagnostics.kvLoadSucceeded = true;
+      diagnostics.authValidationAttempted = true;
+      const validation = await validateResearchAuthState({
+        marketplace,
+        cookies: persistedSession.cookies,
+        sourceLabel: `${store.backendName} legacy KV cookie session`,
+      });
+      diagnostics.authValidationSucceeded = validation.ok;
+      notes.push(validation.note);
+      if (!validation.ok) {
+        if (isExplicitResearchAuthRejection(validation)) {
+          await deleteResearchSessionFromKv(marketplace);
+          notes.push(
+            `Deleted invalid legacy eBay Research cookie session from ${store.backendName} after explicit auth rejection.`
+          );
+        } else {
+          notes.push(
+            `Preserved legacy eBay Research cookie session in ${store.backendName} because validation did not return an explicit auth rejection.`
+          );
+        }
+      } else {
+        const value: ResearchAuthState = {
+          cookies: persistedSession.cookies,
+          storageState:
+            persistedSession.storageState ?? storageStateFromCookies(persistedSession.cookies),
+          authState: 'loaded',
+          sessionStrategy: persistedSession.source ?? 'kv_store',
           ...diagnostics,
           sessionSource: 'kv',
-          notes: [...notes, `Restored eBay Research storage state from ${store.backendName}.`],
+          notes: [...notes, `Restored eBay Research cookie session from ${store.backendName}.`],
         };
         researchAuthCache[marketplace] = {
           expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
@@ -1253,26 +1636,9 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
       }
     }
 
-    if (persistedSession?.cookies?.length) {
-      diagnostics.kvLoadSucceeded = true;
-      const value: ResearchAuthState = {
-        cookies: persistedSession.cookies,
-        storageState:
-          persistedSession.storageState ?? storageStateFromCookies(persistedSession.cookies),
-        authState: 'authenticated',
-        sessionStrategy: persistedSession.source ?? 'kv_store',
-        ...diagnostics,
-        sessionSource: 'kv',
-        notes: [...notes, `Restored eBay Research cookie session from ${store.backendName}.`],
-      };
-      researchAuthCache[marketplace] = {
-        expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
-        value,
-      };
-      return value;
-    }
-
-    notes.push(`No persisted eBay Research session was found in ${store.backendName}.`);
+    notes.push(
+      `No persisted eBay Research session was found in ${store.backendName} under canonical or legacy keys.`
+    );
   } else {
     notes.push(
       'Shared KV store for eBay Research sessions is unavailable; runtime will continue with non-KV fallbacks only.'
@@ -1291,10 +1657,23 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
         );
         if (resolvedSession && resolvedSession.cookies.length > 0) {
           diagnostics.envLoadSucceeded = true;
+          diagnostics.authValidationAttempted = true;
+          const validation = await validateResearchAuthState({
+            marketplace,
+            cookies: resolvedSession.cookies,
+            sourceLabel: `${RESEARCH_STORAGE_STATE_ENV_KEY}`,
+          });
+          diagnostics.authValidationSucceeded = validation.ok;
+          notes.push(validation.note);
+          if (!validation.ok) {
+            notes.push(
+              `${RESEARCH_STORAGE_STATE_ENV_KEY} was ignored because validation against the ACTIVE endpoint failed.`
+            );
+          } else {
           const value: ResearchAuthState = {
             cookies: resolvedSession.cookies,
             storageState: resolvedSession.storageState,
-            authState: 'authenticated',
+            authState: 'loaded',
             sessionStrategy: 'storage_state',
             ...diagnostics,
             sessionSource: 'env',
@@ -1312,6 +1691,7 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
             value,
           };
           return value;
+          }
         }
       } else {
         notes.push(
@@ -1329,10 +1709,23 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
       const cookies = normalizeResearchCookies(JSON.parse(envCookiesRaw) as unknown);
       if (cookies.length > 0) {
         diagnostics.envLoadSucceeded = true;
+        diagnostics.authValidationAttempted = true;
+        const validation = await validateResearchAuthState({
+          marketplace,
+          cookies,
+          sourceLabel: 'EBAY_RESEARCH_COOKIES_JSON',
+        });
+        diagnostics.authValidationSucceeded = validation.ok;
+        notes.push(validation.note);
+        if (!validation.ok) {
+          notes.push(
+            'EBAY_RESEARCH_COOKIES_JSON was ignored because validation against the ACTIVE endpoint failed.'
+          );
+        } else {
         const value: ResearchAuthState = {
           cookies,
           storageState: storageStateFromCookies(cookies),
-          authState: 'authenticated',
+          authState: 'loaded',
           sessionStrategy: 'env_cookies',
           ...diagnostics,
           sessionSource: 'env',
@@ -1350,6 +1743,7 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
           value,
         };
         return value;
+        }
       }
       notes.push('EBAY_RESEARCH_COOKIES_JSON did not contain any usable cookies.');
     } catch {
@@ -1368,10 +1762,23 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
     );
     if (resolvedSession && resolvedSession.cookies.length > 0) {
       diagnostics.filesystemLoadSucceeded = true;
+      diagnostics.authValidationAttempted = true;
+      const validation = await validateResearchAuthState({
+        marketplace,
+        cookies: resolvedSession.cookies,
+        sourceLabel: `storage state file at ${storageStatePath}`,
+      });
+      diagnostics.authValidationSucceeded = validation.ok;
+      notes.push(validation.note);
+      if (!validation.ok) {
+        notes.push(
+          `Storage state file at ${storageStatePath} was ignored because validation against the ACTIVE endpoint failed.`
+        );
+      } else {
       const value: ResearchAuthState = {
         cookies: resolvedSession.cookies,
         storageState: resolvedSession.storageState,
-        authState: 'authenticated',
+        authState: 'loaded',
         sessionStrategy: 'storage_state',
         ...diagnostics,
         sessionSource: 'filesystem',
@@ -1389,6 +1796,7 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
         value,
       };
       return value;
+      }
     }
   } else {
     notes.push(`No research storage state found at ${storageStatePath}.`);
@@ -1399,10 +1807,23 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
   const profileState = await readPlaywrightProfileState(profileDir, notes);
   if (profileState && profileState.cookies.length > 0) {
     diagnostics.profileLoadSucceeded = true;
+    diagnostics.authValidationAttempted = true;
+    const validation = await validateResearchAuthState({
+      marketplace,
+      cookies: profileState.cookies,
+      sourceLabel: `Playwright profile at ${profileDir}`,
+    });
+    diagnostics.authValidationSucceeded = validation.ok;
+    notes.push(validation.note);
+    if (!validation.ok) {
+      notes.push(
+        `Playwright profile at ${profileDir} was ignored because validation against the ACTIVE endpoint failed.`
+      );
+    } else {
     const value: ResearchAuthState = {
       cookies: profileState.cookies,
       storageState: profileState.storageState,
-      authState: 'authenticated',
+      authState: 'loaded',
       sessionStrategy: 'playwright_profile',
       ...diagnostics,
       sessionSource: 'playwright_profile',
@@ -1420,6 +1841,7 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
       value,
     };
     return value;
+    }
   }
 
   if (!existsSync(profileDir)) {
@@ -1477,6 +1899,7 @@ async function fetchResearchTab(
   });
 
   if (response.status === 401 || response.status === 403) {
+    invalidateResearchAuthValidationCache(options.marketplace, authState.cookies);
     delete researchAuthCache[options.marketplace];
     await deleteResearchSessionFromKv(options.marketplace);
     throw new EbayResearchAuthError(
@@ -1647,12 +2070,15 @@ export interface EbayResearchAuthInspection {
   sessionSource: EbayResearchResponse['debug']['sessionSource'];
   kvLoadAttempted: EbayResearchResponse['debug']['kvLoadAttempted'];
   kvLoadSucceeded: EbayResearchResponse['debug']['kvLoadSucceeded'];
+  kvStorageStateBytes: EbayResearchResponse['debug']['kvStorageStateBytes'];
   envLoadAttempted: EbayResearchResponse['debug']['envLoadAttempted'];
   envLoadSucceeded: EbayResearchResponse['debug']['envLoadSucceeded'];
   filesystemLoadAttempted: EbayResearchResponse['debug']['filesystemLoadAttempted'];
   filesystemLoadSucceeded: EbayResearchResponse['debug']['filesystemLoadSucceeded'];
   profileLoadAttempted: EbayResearchResponse['debug']['profileLoadAttempted'];
   profileLoadSucceeded: EbayResearchResponse['debug']['profileLoadSucceeded'];
+  authValidationAttempted: EbayResearchResponse['debug']['authValidationAttempted'];
+  authValidationSucceeded: EbayResearchResponse['debug']['authValidationSucceeded'];
   notes: EbayResearchResponse['debug']['notes'];
   cookieCount: number;
 }
@@ -1660,7 +2086,7 @@ export interface EbayResearchAuthInspection {
 export async function storeEbayResearchSessionToKv(
   marketplace: string,
   storageState: ResearchStorageState,
-  source: ResearchAuthState['sessionStrategy'] = 'storage_state'
+  source: ResearchSessionStrategy = 'storage_state'
 ): Promise<void> {
   const sanitizedStorageState = sanitizeResearchStorageState(
     storageState,
@@ -1684,6 +2110,7 @@ export async function storeEbayResearchSessionToKv(
 
 export function clearEbayResearchAuthCache(): void {
   researchAuthCache = {};
+  researchAuthValidationCache = {};
 }
 
 export async function inspectEbayResearchAuthState(

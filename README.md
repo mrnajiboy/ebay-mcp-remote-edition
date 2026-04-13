@@ -652,14 +652,18 @@ Known limitations in the current implementation:
 
 - Install Chromium for hosted runtimes with [`package.json`](package.json) script `playwright:install` (`pnpm run playwright:install`).
 - The Docker deployment path now provisions Chromium during image build in [`Dockerfile`](Dockerfile).
-- Bootstrap a signed-in eBay Research storage state into KV with [`src/scripts/bootstrap-ebay-research-session.ts`](src/scripts/bootstrap-ebay-research-session.ts) via the packaged/runtime-safe [`package.json`](package.json) script `research:bootstrap` (`pnpm run build && pnpm run research:bootstrap`).
+- Canonical production session source of truth is KV-backed Playwright storage-state JSON stored under `ebay_research_storage_state_json` with companion metadata keys `ebay_research_storage_state_updated_at` and `ebay_research_storage_state_source`.
+- Bootstrap a signed-in eBay Research storage state into KV with [`src/scripts/bootstrap-ebay-research-session.ts`](src/scripts/bootstrap-ebay-research-session.ts) via the packaged/runtime-safe [`package.json`](package.json) scripts `research:bootstrap` or `bootstrap:ebay-research-session` (`pnpm run build && pnpm run research:bootstrap`).
 - Verify headless Chromium launchability with [`src/scripts/check-playwright.ts`](src/scripts/check-playwright.ts) via the packaged/runtime-safe [`package.json`](package.json) script `research:check-browser` (`pnpm run build && pnpm run research:check-browser`).
-- Recommended production precedence is: KV storage state → `EBAY_RESEARCH_STORAGE_STATE_JSON` → `EBAY_RESEARCH_COOKIES_JSON` → local storage-state file → local Playwright profile → explicit auth-missing fallback.
+- Runtime precedence is: KV storage state → `EBAY_RESEARCH_STORAGE_STATE_JSON` → `EBAY_RESEARCH_COOKIES_JSON` → local storage-state file → local Playwright profile → explicit auth-missing fallback.
+- Every candidate session source is validated against the first-party ACTIVE endpoint before the provider reports `authState = loaded`; failed validation is surfaced through debug fields including `kvStorageStateBytes`, `authValidationAttempted`, and `authValidationSucceeded`.
+- Once a validated session is loaded, ACTIVE and SOLD endpoint fetches automatically become the preferred first-party research source while legacy active/sold fallbacks remain intact when auth is missing or invalid.
+- Session refresh is manual by design for now: rerun `pnpm run build && pnpm run research:bootstrap` whenever eBay expires the stored session, then redeploy or restart the hosted service if your platform does not hot-reload env/KV-backed state.
 - The previous-comeback research provider depends on grounded external research and therefore degrades to low-confidence notes with a zero historical score when `PERPLEXITY_API_KEY` is missing, the response cannot be normalized, or reliable evidence is not found.
 - The browse provider still relies on heuristic query selection and fallback matching.
 - The YouTube-backed `youtubeViews24hMillions` field is currently an **average daily views proxy**, not a true trailing 24-hour delta.
 - Social signals are supportive/proxy data only and should not be presented as decisive automated buy logic.
-- eBay-derived metrics are intentionally practical rather than exhaustive; for example, watchers are not yet populated by the live eBay provider.
+- eBay-derived metrics are intentionally practical rather than exhaustive, but authenticated ACTIVE research rows now populate watcher-derived metrics whenever watcher counts are present in the first-party response.
 
 ### Roadmap note: provider maturation
 
@@ -884,6 +888,31 @@ Common causes:
 - the refresh token is expired or revoked upstream
 - `SOLD_ITEMS_API_URL` or `SOLD_ITEMS_API_KEY` is missing, causing sold enrichment to degrade
 - one or more social-provider credentials are absent, which causes the related supportive signal to degrade gracefully instead of failing the entire run
+
+### eBay Research debug shows `authState = missing` or `sessionStrategy = none`
+
+This means the first-party research provider could not load a validated authenticated session and validation is intentionally falling back to browse and/or the temporary sold provider.
+
+Run this checklist:
+
+```bash
+pnpm run playwright:install
+pnpm run build
+pnpm run research:check-browser
+pnpm run research:bootstrap
+```
+
+Expected post-bootstrap debug characteristics from [`src/validation/providers/ebay-research.ts`](src/validation/providers/ebay-research.ts):
+
+- `authState = loaded`
+- `sessionStrategy = storage_state`
+- `sessionSource = kv`
+- `kvLoadAttempted = true`
+- `kvLoadSucceeded = true`
+- `authValidationAttempted = true`
+- `authValidationSucceeded = true`
+
+If the provider still reports `missing`, verify that your hosted deployment can reach the configured KV backend, that Chromium is available in the runtime image, and that the stored eBay session has not expired. Refresh the session by rerunning `pnpm run research:bootstrap`.
 
 If `authDebug.tokenEndpoint` or the captured upstream response looks wrong, verify the environment-specific OAuth configuration and token-base resolution.
 

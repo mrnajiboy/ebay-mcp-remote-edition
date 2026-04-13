@@ -316,8 +316,21 @@ function createApp(): express.Application {
     });
   });
 
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'healthy', timestamp: new Date().toISOString(), version: getVersion() });
+  app.get('/health', (req, res) => {
+    const healthResponse = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      version: getVersion(),
+    };
+
+    serverLogger.verbose('Health response emitted', {
+      path: req.originalUrl,
+      status: healthResponse.status,
+      timestamp: healthResponse.timestamp,
+      version: healthResponse.version,
+    });
+
+    res.json(healthResponse);
   });
 
   // ── Admin routes ──────────────────────────────────────────────────────────
