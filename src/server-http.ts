@@ -207,9 +207,17 @@ function createApp(): express.Application {
   app.use((req, res, next) => {
     const start = Date.now();
     res.on('finish', () => {
-      serverLogger.info(`${req.method} ${req.path} -> ${res.statusCode}`, {
+      const message = `${req.method} ${req.path} -> ${res.statusCode}`;
+      const meta = {
         durationMs: Date.now() - start,
-      });
+      };
+
+      if (req.path === '/health' || req.path.endsWith('/validation/health')) {
+        serverLogger.verbose(message, meta);
+        return;
+      }
+
+      serverLogger.info(message, meta);
     });
     next();
   });
