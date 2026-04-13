@@ -13,3 +13,4 @@ pnpm-debug.log
 .DS_Store
 .dotenvx
 tests/curl/
+tests/fixtures/

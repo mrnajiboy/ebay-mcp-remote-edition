@@ -89,6 +89,7 @@ test-results/
 .jest/
 junit.xml
 tests/curl/
+tests/fixtures/
 
 # Cache directories
 .cache/
