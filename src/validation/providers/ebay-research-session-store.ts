@@ -1,11 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import {
-  CloudflareKVStore,
-  type KVStore,
-  UpstashRedisKVStore,
-} from '@/auth/kv-store.js';
+import { CloudflareKVStore, type KVStore, UpstashRedisKVStore } from '@/auth/kv-store.js';
 
 export type EbayResearchSessionStoreBackend =
   | 'cloudflare_kv'
@@ -124,7 +120,9 @@ export function getEbayResearchSessionLegacyKeys(marketplace: string): {
   };
 }
 
-function normalizeBackend(value: string | undefined | null): EbayResearchSessionStoreBackend | null {
+function normalizeBackend(
+  value: string | undefined | null
+): EbayResearchSessionStoreBackend | null {
   const normalized = value?.trim().toLowerCase();
   switch (normalized) {
     case 'cloudflare_kv':
@@ -310,10 +308,7 @@ export class FilesystemSessionStore implements EbayResearchSessionStore {
   }
 
   async deleteStorageState(): Promise<void> {
-    await Promise.all([
-      rm(this.stateKey, { force: true }),
-      rm(this.metaKey, { force: true }),
-    ]);
+    await Promise.all([rm(this.stateKey, { force: true }), rm(this.metaKey, { force: true })]);
   }
 }
 
@@ -403,7 +398,8 @@ export function createEbayResearchSessionStoreResolution(
   } catch (error) {
     return {
       ...backend,
-      stateKey: backend.selected === 'filesystem' ? getFilesystemStorageStatePath() : keys.storageStateKey,
+      stateKey:
+        backend.selected === 'filesystem' ? getFilesystemStorageStatePath() : keys.storageStateKey,
       metaKey: backend.selected === 'filesystem' ? getFilesystemMetaPath() : keys.metaKey,
       store: null,
       error: error instanceof Error ? error.message : String(error),

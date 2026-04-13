@@ -31,11 +31,7 @@ type ResearchSessionStrategy =
   | 'storage_state'
   | 'playwright_profile'
   | 'none';
-type ResearchSessionSource =
-  | EbayResearchSessionStoreBackend
-  | 'env'
-  | 'playwright_profile'
-  | null;
+type ResearchSessionSource = EbayResearchSessionStoreBackend | 'env' | 'playwright_profile' | null;
 
 export interface EbayResearchListingRow {
   title: string;
@@ -317,7 +313,9 @@ function resolveResearchSessionStore(marketplace: string): EbayResearchSessionSt
   return createEbayResearchSessionStoreResolution(marketplace);
 }
 
-function shouldAttemptFilesystemFallback(selectedBackend: EbayResearchSessionStoreBackend): boolean {
+function shouldAttemptFilesystemFallback(
+  selectedBackend: EbayResearchSessionStoreBackend
+): boolean {
   return (
     selectedBackend === 'filesystem' ||
     (isKvEbayResearchSessionStoreBackend(selectedBackend) &&
@@ -1994,7 +1992,10 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
             sessionStrategy: 'storage_state',
             ...diagnostics,
             sessionSource: storeResolution.selected,
-            notes: [...notes, `Restored eBay Research storage state from ${storeResolution.selected}.`],
+            notes: [
+              ...notes,
+              `Restored eBay Research storage state from ${storeResolution.selected}.`,
+            ],
           };
           researchAuthCache[marketplace] = {
             expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
@@ -2059,7 +2060,10 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
             sessionStrategy: 'storage_state',
             ...diagnostics,
             sessionSource: storeResolution.selected,
-            notes: [...notes, `Restored eBay Research storage state from ${storeResolution.selected}.`],
+            notes: [
+              ...notes,
+              `Restored eBay Research storage state from ${storeResolution.selected}.`,
+            ],
           };
           researchAuthCache[marketplace] = {
             expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
@@ -2099,7 +2103,9 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
         }
       } else {
         diagnostics.storageStateBytes = Buffer.byteLength(
-          JSON.stringify(persistedSession.storageState ?? storageStateFromCookies(persistedSession.cookies)),
+          JSON.stringify(
+            persistedSession.storageState ?? storageStateFromCookies(persistedSession.cookies)
+          ),
           'utf8'
         );
         logResearchSession('Auth validation succeeded');
@@ -2111,7 +2117,10 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
           sessionStrategy: persistedSession.source ?? 'kv_store',
           ...diagnostics,
           sessionSource: storeResolution.selected,
-          notes: [...notes, `Restored eBay Research cookie session from ${storeResolution.selected}.`],
+          notes: [
+            ...notes,
+            `Restored eBay Research cookie session from ${storeResolution.selected}.`,
+          ],
         };
         researchAuthCache[marketplace] = {
           expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
@@ -2213,10 +2222,7 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
           );
         } else {
           const storageState = storageStateFromCookies(cookies);
-          diagnostics.storageStateBytes = Buffer.byteLength(
-            JSON.stringify(storageState),
-            'utf8'
-          );
+          diagnostics.storageStateBytes = Buffer.byteLength(JSON.stringify(storageState), 'utf8');
           const value: ResearchAuthState = {
             cookies,
             storageState,
