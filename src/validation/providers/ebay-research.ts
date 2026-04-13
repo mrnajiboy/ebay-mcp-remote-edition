@@ -721,7 +721,7 @@ async function persistResearchSessionToStore(options: {
     resolution.store.setStorageState(serializedStorageState, { ttlSeconds }),
     resolution.store.setMeta(meta, { ttlSeconds }),
     ...(resolution.store instanceof KvBackedEbayResearchSessionStore
-      ? [resolution.store['kvStore'].put(legacyKeys.sessionKey, persistedSession, ttlSeconds)]
+      ? [resolution.store.kvStore.put(legacyKeys.sessionKey, persistedSession, ttlSeconds)]
       : []),
   ]);
   logResearchSession(
@@ -2725,7 +2725,9 @@ export async function storeEbayResearchSessionToKv(
     cookies,
     storageState: sanitizedStorageState,
     source,
-    sessionSource: getSessionSourceForStoreBackend(resolveResearchSessionStore(marketplace).selected),
+    sessionSource: getSessionSourceForStoreBackend(
+      resolveResearchSessionStore(marketplace).selected
+    ),
     required: true,
   });
 }

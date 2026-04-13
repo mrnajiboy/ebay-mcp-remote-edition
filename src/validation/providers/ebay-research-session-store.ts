@@ -342,9 +342,7 @@ export class NoopSessionStore implements EbayResearchSessionStore {
 function getOrCreateSelectedKvStore(
   backend: Extract<EbayResearchSessionStoreBackend, 'cloudflare_kv' | 'upstash-redis'>
 ): KVStore {
-  return createKVStoreForBackend(
-    backend === 'cloudflare_kv' ? 'cloudflare-kv' : 'upstash-redis'
-  );
+  return createKVStoreForBackend(backend === 'cloudflare_kv' ? 'cloudflare-kv' : 'upstash-redis');
 }
 
 function getCloudflareSingleton(): KVStore {
