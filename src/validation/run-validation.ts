@@ -497,6 +497,10 @@ export async function runValidation(
         : ebay.marketPriceUsd !== null
           ? 'ebay_browse'
           : 'none';
+    const researchAuthUnavailable =
+      terapeak.queryDebug.authState === 'missing' ||
+      terapeak.queryDebug.authState === 'expired' ||
+      terapeak.queryDebug.authState === 'unavailable';
     const providerResolution = {
       activeSource,
       soldSource,
@@ -505,7 +509,9 @@ export async function runValidation(
       fallbackReason: primaryResearchSoldSignalsAvailable
         ? null
         : soldSource === 'third_party_sold_api'
-          ? 'First-party research sold signals were unavailable or insufficient, so the legacy sold provider was used as automatic fallback.'
+          ? researchAuthUnavailable
+            ? `ebay_research_ui auth unavailable (state=${terapeak.queryDebug.authState ?? 'unknown'}, source=${terapeak.queryDebug.sessionSource ?? 'none'}), so the legacy sold provider was used as automatic fallback.`
+            : 'ebay_research_ui returned insufficient sold signals, so the legacy sold provider was used as automatic fallback.'
           : 'First-party research sold signals were unavailable or insufficient, but no legacy sold fallback data was available.',
     };
     const hasUsableHistoricalResearch =

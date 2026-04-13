@@ -12,3 +12,4 @@ pnpm-debug.log
 .vscode
 .DS_Store
 .dotenvx
+tests/curl/

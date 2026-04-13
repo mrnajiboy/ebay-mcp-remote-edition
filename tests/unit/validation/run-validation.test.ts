@@ -558,7 +558,7 @@ avgWatchersPerListing: null,
       soldSource: 'third_party_sold_api',
       soldFallbackUsed: true,
       fallbackReason:
-        'First-party research sold signals were unavailable or insufficient, so the legacy sold provider was used as automatic fallback.',
+        'ebay_research_ui returned insufficient sold signals, so the legacy sold provider was used as automatic fallback.',
     });
   });
 
@@ -808,7 +808,7 @@ avgWatchersPerListing: null,
       soldSource: 'third_party_sold_api',
       soldFallbackUsed: true,
       fallbackReason:
-        'First-party research sold signals were unavailable or insufficient, so the legacy sold provider was used as automatic fallback.',
+        'ebay_research_ui returned insufficient sold signals, so the legacy sold provider was used as automatic fallback.',
     });
   });
 

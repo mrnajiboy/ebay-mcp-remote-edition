@@ -375,6 +375,15 @@ export interface TerapeakValidationSignals {
     previousPobSoldEndpointUrl?: string | null;
     authState?: 'authenticated' | 'missing' | 'expired' | 'unavailable';
     sessionStrategy?: 'env_cookies' | 'kv_store' | 'storage_state' | 'playwright_profile' | 'none';
+    sessionSource?: 'kv' | 'env' | 'filesystem' | 'playwright_profile' | null;
+    kvLoadAttempted?: boolean;
+    kvLoadSucceeded?: boolean;
+    envLoadAttempted?: boolean;
+    envLoadSucceeded?: boolean;
+    filesystemLoadAttempted?: boolean;
+    filesystemLoadSucceeded?: boolean;
+    profileLoadAttempted?: boolean;
+    profileLoadSucceeded?: boolean;
     candidateDiagnostics?: ResearchQueryDiagnostic[];
     previousPobCandidateDiagnostics?: ResearchQueryDiagnostic[];
     currentWatcherCoverageCount?: number | null;

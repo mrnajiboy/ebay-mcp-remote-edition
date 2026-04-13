@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────
 # Build stage
 # ──────────────────────────────────────────────────────────────
-FROM node:24-alpine AS builder
+FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -18,9 +18,11 @@ RUN pnpm run build
 # ──────────────────────────────────────────────────────────────
 # Production stage
 # ──────────────────────────────────────────────────────────────
-FROM node:24-alpine
+FROM node:24-bookworm-slim
 
 WORKDIR /app
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Install pnpm
 RUN npm install -g pnpm
@@ -30,6 +32,9 @@ COPY package.json pnpm-lock.yaml* ./
 
 # Install only production dependencies
 RUN pnpm install --prod --frozen-lockfile
+
+# Install system libraries + Chromium required by the repo-pinned Playwright runtime
+RUN npx -y playwright@1.59.1 install --with-deps chromium
 
 # Copy compiled output from builder
 COPY --from=builder /app/build ./build

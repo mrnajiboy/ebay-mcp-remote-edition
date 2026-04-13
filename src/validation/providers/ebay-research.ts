@@ -1,10 +1,20 @@
 import axios from 'axios';
 import { createKVStore, type KVStore } from '@/auth/kv-store.js';
 import { createHash } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+
+export interface ResearchStorageState {
+  cookies: ResearchCookie[];
+  origins: {
+    origin: string;
+    localStorage: {
+      name: string;
+      value: string;
+    }[];
+  }[];
+}
 
 export interface EbayResearchListingRow {
   title: string;
@@ -62,6 +72,15 @@ export interface EbayResearchResponse {
     pageErrors: string[];
     authState: 'authenticated' | 'missing' | 'expired' | 'unavailable';
     sessionStrategy: 'env_cookies' | 'kv_store' | 'storage_state' | 'playwright_profile' | 'none';
+    sessionSource: 'kv' | 'env' | 'filesystem' | 'playwright_profile' | null;
+    kvLoadAttempted: boolean;
+    kvLoadSucceeded: boolean;
+    envLoadAttempted: boolean;
+    envLoadSucceeded: boolean;
+    filesystemLoadAttempted: boolean;
+    filesystemLoadSucceeded: boolean;
+    profileLoadAttempted: boolean;
+    profileLoadSucceeded: boolean;
     notes: string[];
   };
 }
@@ -106,17 +125,29 @@ interface ResearchCacheEntry {
 
 interface ResearchAuthState {
   cookies: ResearchCookie[];
+  storageState: ResearchStorageState | null;
   authState: 'authenticated' | 'missing' | 'expired' | 'unavailable';
   sessionStrategy: 'env_cookies' | 'kv_store' | 'storage_state' | 'playwright_profile' | 'none';
+  sessionSource: 'kv' | 'env' | 'filesystem' | 'playwright_profile' | null;
+  kvLoadAttempted: boolean;
+  kvLoadSucceeded: boolean;
+  envLoadAttempted: boolean;
+  envLoadSucceeded: boolean;
+  filesystemLoadAttempted: boolean;
+  filesystemLoadSucceeded: boolean;
+  profileLoadAttempted: boolean;
+  profileLoadSucceeded: boolean;
   notes: string[];
 }
 
 interface PersistedResearchSession {
   cookies: ResearchCookie[];
+  storageState?: ResearchStorageState | null;
   updatedAt: string;
   expiresAt: string | null;
   marketplace: string;
   source: ResearchAuthState['sessionStrategy'];
+  sessionSource?: ResearchAuthState['sessionSource'];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -134,12 +165,19 @@ const RESEARCH_PROFILE_DIR =
 const RESEARCH_COOKIE_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESEARCH_SESSION_KEY_PREFIX = 'ebay-research:session';
 const RESEARCH_SESSION_FALLBACK_TTL_S = 30 * 24 * 60 * 60;
+const RESEARCH_STORAGE_STATE_ENV_KEY = 'EBAY_RESEARCH_STORAGE_STATE_JSON';
+const EBAY_HOSTNAME_PATTERN = /(^|\.)ebay\.[a-z.]+$/i;
+
+type ResearchAuthCache = Record<
+  string,
+  {
+    expiresAt: number;
+    value: ResearchAuthState;
+  }
+>;
 
 const researchResponseCache = new Map<string, ResearchCacheEntry>();
-let researchAuthCache: {
-  expiresAt: number;
-  value: ResearchAuthState;
-} | null = null;
+let researchAuthCache: ResearchAuthCache = {};
 let researchSessionStoreSingleton: KVStore | null | undefined;
 
 export class EbayResearchAuthError extends Error {
@@ -197,10 +235,168 @@ function getResearchAuthFingerprint(authState: ResearchAuthState): string {
       JSON.stringify({
         authState: authState.authState,
         sessionStrategy: authState.sessionStrategy,
+        sessionSource: authState.sessionSource,
         cookieHeader: buildCookieHeader(authState.cookies),
       })
     )
     .digest('hex');
+}
+
+function normalizeResearchCookie(entry: Record<string, unknown>): ResearchCookie {
+  return {
+    name: typeof entry.name === 'string' ? entry.name : '',
+    value: typeof entry.value === 'string' ? entry.value : '',
+    domain: typeof entry.domain === 'string' ? entry.domain : undefined,
+    path: typeof entry.path === 'string' ? entry.path : undefined,
+    expires: typeof entry.expires === 'number' ? entry.expires : undefined,
+    secure: typeof entry.secure === 'boolean' ? entry.secure : undefined,
+  };
+}
+
+function normalizeResearchCookies(value: unknown): ResearchCookie[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    .map((entry) => normalizeResearchCookie(entry))
+    .filter((entry) => entry.name.length > 0 && entry.value.length > 0);
+}
+
+function normalizeStorageState(value: unknown): ResearchStorageState | null {
+  if (!isRecord(value) || !Array.isArray(value.cookies)) {
+    return null;
+  }
+
+  const origins = Array.isArray(value.origins)
+    ? value.origins
+        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+        .map((entry) => ({
+          origin: typeof entry.origin === 'string' ? entry.origin : '',
+          localStorage: Array.isArray(entry.localStorage)
+            ? entry.localStorage
+                .filter((storage): storage is Record<string, unknown> => isRecord(storage))
+                .map((storage) => ({
+                  name: typeof storage.name === 'string' ? storage.name : '',
+                  value: typeof storage.value === 'string' ? storage.value : '',
+                }))
+                .filter((storage) => storage.name.length > 0)
+            : [],
+        }))
+        .filter((entry) => entry.origin.length > 0)
+    : [];
+
+  return {
+    cookies: normalizeResearchCookies(value.cookies),
+    origins,
+  } satisfies ResearchStorageState;
+}
+
+function storageStateFromCookies(cookies: ResearchCookie[]): ResearchStorageState {
+  return {
+    cookies,
+    origins: [],
+  } satisfies ResearchStorageState;
+}
+
+function getPlaywrightChromiumChannel(): string | undefined {
+  const configuredChannel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL?.trim();
+  return configuredChannel && configuredChannel.length > 0 ? configuredChannel : undefined;
+}
+
+function normalizeResearchHostname(value: string): string | null {
+  const normalized = value.trim().replace(/^\.+/, '').toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function isEbayResearchHostname(value: string): boolean {
+  const normalized = normalizeResearchHostname(value);
+  return normalized !== null && EBAY_HOSTNAME_PATTERN.test(normalized);
+}
+
+function getResearchOriginHostname(origin: string): string | null {
+  try {
+    return new URL(origin).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeResearchStorageState(
+  storageState: ResearchStorageState,
+  sourceLabel?: string,
+  notes?: string[]
+): ResearchStorageState {
+  const cookies = normalizeResearchCookies(storageState.cookies).filter(
+    (cookie) => typeof cookie.domain === 'string' && isEbayResearchHostname(cookie.domain)
+  );
+  const origins = storageState.origins.filter((entry) => {
+    const hostname = getResearchOriginHostname(entry.origin);
+    return hostname !== null && isEbayResearchHostname(hostname);
+  });
+
+  const removedCookieCount = normalizeResearchCookies(storageState.cookies).length - cookies.length;
+  const removedOriginCount = storageState.origins.length - origins.length;
+  if (notes && sourceLabel && (removedCookieCount > 0 || removedOriginCount > 0)) {
+    notes.push(
+      `Sanitized ${sourceLabel} before use/persistence by removing ${removedCookieCount} non-eBay cookies and ${removedOriginCount} non-eBay origins.`
+    );
+  }
+
+  return {
+    cookies,
+    origins,
+  } satisfies ResearchStorageState;
+}
+
+function buildResearchAuthDebug(authState: ResearchAuthState): Omit<
+  EbayResearchResponse['debug'],
+  'query' | 'activeEndpointUrl' | 'soldEndpointUrl' | 'fetchedAt' | 'modulesSeen' | 'pageErrors' | 'notes'
+> {
+  return {
+    authState: authState.authState,
+    sessionStrategy: authState.sessionStrategy,
+    sessionSource: authState.sessionSource,
+    kvLoadAttempted: authState.kvLoadAttempted,
+    kvLoadSucceeded: authState.kvLoadSucceeded,
+    envLoadAttempted: authState.envLoadAttempted,
+    envLoadSucceeded: authState.envLoadSucceeded,
+    filesystemLoadAttempted: authState.filesystemLoadAttempted,
+    filesystemLoadSucceeded: authState.filesystemLoadSucceeded,
+    profileLoadAttempted: authState.profileLoadAttempted,
+    profileLoadSucceeded: authState.profileLoadSucceeded,
+  };
+}
+
+interface PlaywrightModule {
+  chromium?: {
+    launch?: (options: Record<string, unknown>) => Promise<{
+      newContext: (options?: Record<string, unknown>) => Promise<{
+        cookies: (urls?: string | string[]) => Promise<ResearchCookie[]>;
+        storageState: () => Promise<ResearchStorageState>;
+        close: () => Promise<void>;
+      }>;
+      close: () => Promise<void>;
+    }>;
+    launchPersistentContext?: (
+      userDataDir: string,
+      options: Record<string, unknown>
+    ) => Promise<{
+      cookies: (urls?: string | string[]) => Promise<ResearchCookie[]>;
+      storageState: () => Promise<ResearchStorageState>;
+      close: () => Promise<void>;
+    }>;
+  };
+}
+
+async function loadPlaywrightModule(): Promise<PlaywrightModule | null> {
+  const playwrightModuleName = 'playwright-core';
+  try {
+    return (await import(playwrightModuleName)) as PlaywrightModule;
+  } catch {
+    return null;
+  }
 }
 
 function getResearchTabCacheKey(
@@ -254,17 +450,26 @@ async function readResearchSessionFromKv(
   return await store.get<PersistedResearchSession>(getResearchSessionKey(marketplace));
 }
 
-async function persistResearchSessionToKv(
-  marketplace: string,
-  cookies: ResearchCookie[],
-  source: ResearchAuthState['sessionStrategy']
-): Promise<void> {
+async function persistResearchSessionToKv(options: {
+  marketplace: string;
+  cookies: ResearchCookie[];
+  storageState?: ResearchStorageState | null;
+  source: ResearchAuthState['sessionStrategy'];
+  sessionSource?: ResearchAuthState['sessionSource'];
+}): Promise<void> {
   const store = getResearchSessionStore();
-  if (!store || cookies.length === 0) {
+  const persistedStorageState = options.storageState
+    ? sanitizeResearchStorageState(options.storageState)
+    : null;
+  const persistedCookies = persistedStorageState
+    ? normalizeResearchCookies(persistedStorageState.cookies)
+    : normalizeResearchCookies(options.cookies);
+
+  if (!store || persistedCookies.length === 0) {
     return;
   }
 
-  const expiryMs = getCookieExpiryMs(cookies);
+  const expiryMs = getCookieExpiryMs(persistedCookies);
   const ttlSeconds = expiryMs
     ? Math.max(
         60,
@@ -273,13 +478,15 @@ async function persistResearchSessionToKv(
     : RESEARCH_SESSION_FALLBACK_TTL_S;
 
   await store.put(
-    getResearchSessionKey(marketplace),
+    getResearchSessionKey(options.marketplace),
     {
-      cookies,
+      cookies: persistedCookies,
+      storageState: persistedStorageState ?? storageStateFromCookies(persistedCookies),
       updatedAt: new Date().toISOString(),
       expiresAt: expiryMs ? new Date(expiryMs).toISOString() : null,
-      marketplace,
-      source,
+      marketplace: options.marketplace,
+      source: options.source,
+      sessionSource: options.sessionSource ?? 'kv',
     } satisfies PersistedResearchSession,
     ttlSeconds
   );
@@ -873,171 +1080,339 @@ function buildCookieHeader(cookies: ResearchCookie[]): string {
     .join('; ');
 }
 
-async function readStorageStateCookies(storageStatePath: string): Promise<ResearchCookie[] | null> {
+async function readStorageStateFile(storageStatePath: string): Promise<ResearchStorageState | null> {
   if (!existsSync(storageStatePath)) {
     return null;
   }
 
-  const parsed = JSON.parse(await readFile(storageStatePath, 'utf8')) as unknown;
-  if (!isRecord(parsed) || !Array.isArray(parsed.cookies)) {
+  return normalizeStorageState(JSON.parse(await readFile(storageStatePath, 'utf8')) as unknown);
+}
+
+async function resolveStorageStateCookies(
+  storageState: ResearchStorageState,
+  sourceLabel: string,
+  notes: string[]
+): Promise<{ cookies: ResearchCookie[]; storageState: ResearchStorageState } | null> {
+  const sanitizedStorageState = sanitizeResearchStorageState(storageState, sourceLabel, notes);
+  const storedCookies = normalizeResearchCookies(sanitizedStorageState.cookies);
+  if (storedCookies.length === 0) {
+    notes.push(`${sourceLabel} did not contain any usable eBay cookies.`);
     return null;
   }
 
-  return parsed.cookies
-    .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-    .map((entry) => ({
-      name: typeof entry.name === 'string' ? entry.name : '',
-      value: typeof entry.value === 'string' ? entry.value : '',
-      domain: typeof entry.domain === 'string' ? entry.domain : undefined,
-      path: typeof entry.path === 'string' ? entry.path : undefined,
-      expires: typeof entry.expires === 'number' ? entry.expires : undefined,
-      secure: typeof entry.secure === 'boolean' ? entry.secure : undefined,
-    }))
-    .filter((entry) => entry.name.length > 0 && entry.value.length > 0);
+  const playwrightModule = await loadPlaywrightModule();
+  if (!playwrightModule?.chromium?.launch) {
+    notes.push(
+      `Playwright runtime was unavailable while hydrating ${sourceLabel}; falling back to cookies embedded in storage state.`
+    );
+    return { cookies: storedCookies, storageState: sanitizedStorageState };
+  }
+
+  try {
+    const browser = await playwrightModule.chromium.launch({
+      headless: true,
+      channel: getPlaywrightChromiumChannel(),
+    });
+
+    try {
+      const context = await browser.newContext({ storageState: sanitizedStorageState });
+      try {
+        const cookies = normalizeResearchCookies(await context.cookies('https://www.ebay.com'));
+        const refreshedStorageState =
+          normalizeStorageState(await context.storageState()) ?? sanitizedStorageState;
+        const sanitizedRefreshedState = sanitizeResearchStorageState(
+          refreshedStorageState,
+          sourceLabel,
+          notes
+        );
+        notes.push(`Hydrated ${sourceLabel} through Playwright headless Chromium.`);
+        return {
+          cookies: cookies.length > 0 ? cookies : storedCookies,
+          storageState: sanitizedRefreshedState,
+        };
+      } finally {
+        await context.close();
+      }
+    } finally {
+      await browser.close();
+    }
+  } catch (error) {
+    notes.push(
+      `${sourceLabel} could not be hydrated through Playwright (${error instanceof Error ? error.message : String(error)}); falling back to cookies embedded in storage state.`
+    );
+    return { cookies: storedCookies, storageState: sanitizedStorageState };
+  }
 }
 
-async function readPlaywrightProfileCookies(profileDir: string): Promise<ResearchCookie[] | null> {
+async function readPlaywrightProfileState(
+  profileDir: string,
+  notes: string[]
+): Promise<{ cookies: ResearchCookie[]; storageState: ResearchStorageState } | null> {
   if (!existsSync(profileDir)) {
     return null;
   }
 
-  const require = createRequire(import.meta.url);
-  const playwrightModule = (() => {
-    try {
-      return require('playwright') as {
-        chromium?: {
-          launchPersistentContext: (
-            userDataDir: string,
-            options: Record<string, unknown>
-          ) => Promise<{
-            cookies: (urls?: string | string[]) => Promise<ResearchCookie[]>;
-            close: () => Promise<void>;
-          }>;
-        };
-      };
-    } catch {
-      return null;
-    }
-  })();
-
+  const playwrightModule = await loadPlaywrightModule();
   if (!playwrightModule?.chromium?.launchPersistentContext) {
+    notes.push('Playwright runtime is unavailable, so the local Playwright profile could not be loaded.');
     return null;
   }
 
   const context = await playwrightModule.chromium.launchPersistentContext(profileDir, {
     headless: true,
+    channel: getPlaywrightChromiumChannel(),
   });
 
   try {
-    return await context.cookies('https://www.ebay.com');
+    const cookies = normalizeResearchCookies(await context.cookies('https://www.ebay.com'));
+    const storageState =
+      normalizeStorageState(await context.storageState()) ?? storageStateFromCookies(cookies);
+    return {
+      cookies,
+      storageState: sanitizeResearchStorageState(
+        storageState,
+        `Playwright profile at ${profileDir}`,
+        notes
+      ),
+    };
   } finally {
     await context.close();
   }
 }
 
 async function resolveResearchAuthState(marketplace: string): Promise<ResearchAuthState> {
-  if (researchAuthCache && researchAuthCache.expiresAt > Date.now()) {
-    return researchAuthCache.value;
+  const cachedAuthState = researchAuthCache[marketplace];
+  if (cachedAuthState && cachedAuthState.expiresAt > Date.now()) {
+    return cachedAuthState.value;
   }
 
   const notes: string[] = [];
+  const envStorageStateRaw = process.env[RESEARCH_STORAGE_STATE_ENV_KEY]?.trim();
   const envCookiesRaw = process.env.EBAY_RESEARCH_COOKIES_JSON?.trim();
+  const diagnostics: Pick<
+    ResearchAuthState,
+    | 'sessionSource'
+    | 'kvLoadAttempted'
+    | 'kvLoadSucceeded'
+    | 'envLoadAttempted'
+    | 'envLoadSucceeded'
+    | 'filesystemLoadAttempted'
+    | 'filesystemLoadSucceeded'
+    | 'profileLoadAttempted'
+    | 'profileLoadSucceeded'
+  > = {
+    sessionSource: null,
+    kvLoadAttempted: false,
+    kvLoadSucceeded: false,
+    envLoadAttempted: false,
+    envLoadSucceeded: false,
+    filesystemLoadAttempted: false,
+    filesystemLoadSucceeded: false,
+    profileLoadAttempted: false,
+    profileLoadSucceeded: false,
+  };
 
-  if (envCookiesRaw) {
-    try {
-      const parsed = JSON.parse(envCookiesRaw) as unknown;
-      const cookies = Array.isArray(parsed)
-        ? parsed
-            .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-            .map((entry) => ({
-              name: typeof entry.name === 'string' ? entry.name : '',
-              value: typeof entry.value === 'string' ? entry.value : '',
-              domain: typeof entry.domain === 'string' ? entry.domain : undefined,
-              path: typeof entry.path === 'string' ? entry.path : undefined,
-              expires: typeof entry.expires === 'number' ? entry.expires : undefined,
-              secure: typeof entry.secure === 'boolean' ? entry.secure : undefined,
-            }))
-            .filter((entry) => entry.name.length > 0 && entry.value.length > 0)
-        : [];
+  diagnostics.kvLoadAttempted = true;
+  const store = getResearchSessionStore();
+  if (store !== null) {
+    const persistedSession = await readResearchSessionFromKv(marketplace);
+    if (persistedSession?.storageState) {
+      const resolvedSession = await resolveStorageStateCookies(
+        persistedSession.storageState,
+        `${store.backendName} KV storage state`,
+        notes
+      );
+      if (resolvedSession && resolvedSession.cookies.length > 0) {
+        diagnostics.kvLoadSucceeded = true;
+        const value: ResearchAuthState = {
+          cookies: resolvedSession.cookies,
+          storageState: resolvedSession.storageState,
+          authState: 'authenticated',
+          sessionStrategy: 'storage_state',
+          ...diagnostics,
+          sessionSource: 'kv',
+          notes: [
+            ...notes,
+            `Restored eBay Research storage state from ${store.backendName}.`,
+          ],
+        };
+        researchAuthCache[marketplace] = {
+          expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+          value,
+        };
+        return value;
+      }
+    }
 
+    if (persistedSession?.cookies?.length) {
+      diagnostics.kvLoadSucceeded = true;
       const value: ResearchAuthState = {
-        cookies,
-        authState: cookies.length > 0 ? 'authenticated' : 'missing',
-        sessionStrategy: cookies.length > 0 ? 'env_cookies' : 'none',
-        notes,
+        cookies: persistedSession.cookies,
+        storageState: persistedSession.storageState ?? storageStateFromCookies(persistedSession.cookies),
+        authState: 'authenticated',
+        sessionStrategy: persistedSession.source ?? 'kv_store',
+        ...diagnostics,
+        sessionSource: 'kv',
+        notes: [
+          ...notes,
+          `Restored eBay Research cookie session from ${store.backendName}.`,
+        ],
       };
-      await persistResearchSessionToKv(marketplace, cookies, value.sessionStrategy);
-      researchAuthCache = {
+      researchAuthCache[marketplace] = {
         expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
         value,
       };
       return value;
+    }
+
+    notes.push(`No persisted eBay Research session was found in ${store.backendName}.`);
+  } else {
+    notes.push(
+      'Shared KV store for eBay Research sessions is unavailable; runtime will continue with non-KV fallbacks only.'
+    );
+  }
+
+  if (envStorageStateRaw) {
+    diagnostics.envLoadAttempted = true;
+    try {
+      const storageState = normalizeStorageState(JSON.parse(envStorageStateRaw) as unknown);
+      if (storageState) {
+        const resolvedSession = await resolveStorageStateCookies(
+          storageState,
+          `${RESEARCH_STORAGE_STATE_ENV_KEY}`,
+          notes
+        );
+        if (resolvedSession && resolvedSession.cookies.length > 0) {
+          diagnostics.envLoadSucceeded = true;
+          const value: ResearchAuthState = {
+            cookies: resolvedSession.cookies,
+            storageState: resolvedSession.storageState,
+            authState: 'authenticated',
+            sessionStrategy: 'storage_state',
+            ...diagnostics,
+            sessionSource: 'env',
+            notes,
+          };
+          await persistResearchSessionToKv({
+            marketplace,
+            cookies: resolvedSession.cookies,
+            storageState: resolvedSession.storageState,
+            source: value.sessionStrategy,
+            sessionSource: value.sessionSource,
+          });
+          researchAuthCache[marketplace] = {
+            expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+            value,
+          };
+          return value;
+        }
+      } else {
+        notes.push(`${RESEARCH_STORAGE_STATE_ENV_KEY} did not contain a valid Playwright storage state.`);
+      }
+    } catch {
+      notes.push(`${RESEARCH_STORAGE_STATE_ENV_KEY} could not be parsed as JSON.`);
+    }
+  }
+
+  if (envCookiesRaw) {
+    diagnostics.envLoadAttempted = true;
+    try {
+      const cookies = normalizeResearchCookies(JSON.parse(envCookiesRaw) as unknown);
+      if (cookies.length > 0) {
+        diagnostics.envLoadSucceeded = true;
+        const value: ResearchAuthState = {
+          cookies,
+          storageState: storageStateFromCookies(cookies),
+          authState: 'authenticated',
+          sessionStrategy: 'env_cookies',
+          ...diagnostics,
+          sessionSource: 'env',
+          notes,
+        };
+        await persistResearchSessionToKv({
+          marketplace,
+          cookies,
+          storageState: value.storageState,
+          source: value.sessionStrategy,
+          sessionSource: value.sessionSource,
+        });
+        researchAuthCache[marketplace] = {
+          expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+          value,
+        };
+        return value;
+      }
+      notes.push('EBAY_RESEARCH_COOKIES_JSON did not contain any usable cookies.');
     } catch {
       notes.push('EBAY_RESEARCH_COOKIES_JSON could not be parsed as JSON.');
     }
   }
 
-  const persistedSession = await readResearchSessionFromKv(marketplace);
-  if (persistedSession?.cookies?.length) {
-    const store = getResearchSessionStore();
-    const value: ResearchAuthState = {
-      cookies: persistedSession.cookies,
-      authState: 'authenticated',
-      sessionStrategy: 'kv_store',
-      notes: [
-        ...notes,
-        `Restored eBay Research session from ${store?.backendName ?? 'shared KV store'}.`,
-      ],
-    };
-    researchAuthCache = {
-      expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
-      value,
-    };
-    return value;
-  }
-
   const storageStatePath = toAbsolutePath(RESEARCH_STORAGE_STATE_PATH);
-  const storageStateCookies = await readStorageStateCookies(storageStatePath);
-  if (storageStateCookies && storageStateCookies.length > 0) {
-    const value: ResearchAuthState = {
-      cookies: storageStateCookies,
-      authState: 'authenticated',
-      sessionStrategy: 'storage_state',
-      notes,
-    };
-    await persistResearchSessionToKv(marketplace, storageStateCookies, value.sessionStrategy);
-    researchAuthCache = {
-      expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
-      value,
-    };
-    return value;
+  diagnostics.filesystemLoadAttempted = true;
+  const storageState = await readStorageStateFile(storageStatePath);
+  if (storageState) {
+    const resolvedSession = await resolveStorageStateCookies(
+      storageState,
+      `storage state file at ${storageStatePath}`,
+      notes
+    );
+    if (resolvedSession && resolvedSession.cookies.length > 0) {
+      diagnostics.filesystemLoadSucceeded = true;
+      const value: ResearchAuthState = {
+        cookies: resolvedSession.cookies,
+        storageState: resolvedSession.storageState,
+        authState: 'authenticated',
+        sessionStrategy: 'storage_state',
+        ...diagnostics,
+        sessionSource: 'filesystem',
+        notes,
+      };
+      await persistResearchSessionToKv({
+        marketplace,
+        cookies: resolvedSession.cookies,
+        storageState: resolvedSession.storageState,
+        source: value.sessionStrategy,
+        sessionSource: value.sessionSource,
+      });
+      researchAuthCache[marketplace] = {
+        expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
+        value,
+      };
+      return value;
+    }
+  } else {
+    notes.push(`No research storage state found at ${storageStatePath}.`);
   }
 
   const profileDir = toAbsolutePath(RESEARCH_PROFILE_DIR);
-  const profileCookies = await readPlaywrightProfileCookies(profileDir);
-  if (profileCookies && profileCookies.length > 0) {
+  diagnostics.profileLoadAttempted = true;
+  const profileState = await readPlaywrightProfileState(profileDir, notes);
+  if (profileState && profileState.cookies.length > 0) {
+    diagnostics.profileLoadSucceeded = true;
     const value: ResearchAuthState = {
-      cookies: profileCookies,
+      cookies: profileState.cookies,
+      storageState: profileState.storageState,
       authState: 'authenticated',
       sessionStrategy: 'playwright_profile',
+      ...diagnostics,
+      sessionSource: 'playwright_profile',
       notes,
     };
-    await persistResearchSessionToKv(marketplace, profileCookies, value.sessionStrategy);
-    researchAuthCache = {
+    await persistResearchSessionToKv({
+      marketplace,
+      cookies: profileState.cookies,
+      storageState: profileState.storageState,
+      source: value.sessionStrategy,
+      sessionSource: value.sessionSource,
+    });
+    researchAuthCache[marketplace] = {
       expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
       value,
     };
     return value;
   }
 
-  if (getResearchSessionStore() === null) {
-    notes.push(
-      'Shared KV store for eBay Research sessions is unavailable; using local fallback auth sources only.'
-    );
-  }
-  if (!existsSync(storageStatePath)) {
-    notes.push(`No research storage state found at ${storageStatePath}.`);
-  }
   if (!existsSync(profileDir)) {
     notes.push(`No Playwright profile found at ${profileDir}.`);
   } else {
@@ -1046,11 +1421,14 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
 
   const value: ResearchAuthState = {
     cookies: [],
+    storageState: null,
     authState: 'missing',
     sessionStrategy: 'none',
+    ...diagnostics,
+    sessionSource: null,
     notes,
   };
-  researchAuthCache = {
+  researchAuthCache[marketplace] = {
     expiresAt: Date.now() + RESEARCH_COOKIE_CACHE_TTL_MS,
     value,
   };
@@ -1090,7 +1468,7 @@ async function fetchResearchTab(
   });
 
   if (response.status === 401 || response.status === 403) {
-    researchAuthCache = null;
+    delete researchAuthCache[options.marketplace];
     await deleteResearchSessionFromKv(options.marketplace);
     throw new EbayResearchAuthError(
       `Authenticated eBay Research session was rejected with status ${response.status}.`
@@ -1181,8 +1559,7 @@ export async function fetchEbayResearch(
         fetchedAt,
         modulesSeen: uniqueStrings([...activeResult.modulesSeen, ...soldResult.modulesSeen]),
         pageErrors: uniqueStrings([...activeResult.pageErrors, ...soldResult.pageErrors]),
-        authState: authState.authState,
-        sessionStrategy: authState.sessionStrategy,
+        ...buildResearchAuthDebug(authState),
         notes: [...authState.notes],
       },
     };
@@ -1242,8 +1619,10 @@ export async function fetchEbayResearch(
           fetchedAt,
           modulesSeen: [],
           pageErrors: [],
-          authState: authState.cookies.length > 0 ? 'expired' : authState.authState,
-          sessionStrategy: authState.sessionStrategy,
+          ...buildResearchAuthDebug({
+            ...authState,
+            authState: authState.cookies.length > 0 ? 'expired' : authState.authState,
+          }),
           notes: [...authState.notes, error.message],
         },
       };
@@ -1251,4 +1630,60 @@ export async function fetchEbayResearch(
 
     throw error;
   }
+}
+
+export interface EbayResearchAuthInspection {
+  authState: EbayResearchResponse['debug']['authState'];
+  sessionStrategy: EbayResearchResponse['debug']['sessionStrategy'];
+  sessionSource: EbayResearchResponse['debug']['sessionSource'];
+  kvLoadAttempted: EbayResearchResponse['debug']['kvLoadAttempted'];
+  kvLoadSucceeded: EbayResearchResponse['debug']['kvLoadSucceeded'];
+  envLoadAttempted: EbayResearchResponse['debug']['envLoadAttempted'];
+  envLoadSucceeded: EbayResearchResponse['debug']['envLoadSucceeded'];
+  filesystemLoadAttempted: EbayResearchResponse['debug']['filesystemLoadAttempted'];
+  filesystemLoadSucceeded: EbayResearchResponse['debug']['filesystemLoadSucceeded'];
+  profileLoadAttempted: EbayResearchResponse['debug']['profileLoadAttempted'];
+  profileLoadSucceeded: EbayResearchResponse['debug']['profileLoadSucceeded'];
+  notes: EbayResearchResponse['debug']['notes'];
+  cookieCount: number;
+}
+
+export async function storeEbayResearchSessionToKv(
+  marketplace: string,
+  storageState: ResearchStorageState,
+  source: ResearchAuthState['sessionStrategy'] = 'storage_state'
+): Promise<void> {
+  const sanitizedStorageState = sanitizeResearchStorageState(
+    storageState,
+    'provided eBay Research storage state'
+  );
+  const cookies = normalizeResearchCookies(sanitizedStorageState.cookies);
+  if (cookies.length === 0) {
+    throw new EbayResearchAuthError(
+      'Provided eBay Research storage state did not contain any usable cookies.'
+    );
+  }
+
+  await persistResearchSessionToKv({
+    marketplace,
+    cookies,
+    storageState: sanitizedStorageState,
+    source,
+    sessionSource: 'kv',
+  });
+}
+
+export function clearEbayResearchAuthCache(): void {
+  researchAuthCache = {};
+}
+
+export async function inspectEbayResearchAuthState(
+  marketplace: string
+): Promise<EbayResearchAuthInspection> {
+  const authState = await resolveResearchAuthState(marketplace);
+  return {
+    ...buildResearchAuthDebug(authState),
+    notes: [...authState.notes],
+    cookieCount: authState.cookies.length,
+  };
 }
