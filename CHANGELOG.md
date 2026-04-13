@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.0.0...ebay-mcp-remote-edition-v4.1.0) (2026-04-13)
+
+
+### Features
+
+* implemented full perplexity integration for historical context and scoring data. ([3f84889](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/3f848897778721dfc3dfea496b1b6d9fc9e6bd01))
+
 ## [4.0.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v3.3.1...ebay-mcp-remote-edition-v4.0.0) (2026-04-12)
 
 
