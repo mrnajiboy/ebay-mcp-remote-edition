@@ -375,10 +375,24 @@ export interface TerapeakValidationSignals {
     previousPobSoldEndpointUrl?: string | null;
     authState?: 'loaded' | 'authenticated' | 'missing' | 'expired' | 'unavailable';
     sessionStrategy?: 'env_cookies' | 'kv_store' | 'storage_state' | 'playwright_profile' | 'none';
-    sessionSource?: 'kv' | 'env' | 'filesystem' | 'playwright_profile' | null;
+    sessionSource?:
+      | 'cloudflare_kv'
+      | 'upstash-redis'
+      | 'filesystem'
+      | 'env'
+      | 'playwright_profile'
+      | 'none'
+      | null;
+    sessionStoreConfigured?: 'cloudflare_kv' | 'upstash-redis' | 'filesystem' | 'none';
+    sessionStoreSelected?: 'cloudflare_kv' | 'upstash-redis' | 'filesystem' | 'none';
     kvLoadAttempted?: boolean;
     kvLoadSucceeded?: boolean;
+    cfKvLoadAttempted?: boolean;
+    cfKvLoadSucceeded?: boolean;
+    upstashLoadAttempted?: boolean;
+    upstashLoadSucceeded?: boolean;
     kvStorageStateBytes?: number | null;
+    storageStateBytes?: number | null;
     envLoadAttempted?: boolean;
     envLoadSucceeded?: boolean;
     filesystemLoadAttempted?: boolean;

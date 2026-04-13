@@ -24,6 +24,7 @@ This project extends [Yosef Hayim's eBay MCP](https://github.com/YosefHayim/ebay
 - **Cloudflare KV / Upstash Redis** token and session storage for persistent multi-user auth
 - **Admin session management** — inspect, revoke, or delete sessions via authenticated endpoints
 - **TTL-aligned records** — every stored record (OAuth state, auth code, session, user token) carries an `expiresAt` timestamp and a matching KV/Redis TTL so storage and application expiry are always in sync
+- **Env-selected eBay Research session persistence** — the first-party research bootstrap/runtime can persist Playwright storage state to Cloudflare KV, Upstash KV, or explicit filesystem mode via `EBAY_RESEARCH_SESSION_STORE`
 
 ---
 

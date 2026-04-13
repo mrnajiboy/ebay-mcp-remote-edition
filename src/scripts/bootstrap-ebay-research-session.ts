@@ -4,6 +4,7 @@ import {
   clearEbayResearchAuthCache,
   type EbayResearchAuthInspection,
   inspectEbayResearchAuthState,
+  inspectEbayResearchSessionPersistence,
   type ResearchStorageState,
   storeEbayResearchSessionToKv,
 } from '../validation/providers/ebay-research.js';
@@ -55,14 +56,20 @@ async function main(): Promise<void> {
     }
 
     const storageState = await context.storageState<ResearchStorageState>();
+    const storageStateBytes = Buffer.byteLength(JSON.stringify(storageState), 'utf8');
     await storeEbayResearchSessionToKv(marketplace, storageState, 'storage_state');
     clearEbayResearchAuthCache();
+    const persistence = await inspectEbayResearchSessionPersistence(marketplace);
+
+    console.log(
+      `[eBayResearchSessionBootstrap] Stored eBay Research storage state to ${persistence.sessionStoreSelected} (${storageStateBytes} bytes)`
+    );
 
     const verification: EbayResearchAuthInspection =
       await inspectEbayResearchAuthState(marketplace);
     if (
       verification.authState !== 'loaded' ||
-      verification.sessionSource !== 'kv' ||
+      verification.sessionSource !== persistence.sessionStoreSelected ||
       verification.authValidationSucceeded !== true
     ) {
       throw new Error(
@@ -75,7 +82,12 @@ async function main(): Promise<void> {
         {
           ok: true,
           marketplace,
-          persistedTo: 'kv',
+          persistedTo: persistence.sessionStoreSelected,
+          canonicalKeys: {
+            storageState: persistence.canonicalStateKey,
+            metadata: persistence.canonicalMetaKey,
+          },
+          persistence,
           refreshCommand: 'pnpm run research:bootstrap',
           verification,
         },
