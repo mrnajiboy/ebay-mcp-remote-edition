@@ -25,6 +25,8 @@ This project extends [Yosef Hayim's eBay MCP](https://github.com/YosefHayim/ebay
 - **Admin session management** — inspect, revoke, or delete sessions via authenticated endpoints
 - **TTL-aligned records** — every stored record (OAuth state, auth code, session, user token) carries an `expiresAt` timestamp and a matching KV/Redis TTL so storage and application expiry are always in sync
 - **Env-selected eBay Research session persistence** — the first-party research bootstrap/runtime can persist Playwright storage state to Cloudflare KV, Upstash KV, or explicit filesystem mode via `EBAY_RESEARCH_SESSION_STORE`
+- **QStash-triggered Telegram alerts for eBay Research session expiry** — bootstrap can schedule version-aware expiry callbacks that notify operators before first-party research auth silently degrades
+- **Alert-safe scheduling guardrails** — expiry callbacks are only scheduled when the callback URL is externally reachable and the research session store supports shared alert locks (`upstash-redis` or `filesystem`)
 
 ---
 
@@ -295,6 +297,24 @@ CLOUDFLARE_API_TOKEN=
 # Upstash Redis (when EBAY_TOKEN_STORE_BACKEND=upstash-redis)
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
+
+# eBay Research session-expiry alerts (optional but recommended when using
+# first-party research in hosted mode)
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=1574052684
+QSTASH_URL=
+QSTASH_TOKEN=
+QSTASH_CURRENT_SIGNING_KEY=
+QSTASH_NEXT_SIGNING_KEY=
+EBAY_RESEARCH_SESSION_ALERTS_ENABLED=true
+EBAY_RESEARCH_SESSION_ALERT_WINDOW_24H=true
+EBAY_RESEARCH_SESSION_ALERT_WINDOW_6H=true
+EBAY_RESEARCH_SESSION_ALERT_ON_EXPIRED=true
+EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL=
+
+# Alert scheduling additionally requires:
+# - PUBLIC_BASE_URL or EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL to be externally reachable
+# - EBAY_RESEARCH_SESSION_STORE=upstash-redis or filesystem
 
 # Security
 ADMIN_API_KEY=              # required for admin session endpoints
@@ -600,6 +620,7 @@ GET /health
 GET /whoami
 GET /sandbox/validation/health
 GET /production/validation/health
+POST /internal/ebay-research/check-session-expiry
 ```
 
 Recommended debugging flow:
@@ -607,6 +628,7 @@ Recommended debugging flow:
 1. Call `/health` to confirm the HTTP service is up.
 2. Call `/whoami` with a Bearer hosted session token to confirm the active hosted user session, bound environment, expiry, and revocation status.
 3. Call the matching env-scoped `/validation/health` route with `X-Admin-API-Key` to confirm the validation runner user is configured, stored tokens exist, and token refresh succeeds.
+4. The internal `POST /internal/ebay-research/check-session-expiry` route is reserved for signed QStash callbacks and should not be used as an unauthenticated public endpoint.
 
 `/whoami` is especially useful when an operator wants to verify which hosted session is currently active before registering or troubleshooting the validation runner user. Validation routes themselves still authenticate with the admin key and a stored hosted runner identity, not with MCP auth.
 
@@ -653,13 +675,15 @@ Known limitations in the current implementation:
 
 - Install Chromium for hosted runtimes with [`package.json`](package.json) script `playwright:install` (`pnpm run playwright:install`).
 - The Docker deployment path now provisions Chromium during image build in [`Dockerfile`](Dockerfile).
-- Canonical production session source of truth is KV-backed Playwright storage-state JSON stored under `ebay_research_storage_state_json` with companion metadata keys `ebay_research_storage_state_updated_at` and `ebay_research_storage_state_source`.
+- Canonical production session source of truth is KV-backed Playwright storage-state JSON stored under `ebay_research_storage_state_json` with companion metadata in `ebay_research_storage_state_meta`, including `updatedAt`, `expiresAt`, `ttlSeconds`, `marketplace`, `sessionStore`, and `sessionVersion`.
 - Bootstrap a signed-in eBay Research storage state into KV with [`src/scripts/bootstrap-ebay-research-session.ts`](src/scripts/bootstrap-ebay-research-session.ts) via the packaged/runtime-safe [`package.json`](package.json) script `research:bootstrap` (`pnpm run build && pnpm run research:bootstrap`).
 - Inspect canonical eBay Research session persistence and fresh-client readback diagnostics with [`src/scripts/inspect-ebay-research-session.ts`](src/scripts/inspect-ebay-research-session.ts) via the packaged/runtime-safe [`package.json`](package.json) script `research:inspect-session` (`pnpm run build && pnpm run research:inspect-session`).
 - Verify headless Chromium launchability with [`src/scripts/check-playwright.ts`](src/scripts/check-playwright.ts) via the packaged/runtime-safe [`package.json`](package.json) script `research:check-browser` (`pnpm run build && pnpm run research:check-browser`).
 - Runtime precedence is: KV storage state → `EBAY_RESEARCH_STORAGE_STATE_JSON` → `EBAY_RESEARCH_COOKIES_JSON` → local storage-state file → local Playwright profile → explicit auth-missing fallback.
 - Every candidate session source is validated against the first-party ACTIVE endpoint before the provider reports `authState = loaded`; failed validation is surfaced through debug fields including `kvStorageStateBytes`, `authValidationAttempted`, and `authValidationSucceeded`.
 - Once a validated session is loaded, ACTIVE and SOLD endpoint fetches automatically become the preferred first-party research source while legacy active/sold fallbacks remain intact when auth is missing or invalid.
+- Successful bootstrap also schedules signed QStash callbacks for 24 hours before expiry, 6 hours before expiry, and at expiry. Those callbacks target `POST /internal/ebay-research/check-session-expiry`, which verifies QStash signatures, suppresses stale reminders by `sessionVersion`, and sends Telegram alerts to `TELEGRAM_CHAT_ID`.
+- Alert scheduling is intentionally skipped when the callback URL resolves to localhost/loopback or when `EBAY_RESEARCH_SESSION_STORE` uses a backend without shared lock support, because those configurations cannot safely deliver or deduplicate hosted reminders.
 - Session refresh is manual by design for now: rerun `pnpm run build && pnpm run research:bootstrap` whenever eBay expires the stored session, then redeploy or restart the hosted service if your platform does not hot-reload env/KV-backed state.
 - The previous-comeback research provider depends on grounded external research and therefore degrades to low-confidence notes with a zero historical score when `PERPLEXITY_API_KEY` is missing, the response cannot be normalized, or reliable evidence is not found.
 - The browse provider still relies on heuristic query selection and fallback matching.

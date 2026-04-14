@@ -8,7 +8,11 @@ import {
   type ResearchStorageState,
   storeEbayResearchSessionToKv,
 } from '../validation/providers/ebay-research.js';
-import type { EbayResearchSessionStoreBackend } from '../validation/providers/ebay-research-session-store.js';
+import {
+  createEbayResearchSessionStoreResolution,
+  type EbayResearchSessionStoreBackend,
+} from '../validation/providers/ebay-research-session-store.js';
+import { scheduleEbayResearchSessionAlerts } from '../validation/providers/ebay-research-session-alerts.js';
 import { loadChromium } from './playwright-runtime.js';
 
 const configuredMarketplace = process.env.EBAY_RESEARCH_BOOTSTRAP_MARKETPLACE?.trim();
@@ -33,6 +37,19 @@ function getExpectedVerificationSessionSource(
 function getChromiumChannel(): string | undefined {
   const configuredChannel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL?.trim();
   return configuredChannel && configuredChannel.length > 0 ? configuredChannel : undefined;
+}
+
+function alertingLooksConfigured(): boolean {
+  return [
+    process.env.QSTASH_URL,
+    process.env.QSTASH_TOKEN,
+    process.env.QSTASH_CURRENT_SIGNING_KEY,
+    process.env.QSTASH_NEXT_SIGNING_KEY,
+    process.env.TELEGRAM_BOT_TOKEN,
+    process.env.TELEGRAM_CHAT_ID,
+    process.env.EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL,
+    process.env.PUBLIC_BASE_URL,
+  ].some((value) => typeof value === 'string' && value.trim().length > 0);
 }
 
 async function waitForEnter(promptText: string): Promise<void> {
@@ -109,6 +126,40 @@ async function main(): Promise<void> {
       );
     }
 
+    const latestStoreResolution = createEbayResearchSessionStoreResolution(marketplace);
+    const meta = latestStoreResolution.store ? await latestStoreResolution.store.getMeta() : null;
+
+    if (typeof meta?.expiresAt === 'string' && typeof meta?.sessionVersion === 'string') {
+      const scheduleResult = await scheduleEbayResearchSessionAlerts({
+        marketplace,
+        expiresAt: meta.expiresAt,
+        sessionVersion: meta.sessionVersion,
+      });
+
+      console.log(
+        `[eBayResearchSessionAlerts] schedule status=${scheduleResult.status} reason=${scheduleResult.reason ?? 'none'} callbackUrl=${scheduleResult.callbackUrl} entries=${scheduleResult.scheduled.length}`
+      );
+      for (const entry of scheduleResult.scheduled) {
+        console.log(
+          `[eBayResearchSessionAlerts] scheduled threshold=${entry.threshold} targetTime=${entry.targetTime} messageId=${entry.messageId ?? 'null'}`
+        );
+      }
+
+      if (
+        scheduleResult.status === 'skipped' &&
+        alertingLooksConfigured() &&
+        (scheduleResult.reason === 'shared_lock_backend_unavailable' ||
+          scheduleResult.reason === 'callback_url_not_public' ||
+          scheduleResult.reason === 'callback_url_invalid')
+      ) {
+        throw new Error(
+          scheduleResult.reason === 'shared_lock_backend_unavailable'
+            ? 'eBay Research session alerts require EBAY_RESEARCH_SESSION_STORE=upstash-redis or filesystem because the current backend cannot provide shared alert locks.'
+            : 'eBay Research session alerts require a publicly reachable callback URL. Set PUBLIC_BASE_URL or EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL to an externally reachable URL before bootstrapping.'
+        );
+      }
+    }
+
     console.log(
       JSON.stringify(
         {
@@ -121,6 +172,7 @@ async function main(): Promise<void> {
             storageState: persistence.canonicalStateKey,
             metadata: persistence.canonicalMetaKey,
           },
+          sessionMetadata: meta,
           persistence,
           inspectCommand: 'pnpm run research:inspect-session',
           refreshCommand: 'pnpm run research:bootstrap',

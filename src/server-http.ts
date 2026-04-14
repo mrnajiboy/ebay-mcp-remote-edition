@@ -25,6 +25,12 @@ import {
 import { getVersion } from '@/utils/version.js';
 import { serverLogger } from '@/utils/logger.js';
 import { MultiUserAuthStore } from '@/auth/multi-user-store.js';
+import {
+  evaluateEbayResearchSessionExpiryCheck,
+  getEbayResearchSessionAlertCallbackUrl,
+  verifyQStashRequestSignature,
+  type EbayResearchSessionExpiryCheckPayload,
+} from '@/validation/providers/ebay-research-session-alerts.js';
 import type {
   getToolDefinitions as GetToolDefinitionsFn,
   executeTool as ExecuteToolFn,
@@ -195,11 +201,25 @@ function createApp(): express.Application {
   const currentFilename = fileURLToPath(import.meta.url);
   const currentDirname = dirname(currentFilename);
   const projectRoot = join(currentDirname, '..');
+  type RequestWithRawBody = express.Request & { rawBody?: string };
 
   app.use(cors({ origin: '*', exposedHeaders: ['Mcp-Session-Id'] }));
-  app.use(express.json());
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as RequestWithRawBody).rawBody = buf.toString('utf8');
+      },
+    })
+  );
   // OAuth token endpoint sends application/x-www-form-urlencoded per RFC 6749
-  app.use(express.urlencoded({ extended: false }));
+  app.use(
+    express.urlencoded({
+      extended: false,
+      verify: (req, _res, buf) => {
+        (req as RequestWithRawBody).rawBody = buf.toString('utf8');
+      },
+    })
+  );
   app.use(helmet({ xPoweredBy: false }));
   app.use('/icons', express.static(join(projectRoot, 'public', 'icons')));
   app.use('/callback-copy.js', express.static(join(projectRoot, 'public', 'callback-copy.js')));
@@ -312,6 +332,8 @@ function createApp(): express.Application {
       name: 'ebay-mcp-remote-edition',
       version: getVersion(),
       mode: 'multi-user-hosted',
+      description:
+        'Hosted MCP + OAuth server for eBay APIs, including validation routes and internal eBay Research session-expiry alert callbacks.',
       mcp_endpoints: {
         sandbox: `${serverUrl}/sandbox/mcp`,
         production: `${serverUrl}/production/mcp`,
@@ -323,6 +345,9 @@ function createApp(): express.Application {
       },
       validation_endpoints: {
         run: `${serverUrl}/validation/run`,
+      },
+      internal_endpoints: {
+        ebayResearchSessionExpiryCheck: `${serverUrl}/internal/ebay-research/check-session-expiry`,
       },
     });
   });
@@ -342,6 +367,48 @@ function createApp(): express.Application {
     });
 
     res.json(healthResponse);
+  });
+
+  app.post('/internal/ebay-research/check-session-expiry', async (req, res) => {
+    const rawBody =
+      (req as RequestWithRawBody).rawBody ??
+      (typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {}));
+    const signatureHeader = req.headers['upstash-signature'];
+    const signature = typeof signatureHeader === 'string' ? signatureHeader : null;
+    const expectedUrl = getEbayResearchSessionAlertCallbackUrl();
+
+    try {
+      verifyQStashRequestSignature({
+        signature,
+        rawBody,
+        url: expectedUrl,
+      });
+    } catch (error) {
+      serverLogger.warn('[eBayResearchSessionAlerts] Rejected callback with invalid signature', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(401).json({
+        status: 'error',
+        message: 'invalid qstash signature',
+      });
+      return;
+    }
+
+    const payload = req.body as EbayResearchSessionExpiryCheckPayload;
+
+    try {
+      const result = await evaluateEbayResearchSessionExpiryCheck(payload);
+      res.status(result.status === 'error' ? 500 : 200).json(result);
+    } catch (error) {
+      serverLogger.error('[eBayResearchSessionAlerts] Callback evaluation failed', {
+        error: error instanceof Error ? error.message : String(error),
+        payload,
+      });
+      res.status(500).json({
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   // ── Admin routes ──────────────────────────────────────────────────────────
@@ -1465,6 +1532,9 @@ async function main(): Promise<void> {
       console.log(`OAuth (sandbox):  ${serverUrl}/sandbox/oauth/start`);
       console.log(`OAuth (prod):     ${serverUrl}/production/oauth/start`);
       console.log(`Validation Research:       ${serverUrl}/validation/run`);
+      console.log(
+        `Internal eBay Research session expiry check: ${serverUrl}/internal/ebay-research/check-session-expiry`
+      );
     };
 
     let server: ReturnType<typeof app.listen>;

@@ -39,6 +39,7 @@ vi.mock('@/auth/kv-store.js', () => {
   return {
     createKVStore: () => mockStore,
     createKVStoreForBackend: () => mockStore,
+    createFreshKVStoreForBackend: () => mockStore,
   };
 });
 
@@ -194,6 +195,16 @@ describe('fetchEbayResearch()', () => {
 
     await fetchEbayResearch('ATEEZ GOLDEN HOUR');
     expect(axiosGetMock).toHaveBeenCalledTimes(3);
+    expect(kvPutMock).toHaveBeenCalledWith(
+      'ebay_research_storage_state_json',
+      expect.any(String),
+      179 * 24 * 60 * 60
+    );
+    expect(kvPutMock).toHaveBeenCalledWith(
+      'ebay_research_storage_state_meta',
+      expect.objectContaining({ ttlSeconds: expect.any(Number) }),
+      179 * 24 * 60 * 60
+    );
 
     axiosGetMock.mockClear();
     vi.advanceTimersByTime(6 * 60 * 1000);

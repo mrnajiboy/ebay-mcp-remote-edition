@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import * as kvStoreModule from '@/auth/kv-store.js';
 import type { KVStore } from '@/auth/kv-store.js';
 
@@ -13,9 +13,15 @@ export type EbayResearchSessionStoreBackend =
 
 export interface EbayResearchSessionStoreMeta extends Record<string, unknown> {
   updatedAt?: string;
+  expiresAt?: string | null;
+  ttlSeconds?: number;
+  storeTtlSeconds?: number;
   backend?: EbayResearchSessionStoreBackend;
+  sessionStore?: EbayResearchSessionStoreBackend;
   marketplace?: string;
   source?: string;
+  sessionVersion?: string;
+  alertsSentAt?: Record<string, string>;
   sessionSource?: string | null;
   storageStateBytes?: number;
 }
@@ -39,6 +45,12 @@ export interface EbayResearchSessionStore {
     meta: EbayResearchSessionStoreMeta,
     options?: EbayResearchSessionStoreWriteOptions
   ): Promise<void>;
+  tryAcquireAlertLock(
+    threshold: string,
+    sessionVersion: string,
+    options?: EbayResearchSessionStoreWriteOptions
+  ): Promise<boolean>;
+  releaseAlertLock(threshold: string, sessionVersion: string): Promise<void>;
   deleteStorageState(): Promise<void>;
 }
 
@@ -109,6 +121,63 @@ function getFilesystemMetaPath(): string {
   }
 
   return `${getFilesystemStorageStatePath()}.meta.json`;
+}
+
+function getAlertLockKey(metaKey: string, threshold: string, sessionVersion: string): string {
+  return `${metaKey}:alert-lock:${threshold}:${sessionVersion}`;
+}
+
+function getFilesystemAlertLockPath(
+  metaPath: string,
+  threshold: string,
+  sessionVersion: string
+): string {
+  const fingerprint = createHash('sha256')
+    .update(`${threshold}:${sessionVersion}`)
+    .digest('hex')
+    .slice(0, 24);
+  return `${metaPath}.alert-lock.${fingerprint}.json`;
+}
+
+async function pruneFilesystemAlertLocks(
+  metaPath: string,
+  options?: { sessionVersionToKeep?: string | null }
+): Promise<void> {
+  const lockDirectory = dirname(metaPath);
+  if (!existsSync(lockDirectory)) {
+    return;
+  }
+
+  let entries: string[];
+  try {
+    entries = await readdir(lockDirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      return;
+    }
+
+    throw error;
+  }
+
+  const lockFilePrefix = `${basename(metaPath)}.alert-lock.`;
+  const sessionVersionToKeep = options?.sessionVersionToKeep ?? null;
+
+  await Promise.all(
+    entries
+      .filter((entry) => entry.startsWith(lockFilePrefix) && entry.endsWith('.json'))
+      .map(async (entry) => {
+        const lockPath = join(lockDirectory, entry);
+
+        if (sessionVersionToKeep) {
+          const lockPayload = await readJsonFile<{ sessionVersion?: string }>(lockPath);
+          if (lockPayload?.sessionVersion === sessionVersionToKeep) {
+            return;
+          }
+        }
+
+        await rm(lockPath, { force: true });
+      })
+  );
 }
 
 function normalizeStoredJsonString(value: unknown): string | null {
@@ -342,6 +411,29 @@ export abstract class KvBackedEbayResearchSessionStore implements EbayResearchSe
     await this.kvStore.put(this.metaKey, meta, options?.ttlSeconds);
   }
 
+  async tryAcquireAlertLock(
+    threshold: string,
+    sessionVersion: string,
+    options?: EbayResearchSessionStoreWriteOptions
+  ): Promise<boolean> {
+    const lockKey = getAlertLockKey(this.metaKey, threshold, sessionVersion);
+    const lockPayload = {
+      threshold,
+      sessionVersion,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (typeof this.kvStore.putIfAbsent === 'function') {
+      return await this.kvStore.putIfAbsent(lockKey, lockPayload, options?.ttlSeconds);
+    }
+
+    throw new Error(`Atomic alert locks are not supported for backend=${this.backend}`);
+  }
+
+  async releaseAlertLock(threshold: string, sessionVersion: string): Promise<void> {
+    await this.kvStore.delete(getAlertLockKey(this.metaKey, threshold, sessionVersion));
+  }
+
   async deleteStorageState(): Promise<void> {
     await Promise.all([this.kvStore.delete(this.stateKey), this.kvStore.delete(this.metaKey)]);
   }
@@ -383,11 +475,57 @@ export class FilesystemSessionStore implements EbayResearchSessionStore {
   }
 
   async setMeta(meta: EbayResearchSessionStoreMeta): Promise<void> {
+    const previousMeta = await this.getMeta();
     await mkdir(dirname(this.metaKey), { recursive: true });
     await writeFile(this.metaKey, JSON.stringify(meta, null, 2), 'utf8');
+
+    if (previousMeta?.sessionVersion !== meta.sessionVersion) {
+      await pruneFilesystemAlertLocks(this.metaKey, {
+        sessionVersionToKeep:
+          typeof meta.sessionVersion === 'string' && meta.sessionVersion.length > 0
+            ? meta.sessionVersion
+            : null,
+      });
+    }
+  }
+
+  async tryAcquireAlertLock(threshold: string, sessionVersion: string): Promise<boolean> {
+    const lockPath = getFilesystemAlertLockPath(this.metaKey, threshold, sessionVersion);
+    await mkdir(dirname(lockPath), { recursive: true });
+
+    try {
+      await writeFile(
+        lockPath,
+        JSON.stringify(
+          {
+            threshold,
+            sessionVersion,
+            createdAt: new Date().toISOString(),
+          },
+          null,
+          2
+        ),
+        {
+          encoding: 'utf8',
+          flag: 'wx',
+        }
+      );
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'EEXIST') {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
+  async releaseAlertLock(threshold: string, sessionVersion: string): Promise<void> {
+    await rm(getFilesystemAlertLockPath(this.metaKey, threshold, sessionVersion), { force: true });
   }
 
   async deleteStorageState(): Promise<void> {
+    await pruneFilesystemAlertLocks(this.metaKey);
     await Promise.all([rm(this.stateKey, { force: true }), rm(this.metaKey, { force: true })]);
   }
 }
@@ -411,6 +549,14 @@ export class NoopSessionStore implements EbayResearchSessionStore {
   }
 
   setMeta(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  tryAcquireAlertLock(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+
+  releaseAlertLock(): Promise<void> {
     return Promise.resolve();
   }
 

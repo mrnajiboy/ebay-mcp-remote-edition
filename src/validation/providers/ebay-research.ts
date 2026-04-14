@@ -238,6 +238,7 @@ const RESEARCH_PROFILE_DIR =
   process.env.EBAY_RESEARCH_PROFILE_DIR?.trim() ?? '.ebay-research/profile';
 const RESEARCH_COOKIE_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESEARCH_AUTH_VALIDATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const RESEARCH_SESSION_STORE_TTL_S = 179 * 24 * 60 * 60;
 const RESEARCH_SESSION_FALLBACK_TTL_S = 30 * 24 * 60 * 60;
 const RESEARCH_STORAGE_STATE_ENV_KEY = 'EBAY_RESEARCH_STORAGE_STATE_JSON';
 const EBAY_HOSTNAME_PATTERN = /(^|\.)ebay\.[a-z.]+$/i;
@@ -839,27 +840,34 @@ async function persistResearchSessionToStore(options: {
         Math.min(RESEARCH_SESSION_FALLBACK_TTL_S, Math.floor((expiryMs - Date.now()) / 1000))
       )
     : RESEARCH_SESSION_FALLBACK_TTL_S;
+  const storeTtlSeconds = RESEARCH_SESSION_STORE_TTL_S;
   const updatedAt = new Date().toISOString();
+  const expiresAt = expiryMs ? new Date(expiryMs).toISOString() : null;
   const serializedStorageState = JSON.stringify(
     persistedStorageState ?? storageStateFromCookies(persistedCookies)
   );
   const storageStateBytes = Buffer.byteLength(serializedStorageState, 'utf8');
   const meta: EbayResearchSessionStoreMeta = {
     updatedAt,
+    expiresAt,
+    ttlSeconds,
+    storeTtlSeconds,
     backend: resolution.selected,
+    sessionStore: resolution.selected,
     marketplace: options.marketplace,
     source: options.source,
+    sessionVersion: updatedAt,
     sessionSource: options.sessionSource ?? getSessionSourceForStoreBackend(resolution.selected),
     storageStateBytes,
   };
 
   logResearchSession(
-    `Persisting canonical eBay Research storage state backend=${resolution.selected} stateKey=${resolution.stateKey ?? 'null'} metaKey=${resolution.metaKey ?? 'null'} ttlSeconds=${ttlSeconds} bytes=${storageStateBytes}`
+    `Persisting canonical eBay Research storage state backend=${resolution.selected} stateKey=${resolution.stateKey ?? 'null'} metaKey=${resolution.metaKey ?? 'null'} ttlSeconds=${ttlSeconds} storeTtlSeconds=${storeTtlSeconds} bytes=${storageStateBytes}`
   );
 
   await Promise.all([
-    resolution.store.setStorageState(serializedStorageState, { ttlSeconds }),
-    resolution.store.setMeta(meta, { ttlSeconds }),
+    resolution.store.setStorageState(serializedStorageState, { ttlSeconds: storeTtlSeconds }),
+    resolution.store.setMeta(meta, { ttlSeconds: storeTtlSeconds }),
   ]);
 
   const [canonicalReadback, metaReadback] = await Promise.all([
@@ -875,7 +883,7 @@ async function persistResearchSessionToStore(options: {
     `Fresh-client canonical readback backend=${freshCanonicalReadback.backend} key=${freshCanonicalReadback.key ?? 'null'} exists=${String(freshCanonicalReadback.exists)} type=${freshCanonicalReadback.valueType} bytes=${freshCanonicalReadback.bytes} valid=${String(freshCanonicalReadback.validPlaywrightStorageStateJson)} scope=${freshCanonicalReadback.stateKeyScope} environment=${freshCanonicalReadback.environment} marketplace=${freshCanonicalReadback.marketplace} configuredFrom=${freshCanonicalReadback.configuredFrom} rawConfiguredValue=${freshCanonicalReadback.rawConfiguredValue ?? 'null'} connection=${freshCanonicalReadback.connection ?? 'null'} credentialFingerprint=${freshCanonicalReadback.credentialFingerprint ?? 'null'} summary=${freshCanonicalReadback.summary ?? 'null'} error=${freshCanonicalReadback.error ?? 'null'}`
   );
   logResearchSession(
-    `Metadata readback key=${resolution.metaKey ?? 'null'} exists=${String(metaReadback !== null)} storageStateBytes=${typeof metaReadback?.storageStateBytes === 'number' ? metaReadback.storageStateBytes : 'null'} updatedAt=${typeof metaReadback?.updatedAt === 'string' ? metaReadback.updatedAt : 'null'}`
+    `Metadata readback key=${resolution.metaKey ?? 'null'} exists=${String(metaReadback !== null)} storageStateBytes=${typeof metaReadback?.storageStateBytes === 'number' ? metaReadback.storageStateBytes : 'null'} updatedAt=${typeof metaReadback?.updatedAt === 'string' ? metaReadback.updatedAt : 'null'} expiresAt=${typeof metaReadback?.expiresAt === 'string' ? metaReadback.expiresAt : 'null'} ttlSeconds=${typeof metaReadback?.ttlSeconds === 'number' ? metaReadback.ttlSeconds : 'null'} storeTtlSeconds=${typeof metaReadback?.storeTtlSeconds === 'number' ? metaReadback.storeTtlSeconds : 'null'} sessionVersion=${typeof metaReadback?.sessionVersion === 'string' ? metaReadback.sessionVersion : 'null'}`
   );
 
   logResearchSession(

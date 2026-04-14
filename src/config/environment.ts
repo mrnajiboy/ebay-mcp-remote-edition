@@ -366,6 +366,16 @@ export function getValidationRunnerUserId(environment: EbayEnvironment): string 
   return resolved || null;
 }
 
+export function getTelegramChatId(): string | null {
+  const value = (process.env.TELEGRAM_CHAT_ID ?? '').trim();
+  return value || null;
+}
+
+export function getTelegramBotToken(): string | null {
+  const value = (process.env.TELEGRAM_BOT_TOKEN ?? '').trim();
+  return value || null;
+}
+
 export function getBaseUrl(environment: EbayEnvironment): string {
   return environment === 'production' ? 'https://api.ebay.com' : 'https://api.sandbox.ebay.com';
 }

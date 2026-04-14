@@ -9,6 +9,7 @@ export interface KVStore {
   readonly backendName: string;
   get<T>(key: string): Promise<T | null>;
   put(key: string, value: unknown, expirationTtl?: number): Promise<void>;
+  putIfAbsent?(key: string, value: unknown, expirationTtl?: number): Promise<boolean>;
   delete(key: string): Promise<void>;
 }
 
@@ -48,6 +49,23 @@ export class InMemoryKVStore implements KVStore {
       expiresAt: expirationTtl !== undefined ? Date.now() + expirationTtl * 1_000 : undefined,
     });
     return Promise.resolve();
+  }
+
+  putIfAbsent(key: string, value: unknown, expirationTtl?: number): Promise<boolean> {
+    const entry = this.store.get(key);
+    if (entry && (entry.expiresAt === undefined || Date.now() <= entry.expiresAt)) {
+      return Promise.resolve(false);
+    }
+
+    if (entry?.expiresAt !== undefined && Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+    }
+
+    this.store.set(key, {
+      value,
+      expiresAt: expirationTtl !== undefined ? Date.now() + expirationTtl * 1_000 : undefined,
+    });
+    return Promise.resolve(true);
   }
 
   delete(key: string): Promise<void> {
@@ -139,6 +157,10 @@ export class CloudflareKVStore implements KVStore {
     this.cache.set(key, { value, expiresAt: Date.now() + cacheTtl });
   }
 
+  putIfAbsent(): Promise<boolean> {
+    throw new Error('Atomic putIfAbsent is not supported for Cloudflare KV');
+  }
+
   async delete(key: string): Promise<void> {
     await this.client.delete(`/values/${encodeURIComponent(key)}`);
     this.cache.delete(key);
@@ -207,6 +229,23 @@ export class UpstashRedisKVStore implements KVStore {
       ? Math.min(expirationTtl * 1_000, this.cacheTtlMs)
       : this.cacheTtlMs;
     this.cache.set(key, { value, expiresAt: Date.now() + cacheTtl });
+  }
+
+  async putIfAbsent(key: string, value: unknown, expirationTtl?: number): Promise<boolean> {
+    const response =
+      expirationTtl !== undefined
+        ? await this.client.set(key, value, { ex: expirationTtl, nx: true })
+        : await this.client.set(key, value, { nx: true });
+
+    if (response === 'OK' || response === true) {
+      const cacheTtl = expirationTtl
+        ? Math.min(expirationTtl * 1_000, this.cacheTtlMs)
+        : this.cacheTtlMs;
+      this.cache.set(key, { value, expiresAt: Date.now() + cacheTtl });
+      return true;
+    }
+
+    return false;
   }
 
   async delete(key: string): Promise<void> {
