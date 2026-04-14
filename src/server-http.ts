@@ -1459,11 +1459,12 @@ async function main(): Promise<void> {
     const onListening = (): void => {
       const protocol = useHttps ? 'HTTPS' : 'HTTP';
       console.log(`Server running at ${serverUrl} [${protocol}]`);
+      console.log(`MCP (default):    ${serverUrl}/mcp`);
       console.log(`MCP (sandbox):    ${serverUrl}/sandbox/mcp`);
       console.log(`MCP (production): ${serverUrl}/production/mcp`);
       console.log(`OAuth (sandbox):  ${serverUrl}/sandbox/oauth/start`);
       console.log(`OAuth (prod):     ${serverUrl}/production/oauth/start`);
-      console.log(`MCP (default):    ${serverUrl}/mcp`);
+      console.log(`Validation:  ${serverUrl}/validation`);
     };
 
     let server: ReturnType<typeof app.listen>;
