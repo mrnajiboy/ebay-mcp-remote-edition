@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.1.0...ebay-mcp-remote-edition-v4.2.0) (2026-04-14)
+
+
+### Features
+
+* add qstash messaging for session token expiration ([d19eb34](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/d19eb34d70b018decbe9108eb38e69ec557c8c68))
+* improve results scaffolding to categorize returned data. ([3e56e33](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/3e56e3394251629847e9150bcdbc3ff141913357))
+
+
+### Bug Fixes
+
+* changed docker file settings to run remote edition server. ([741dedc](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/741dedcd12312fc706e0e9ff02d341f134358934))
+* files missing for linting ([f5f298e](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/f5f298e3d3c846a338013a4113a932031fe8fbac))
+* ignoring fixture for ci tests ([b5e0d76](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b5e0d76eff072ee3d64225e040f861654ef9b51b))
+* kv-store.test ([c2e6b28](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/c2e6b2827e319231030d5122fa73f6acbec800fc))
+* linting ([b88968c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b88968c57b929841278064e783b0a99fac69f66c))
+* linting ([66fc2ac](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/66fc2acd1bd789af137cd3304974f7cac4fe9400))
+* linting ([061bfe0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/061bfe0f648fb90c64265e4b5308593af74d8935))
+* linting ([a7dee50](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/a7dee50929e1eb3831091a04d82ffe801bd336b0))
+* linting ([98b4841](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/98b4841d972b71dd498bd6ac4d7f1635092d6c29))
+* linting ([d95b8ee](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/d95b8ee4af2c2edd71bc278cad6564a301ed89f7))
+* linting ([95c077c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/95c077cbe064aa733f197fad1c437a570f669e2d))
+* linting ([0b04a27](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/0b04a27675af825d3e090dcc0108032ffea559c0))
+* linting ([1b3bba9](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/1b3bba9e5404dc4b68425686d88443510e031512))
+* LINTING ([49ed8b5](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/49ed8b5266b3b8b6ee801a9911fae3e46bd6d902))
+* linting and dotenvx detection ([7a8ea11](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7a8ea1125c0f838d66ea86ef6f3dc358453b53cb))
+* linting and session persistence for ebay research ([cdb6ed1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/cdb6ed1aeea98fb564fa5eccafc5592657c443c8))
+* linting and testing ([acb017f](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/acb017f45e112bb90817a4546c6c9cf99048b9ba))
+* linting and testing ([fd35959](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/fd3595950960ca2c05036cfaabbe158a380304a1))
+* logging level for health ([d789fd2](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/d789fd273980572a6d77284e4f5ea296e55d32e7))
+* nixpacks.toml ([df09405](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/df0940515ba2da68cbc68096848d1838d25d3a6f))
+* playwright integrations and env variable updates ([447fbb4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/447fbb4f77af546474448680e146fa124d474a3e))
+* regression test for ebay-research ([104be9c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/104be9c643da466dc383fe290f5207a4d0b8a74a))
+* session storage paths and legacy flows ([a08b033](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/a08b0337de9952812df45c61fb22db3923008e5e))
+* testing linting ([9a65cbc](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/9a65cbc928ad2fcaa0c8ed9b93c0f2aa631f6e50))
+* tests error ([415a2b8](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/415a2b89c66d90403df1ebf174213c8e9e972e14))
+* validation flow and health response logging ([61dabad](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/61dabad45566314b698a078515d913a891df3338))
+
+
+### Documentation
+
+* update API status snapshot [skip ci] ([244638b](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/244638baec9360f92d1e6615f818e8bfced87397))
+
 ## [4.1.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.0.0...ebay-mcp-remote-edition-v4.1.0) (2026-04-13)
 
 
