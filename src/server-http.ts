@@ -321,6 +321,9 @@ function createApp(): express.Application {
         sandbox: `${serverUrl}/sandbox/oauth/start`,
         production: `${serverUrl}/production/oauth/start`,
       },
+      validation_endpoints: {
+        run: `${serverUrl}/validation/run`,
+      },
     });
   });
 
