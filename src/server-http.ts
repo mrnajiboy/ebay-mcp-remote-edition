@@ -1464,7 +1464,7 @@ async function main(): Promise<void> {
       console.log(`MCP (production): ${serverUrl}/production/mcp`);
       console.log(`OAuth (sandbox):  ${serverUrl}/sandbox/oauth/start`);
       console.log(`OAuth (prod):     ${serverUrl}/production/oauth/start`);
-      console.log(`Validation:       ${serverUrl}/validation/run`);
+      console.log(`Validation Research:       ${serverUrl}/validation/run`);
     };
 
     let server: ReturnType<typeof app.listen>;
