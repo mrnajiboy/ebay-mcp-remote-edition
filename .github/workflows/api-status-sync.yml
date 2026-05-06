@@ -22,11 +22,14 @@ jobs:
           node-version: 'lts/*'
           cache: 'npm'
 
+      - name: Install pnpm
+        run: npm install -g pnpm@10
+
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Generate API status doc
-        run: npx tsx src/scripts/update-api-status-doc.ts
+        run: pnpm tsx src/scripts/update-api-status-doc.ts
 
       - name: Check for changes
         id: changes

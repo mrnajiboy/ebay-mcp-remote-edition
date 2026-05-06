@@ -25,13 +25,16 @@ jobs:
           node-version: 'lts/*'
           cache: 'npm'
 
+      - name: Install pnpm
+        run: npm install -g pnpm@10
+
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run API sync check
         id: sync
         run: |
-          npm run sync 2>&1 | tee sync-output.txt
+          pnpm run sync 2>&1 | tee sync-output.txt
 
           # Extract stats from the report
           if [ -f dev-sync-report.json ]; then
@@ -107,7 +110,7 @@ jobs:
 
             ${missingList}
 
-            ${parseInt(missingCount) > 20 ? `\n_...and ${parseInt(missingCount) - 20} more. See the full report in the workflow artifacts._\n` : ''}
+            ${parseInt(missingCount) > 20 ? `\n...and ${parseInt(missingCount) - 20} more. See the full report in the workflow artifacts.\n` : ''}
 
             ### Action Required
 
@@ -120,7 +123,7 @@ jobs:
 
             \`\`\`bash
             # Run sync locally to get full details
-            npm run sync
+            pnpm run sync
 
             # Check the report
             cat dev-sync-report.json
