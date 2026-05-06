@@ -71,7 +71,7 @@ Full details in `.backlog/tasks/` and AGENTS.md in parent repo (`../..`).
 | TASK-MCP.3 — Schema enum mismatch | ✅ Done (May 5) | `normalizeTimeUnit()` fix |
 | TASK-MCP.4 — upload_images dual endpoint | ✅ Done (May 5) | imageUrls + imageFiles |
 | TASK-MCP.5 — OAuth multi-env | ✅ Done (May 5) | EBAY_PRODUCTION_*/SANDBOX_* |
-| TASK-MCP.6 — Disable unsupported tools | 🔲 To Do | Config-level `tools.exclude` |
+| TASK-MCP.6 — Disable unsupported tools | ✅ Done (May 6) | Config-level `tools.exclude` filter |
 | TASK-MCP.7 — publish_offer XML transform | ✅ Done (May 5) | Pre-transform logic |
 | TASK-MCP.8 — Taxonomy API tools | ✅ Done (May 5) | Category tree, suggestions, specifics |
 | TASK-MCP.9 — Browse API tools | ✅ Done (May 5) | Suggestions, product search, item specifics |
