@@ -1249,18 +1249,14 @@ export async function executeTool(
             },
           };
 
-          // Add itemSpecifics from inventory item product
-          const itemSpecifics = product.itemSpecifics as
-            | { name: string; value: string | string[] }[]
-            | undefined;
-          if (itemSpecifics && itemSpecifics.length > 0) {
+          // Add itemSpecifics from inventory item product aspects
+          const aspects = product.aspects as Record<string, string[]> | undefined;
+          if (aspects && Object.keys(aspects).length > 0) {
             tradingItem.ItemSpecifics = {
-              NameValueList: itemSpecifics.map(
-                (spec: { name: string; value: string | string[] }) => ({
-                  Name: spec.name,
-                  Value: Array.isArray(spec.value) ? spec.value : [spec.value],
-                })
-              ),
+              NameValueList: Object.entries(aspects).map(([name, value]) => ({
+                Name: name,
+                Value: Array.isArray(value) ? value : [value],
+              })),
             };
           }
 
