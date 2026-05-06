@@ -5,7 +5,6 @@ import {
 } from '@/utils/image-processor.js';
 import axios from 'axios';
 import * as fs from 'fs';
-import * as path from 'path';
 
 /**
  * Commerce Media API (v1_beta) - Upload and manage images via eBay Picture Services
@@ -132,55 +131,17 @@ export class MediaApi {
     try {
       const fileBuffer = fs.readFileSync(filePath);
 
-      // Build multipart/form-data body manually
-      const boundary = `----FormBoundary${Date.now()}`;
-      const fileName = path.basename(filePath);
+      // Process image — validate dimensions, enlarge to min 500px if too small,
+      // convert to JPEG, and optimize. Uses sharp library.
+      const processed = await processImageForUpload(fileBuffer);
 
-      // Build the multipart body
-      let body = '';
-
-      // File part
-      body += `--${boundary}\r\n`;
-      body += `Content-Disposition: form-data; name="imageFile"; filename="${fileName}"\r\n`;
-      body += `Content-Type: application/octet-stream\r\n\r\n`;
-
-      // Description part (optional)
-      if (description) {
-        body += `--${boundary}\r\n`;
-        body += `Content-Disposition: form-data; name="description"\r\n\r\n`;
-        body += `${description}\r\n`;
-      }
-
-      body += `--${boundary}--\r\n`;
-
-      const multipartBody = Buffer.concat([Buffer.from(body, 'utf-8'), Buffer.from(fileBuffer)]);
-
-      const createResponse = await axios.post(
-        `${baseUrl}${this.basePath}/image/create_image_from_file`,
-        multipartBody,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': `multipart/form-data; boundary=${boundary}`,
-            Prefer: 'return=representation',
-          },
-          timeout: 30000,
-        }
+      return await this.uploadProcessedImage(
+        processed.buffer,
+        processed.metadata,
+        token,
+        baseUrl,
+        description
       );
-
-      // Extract image ID from response body or Location header
-      const responseData = createResponse.data as Record<string, unknown>;
-      const imageId =
-        typeof responseData.id === 'string'
-          ? responseData.id
-          : createResponse.headers.location?.split('/').pop();
-
-      if (!imageId) {
-        throw new Error('No image ID returned from create endpoint');
-      }
-
-      // Fetch image details to get the eBay-hosted URL
-      return await this.getImage(imageId);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
@@ -219,23 +180,41 @@ export class MediaApi {
     baseUrl: string,
     description?: string
   ): Promise<{ id: string; imageUrl: string; description?: string }> {
-    // Build multipart/form-data body
+    // Build multipart/form-data body correctly:
+    // --boundary\r\n
+    // Content-Disposition: imageFile\r\n
+    // Content-Type: image/jpeg\r\n\r\n
+    // [IMAGE BINARY DATA]
+    // --boundary\r\n
+    // Content-Disposition: description\r\n\r\n
+    // [description text]
+    // --boundary--\r\n
     const boundary = `----FormBoundary${Date.now()}`;
     const fileName = `image_${Date.now()}.jpg`;
 
-    let body = `--${boundary}\r\n`;
-    body += `Content-Disposition: form-data; name="imageFile"; filename="${fileName}"\r\n`;
-    body += `Content-Type: image/jpeg\r\n\r\n`;
+    const parts: Buffer[] = [];
 
+    // Image file part — headers + binary data
+    const imageHeaders =
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="imageFile"; filename="${fileName}"\r\n` +
+      `Content-Type: image/jpeg\r\n\r\n`;
+    parts.push(Buffer.from(imageHeaders, 'utf-8'));
+    parts.push(buffer);
+
+    // Description part (optional)
     if (description) {
-      body += `--${boundary}\r\n`;
-      body += `Content-Disposition: form-data; name="description"\r\n\r\n`;
-      body += `${description}\r\n`;
+      const descPart =
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="description"\r\n\r\n` +
+        `${description}\r\n`;
+      parts.push(Buffer.from(descPart, 'utf-8'));
     }
 
-    body += `--${boundary}--\r\n`;
+    // Closing boundary
+    parts.push(Buffer.from(`--${boundary}--\r\n`, 'utf-8'));
 
-    const multipartBody = Buffer.concat([Buffer.from(body, 'utf-8'), buffer]);
+    const multipartBody = Buffer.concat(parts);
 
     const createResponse = await axios.post(
       `${baseUrl}${this.basePath}/image/create_image_from_file`,
