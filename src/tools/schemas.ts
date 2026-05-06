@@ -671,21 +671,18 @@ export const shippingQuoteRequestSchema = z
 // Bulk Operation Schemas
 // ============================================================================
 
-export const bulkInventoryItemRequestSchema = z
-  .object({
-    requests: z.array(
-      z
-        .object({
-          sku: z.string(),
-          product: productSchema.optional(),
-          availability: availabilitySchema.optional(),
-          condition: z.string().optional(),
-          conditionDescription: z.string().optional(),
-        })
-        .passthrough()
-    ),
-  })
-  .passthrough();
+export const bulkInventoryItemRequestSchema = z.array(
+  z
+    .object({
+      sku: z.string(),
+      locale: z.string().optional(),
+      product: productSchema.optional(),
+      availability: availabilitySchema.optional(),
+      condition: z.string().optional(),
+      conditionDescription: z.string().optional(),
+    })
+    .passthrough()
+);
 
 export const bulkPriceQuantityRequestSchema = z
   .object({
