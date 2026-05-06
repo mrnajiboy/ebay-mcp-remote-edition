@@ -1,10 +1,10 @@
 ---
 id: TASK-MCP.6
 title: Disable unsupported tools for all agents
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-05'
-updated_date: '2026-05-05'
+updated_date: '2026-05-06'
 labels: [config, medium]
 dependencies: []
 parent_task_id: null
@@ -31,7 +31,7 @@ Per Naji review, disable the following tools for all agents. These are NOT bugs 
 - `ebay_get_signing_keys`
 - `ebay_create_signing_key`
 
-Approach: Either remove from tool definitions, mark as disabled with clear error messages, or filter them out in tool-definitions.ts registration.
+Approach: Config-level `tools.exclude` filter in `getToolDefinitions()` — `src/tools/index.ts`
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -47,3 +47,9 @@ Approach: Either remove from tool definitions, mark as disabled with clear error
 <!-- SECTION:PRIORITY:BEGIN -->
 Medium
 <!-- SECTION:PRIORITY:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-06: Implemented config-level `tools.exclude` filter in `src/tools/index.ts`. Added `EXCLUDED_TOOLS` Set with 9 disabled tool names. Filter applied in `getToolDefinitions()` before returning tool list. All 1061 tests pass. Build successful.
+<!-- SECTION:NOTES:END -->

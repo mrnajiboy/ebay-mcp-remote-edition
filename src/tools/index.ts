@@ -25,6 +25,32 @@ import { chatGptTools } from '@/tools/chat-tools.js';
 import { getApiStatusFeed } from '@/utils/api-status-feed.js';
 import { convertToTimestamp, validateTokenExpiry } from '@/utils/date-converter.js';
 
+/**
+ * Tools disabled at config level because the eBay seller account doesn't support them.
+ * These tools return errors when called, so we exclude them from the tool list entirely.
+ *
+ * Categories:
+ * - Commerce Shipping: account not enrolled in commerce shipping services
+ * - VERO (Vendor Enforcement of Rights Online): account not enrolled in VERO program
+ * - Signing Keys: account doesn't have signing key permissions
+ *
+ * @see TASK-MCP.6 — Disable unsupported tools (config-level tools.exclude)
+ */
+const EXCLUDED_TOOLS = new Set([
+  // Commerce Shipping (account not enrolled)
+  'ebay_get_shipping_services',
+  'ebay_get_dropoff_sites',
+  'ebay_get_consign_preferences',
+  'ebay_get_battery_qualifications',
+  // VERO (account not enrolled)
+  'ebay_get_vero_reason_codes',
+  'ebay_create_vero_report',
+  // Signing Keys (account doesn't have permissions)
+  'ebay_suppress_violation',
+  'ebay_get_signing_keys',
+  'ebay_create_signing_key',
+]);
+
 // Import Zod schemas for input validation
 import {
   getAwaitingFeedbackSchema,
@@ -294,12 +320,13 @@ function normalizeTimeUnit(value: string): string {
 
 /**
  * Get all tool definitions for the MCP server
+ * Filters out tools the eBay seller account doesn't support (see EXCLUDED_TOOLS)
  */
 export function getToolDefinitions(): ToolDefinition[] {
   const chatConnectorTools = chatGptTools.filter(
     (tool) => tool.name === 'search' || tool.name === 'fetch'
   );
-  return [
+  const allTools = [
     ...chatConnectorTools,
     ...tokenManagementTools,
     ...accountTools,
@@ -315,6 +342,8 @@ export function getToolDefinitions(): ToolDefinition[] {
     ...developerTools,
     ...tradingTools,
   ];
+  // Filter out tools the account doesn't support
+  return allTools.filter((tool) => !EXCLUDED_TOOLS.has(tool.name));
 }
 
 /**
