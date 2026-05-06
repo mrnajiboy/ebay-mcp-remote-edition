@@ -1,5 +1,8 @@
 import type { EbayApiClient } from '../client.js';
-import { validateImageForEbay as _validateImageForEbay } from '@/utils/image-processor.js';
+import {
+  processImageForUpload,
+  validateImageForEbay as _validateImageForEbay,
+} from '@/utils/image-processor.js';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -27,13 +30,18 @@ export class MediaApi {
    *
    * Flow:
    * 1. Download image from URL
-   * 2. Validate dimensions (min 500px, max 4800px)
-   * 3. Resize if needed (maintain aspect ratio)
-   * 4. Optimize and convert to JPEG
+   * 2. Validate dimensions (min 500px, max 4800px) via sharp
+   * 3. Enlarge to minimum 500px if too small (sharp resize)
+   * 4. Convert to JPEG and optimize
    * 5. Upload to eBay via multipart/form-data
    * 6. Return hosted URL
    *
-   * Supported formats: JPG, GIF, PNG, BMP, TIFF, AVIF, HEIC, WEBP
+   * IMPORTANT: Images smaller than 500px on the longest side are automatically
+   * enlarged using sharp before upload. This ensures eBay's minimum size
+   * requirement is always met. See processImageForUpload() in image-processor.ts.
+   *
+   * Supported source formats: JPG, GIF, PNG, BMP, TIFF, AVIF, HEIC, WEBP
+   * Output format: JPEG (optimized at 90% quality)
    * Max file size: 10MB per image
    *
    * @param imageUrl - Public URL of the image to upload
@@ -52,43 +60,26 @@ export class MediaApi {
     const baseUrl = this.getMediaBaseUrl();
 
     try {
-      // Try direct createImageFromUrl endpoint first (eBay downloads server-side)
-      // This avoids the need to download+process+upload ourselves
-      const requestBody: Record<string, unknown> = { imageUrl };
-      if (description) {
-        requestBody.description = description;
-      }
+      // Step 1: Download the image from the source URL
+      const downloadResponse = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+        maxContentLength: 10 * 1024 * 1024, // 10MB max
+      });
+      const imageBuffer = Buffer.from(downloadResponse.data);
 
-      const response = await axios.post(
-        `${baseUrl}${this.basePath}/image/create_image_from_url`,
-        requestBody,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          timeout: 30000,
-        }
+      // Step 2: Process image — validates dimensions, enlarges to min 500px if too small,
+      // converts to JPEG, and optimizes. Uses sharp library.
+      const processed = await processImageForUpload(imageBuffer);
+
+      // Step 3: Upload processed image to eBay
+      return await this.uploadProcessedImage(
+        processed.buffer,
+        processed.metadata,
+        token,
+        baseUrl,
+        description
       );
-
-      const data = response.data as Record<string, unknown>;
-      // Image ID is in Location header: https://apim.ebay.com/commerce/media/v1_beta/image/{image_id}
-      const locationHeader = response.headers.location as string | undefined;
-      const imageId = locationHeader?.split('/').pop();
-      if (imageId) {
-        return await this.getImage(imageId);
-      }
-      // Fallback: use imageUrl directly from response body
-      const resultUrl = data.imageUrl as string | undefined;
-      if (resultUrl) {
-        return {
-          id: 'direct',
-          imageUrl: resultUrl,
-          description: data.description as string | undefined,
-        };
-      }
-      throw new Error('No image ID in Location header and no imageUrl in response body');
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
