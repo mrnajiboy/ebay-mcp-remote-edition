@@ -1,27 +1,11 @@
-# eBay API Status (latest)
+# eBay API Status (cached)
 
-Auto-updated snapshot from the [eBay API Status RSS feed](https://developer.ebay.com/rss/api-status).
+The eBay API Status RSS feed is currently unavailable. Last attempt:
+*2026-05-06T09:06:07.294Z*
+
+**Error:** Feed unavailable (HTTP 403)
+
 Full list: [developer.ebay.com/support/api-status](https://developer.ebay.com/support/api-status).
-
-*Last updated: 2026-04-27T10:19:36.249Z*
-
-| Title | API | Site | Status | Last updated | Link |
-|-------|-----|------|--------|--------------|------|
-| api.ebay.com | api.ebay.com | Production | Unresolved | Sun Apr 26 2026 | [Details](https://developer.ebay.com/support/api-status/Production/dns-resolution-failure-for-api-ebay-com) |
-| Inventory API | Inventory API | Sandbox | Resolved | Tue Apr 21 2026 | [Details](https://developer.ebay.com/support/api-status/Sandbox/publishoffer-api-is-returning-500-system-error) |
-| Buy Feed API | Buy Feed API | Production | Resolved | Mon Apr 20 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-some-feeds-are-delayed) |
-| MarketingAPI | MarketingAPI | Production | Resolved | Tue Apr 07 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getcampaigns-is-now-treating-the-optional-campaign_status-as-required) |
-| Inventory Mapping API | Inventory Mapping API | Production | Resolved | Tue Mar 31 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-inventory-mapping-api-outage) |
-| Feed Files | Feed Files | Production | Resolved | Tue Mar 31 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-feed-files-are-unavailable-1) |
-| feed files | feed files | Production | Resolved | Mon Mar 30 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-feed-files-are-unavailable) |
-| Sandbox | Sandbox | Sandbox | Resolved | Tue Mar 03 2026 | [Details](https://developer.ebay.com/support/api-status/Sandbox/resolved-application-keyset-page-is-not-displaying-the-existing-sandbox-keyset) |
-| Trading API | Trading API | Production | Resolved | Mon Feb 09 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-addorder-trading-api-returns-http-500-during-invoice-generation-blocking-invoicing) |
-| Developer portal | Developer portal | Production | Resolved | Thu Feb 05 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-application-keysets-page-not-showing-production-keyset-and-create-new-keyset-is-not-working) |
-| Marketing API | Marketing API | Production | Resolved | Wed Jan 28 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-internal-server-error-bulkcreateadsbylistingid) |
-| Trading API | Trading API | Production | Resolved | Wed Jan 28 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getitemtransactionsresponse-transactionarray-missing-from-auctioncheckoutcomplete-notifications) |
-| Trading API | Trading API | Production | Resolved | Wed Oct 29 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-trading-api-reviseitem-reviseinventorystatus-enditem-api-calls-returning-seller-not-found-error) |
-| Inventory API | Inventory API | Production | Resolved | Thu Oct 23 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-inventory-api-returning-invalid-tax-information-you-need-to-specify-the-tax-state) |
-| Trading API | Trading API | Production | Resolved | Tue Oct 21 2025 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-trading-api-getstore-method-returns-store-not-found-for-user) |
 
 ---
 
