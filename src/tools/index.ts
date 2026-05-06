@@ -1102,7 +1102,7 @@ export async function executeTool(
     case 'ebay_publish_offer': {
       const offerId = args.offerId as string;
       // Pre-publish: ensure offer has categoryId + merchantLocationKey + listingPolicies,
-      // and inventory item has brand/mpn pair + location mapping.
+      // and inventory item has brand/mpn pair + location mapping + itemSpecifics.
       try {
         const offer = await api.inventory.getOffer(offerId);
         const offerData = offer as Record<string, unknown>;
@@ -1146,11 +1146,20 @@ export async function executeTool(
             };
             needsOfferUpdate = true;
           }
+          // Ensure pricingSummary has currency
+          const pricingSummary = offerData.pricingSummary as Record<string, unknown> | undefined;
+          if (pricingSummary?.price && typeof pricingSummary.price === 'object') {
+            const priceObj = pricingSummary.price as Record<string, unknown>;
+            if (!priceObj.currency) {
+              priceObj.currency = 'USD';
+              needsOfferUpdate = true;
+            }
+          }
           if (needsOfferUpdate) {
             await api.inventory.updateOffer(offerId, offerUpdate);
           }
 
-          // Fix inventory item fields (brand/mpn pair)
+          // Fix inventory item fields (brand/mpn pair + itemSpecifics)
           try {
             const items = await api.inventory.getInventoryItem(sku);
             const itemData = Array.isArray(items)
@@ -1184,6 +1193,93 @@ export async function executeTool(
       } catch (e) {
         console.warn(`publish_offer pre-transform warning for ${offerId}: ${e}`);
       }
+
+      // Use Trading API to publish with proper XML transform (Currency, Country, itemSpecifics)
+      try {
+        const offer = await api.inventory.getOffer(offerId);
+        const offerData = offer as Record<string, unknown>;
+        const sku = offerData?.sku as string | undefined;
+
+        if (sku) {
+          const items = await api.inventory.getInventoryItem(sku);
+          const itemData = Array.isArray(items) ? (items as Record<string, unknown>[])?.[0] : items;
+          const inventoryItem = itemData as Record<string, unknown>;
+          const product = (inventoryItem?.product as Record<string, unknown>) || {};
+
+          // Get location for Country
+          const locationKey = offerData.merchantLocationKey || 'seoul-warehouse';
+          let country = 'KR';
+          try {
+            const location = await api.inventory.getInventoryLocation(locationKey as string);
+            const locData = location as Record<string, unknown>;
+            const address = locData?.address as Record<string, unknown> | undefined;
+            if (address?.country) {
+              country = address.country as string;
+            }
+          } catch {
+            // Default to KR
+          }
+
+          // Build Trading API item object
+          const pricingSummary = offerData.pricingSummary as Record<string, unknown> | undefined;
+          const priceObj = pricingSummary?.price as Record<string, unknown> | undefined;
+          const tradingItem: Record<string, unknown> = {
+            SKU: sku,
+            Title: product.title || offerData.title || sku,
+            Description: product.description || offerData.listingDescription || '',
+            PrimaryCategory: { CategoryID: offerData.categoryId || '176984' },
+            StartPrice: priceObj?.value || '0',
+            Currency: priceObj?.currency || 'USD',
+            Quantity: offerData.availableQuantity || 1,
+            ListingDuration: 'GTC',
+            ListingType: 'FixedPriceItem',
+            ConditionID: offerData.condition === 'NEW' ? 1000 : 3000,
+            Country: country,
+            PaymentMethods: ['PayPal'],
+            DispatchTimeMax: 3,
+            ShippingServiceOptions: {
+              ShippingService: 'USPSGround',
+              ShippingServiceCost: { Value: '0', CurrencyId: 'USD' },
+            },
+            ReturnPolicy: {
+              ReturnsAcceptedOption: 'ReturnsAccepted',
+              ReturnsWithinOption: 'Days_30',
+              Description: 'Returns accepted within 30 days.',
+              RefundOption: 'MoneyBack',
+            },
+          };
+
+          // Add itemSpecifics from inventory item product
+          const itemSpecifics = product.itemSpecifics as
+            | { name: string; value: string | string[] }[]
+            | undefined;
+          if (itemSpecifics && itemSpecifics.length > 0) {
+            tradingItem.ItemSpecifics = {
+              NameValueList: itemSpecifics.map(
+                (spec: { name: string; value: string | string[] }) => ({
+                  Name: spec.name,
+                  Value: Array.isArray(spec.value) ? spec.value : [spec.value],
+                })
+              ),
+            };
+          }
+
+          // Add pictures
+          const imageUrls = product.imageUrls as string[] | undefined;
+          if (imageUrls && imageUrls.length > 0) {
+            tradingItem.PictureDetails = {
+              PictureURL: imageUrls.length === 1 ? imageUrls[0] : imageUrls,
+            };
+          }
+
+          // Publish via Trading API with transform
+          return await api.trading.createListing(tradingItem);
+        }
+      } catch (e) {
+        console.warn(`publish_offer Trading API warning for ${offerId}: ${e}`);
+        // Fallback to Inventory API if Trading API fails
+      }
+
       return await api.inventory.publishOffer(offerId);
     }
     case 'ebay_withdraw_offer':
