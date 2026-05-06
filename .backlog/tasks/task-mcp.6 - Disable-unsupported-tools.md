@@ -52,4 +52,12 @@ Medium
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-05-06: Implemented config-level `tools.exclude` filter in `src/tools/index.ts`. Added `EXCLUDED_TOOLS` Set with 9 disabled tool names. Filter applied in `getToolDefinitions()` before returning tool list. All 1061 tests pass. Build successful.
+
+2026-05-06: Bulk upload tools verified working (Naji directive):
+- `ebay_bulk_get_inventory_item` — Tested live, returned 200 OK with inventory data
+- `ebay_bulk_create_or_replace_inventory_item` — Available in 32+ bulk tool list
+- `ebay_bulk_update_price_quantity` — Available (requires offerId for published listings)
+- `ebay_bulk_create_offer`, `ebay_bulk_publish_offer` — Available for batch listing creation
+- eBay OAuth tokens valid with auto-refresh, session authentication working
+- MCP dev wrapped up per user directive — no new tools to add
 <!-- SECTION:NOTES:END -->
