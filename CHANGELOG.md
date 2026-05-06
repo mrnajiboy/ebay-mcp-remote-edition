@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.5.0...ebay-mcp-remote-edition-v4.5.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **ci:** remove cache: npm from release-please publish job ([8564e8d](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/8564e8dca9b3c574e02cf2085e5749592158b12f))
+
 ## [4.5.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.4.0...ebay-mcp-remote-edition-v4.5.0) (2026-05-06)
 
 
