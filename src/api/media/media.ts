@@ -53,9 +53,14 @@ export class MediaApi {
 
     try {
       // Primary: Pass URL directly to eBay — they handle server-side download
+      const body: Record<string, unknown> = { imageUrl };
+      if (description) {
+        body.description = description;
+      }
+
       const createResponse = await axios.post(
-        `${baseUrl}${this.basePath}/image/from_url`,
-        { imageUrl, ...(description && { description }) },
+        `${baseUrl}${this.basePath}/image/create_image_from_url`,
+        body,
         {
           headers: {
             Authorization: `Bearer ${token}`,
