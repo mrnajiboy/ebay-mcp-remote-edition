@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.4.0...ebay-mcp-remote-edition-v4.5.0) (2026-05-06)
+
+
+### Features
+
+* disable unsupported tools at config level (TASK-MCP.6) ([ba9a003](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/ba9a003459863accb4445933628f128e58811f6f))
+
+
+### Bug Fixes
+
+* add tool timeout wrapper and execution instrumentation (TASK-MCP.13) ([4e18c81](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/4e18c8151b4d86e180c5a8b579f958621ef600a2))
+* add User-Agent to RSS feed fetch; graceful fallback when feed unavailable ([6d6f29c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6d6f29cdb84c871c4f64a08f5bf114dca6b48d95))
+* **ci:** remove cache from setup-node; pnpm/action-setup handles caching ([e00a1be](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/e00a1be0fbc4befbd19c275a9beef501d99c663d))
+* **ci:** remove hardcoded pnpm version; let action auto-detect from package.json ([63c0292](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/63c0292aa4eeeac767fa7ee57ca693618cdb2312))
+* **ci:** use pnpm cache + pnpm/action-setup instead of npm cache ([5896e94](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/5896e94ecf968e5b8ec541976fddbb652e61a0e7))
+* convert Media API thumbnail URLs to full-size for listing images ([71090b9](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/71090b99f4dcbec9c24011b81449b16fbdbde9c0))
+* correct createImageFromUrl endpoint path to create_image_from_url ([473c285](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/473c285b46e194137265ac7f77939a0d02a1bdca))
+* createImageFromUrl downloads + processes images with sharp before upload ([c0acbfc](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/c0acbfc1b0cd5e7238b832fcde4e6b4ee120fde6))
+* createImageFromUrl passes URL directly to eBay, fallback to Sharp for small images ([0c5cd2d](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/0c5cd2df42363d02370d7c4fdcd3940aa9b10903))
+* multipart body construction in uploadProcessedImage + sharp processing for all uploads ([543d9d4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/543d9d4593832b57cd4088b3305eb4df5cddf871))
+* prettify server-http.ts (Prettier formatting gate) ([b143922](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b1439228c8031ea685f72b480cd1805f137e8ace))
+* publish_offer listingPolicies injection + upload_images response parsing (TASK-MCP.14) ([9b008c8](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/9b008c81ce300dcb815ed4dedabc8891d0729b0e))
+* publish_offer Trading API integration with proper XML transform ([312e0fe](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/312e0fe943da799ac916e3aef30a52dc79a26d4c))
+* publish_offer uses Trading API with proper XML transform (Currency, Country, itemSpecifics) ([215574b](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/215574bed511272ccb2674100431ddcb2e906cf0))
+* TASK-MCP.14 - upload_images Location header parsing + publish_offer listingPolicies injection ([b5f9927](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b5f9927612cfbc401f0586fa108f34de613c8994))
+
+
+### Documentation
+
+* add TASK-MCP.15 image enlargement fix ([44eb1d3](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/44eb1d3b396b4a05406c91e029aab00f12cc743a))
+* AGENTS.md updated ([7749cfa](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7749cfa1d0f78e9ac989d2d7a86a72ad226d7358))
+* detail media api fixes ([9a4a923](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/9a4a9233697c249dbd1db55b2245f5b3fffe7b87))
+* reconcile backlog status in AGENTS.md ([e500170](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/e500170f7a38bcda5df1f9bc5f2798f7a7726ec1))
+* update AGENTS.md and add TASK-MCP.16 publish_offer Trading API fix ([256d9cd](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/256d9cd26ad20dda62c5ab7814683ec1769f38c0))
+* update files ([61d835b](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/61d835be4bdd3453c8a1435be861ed22abd0b969))
+
 ## [4.4.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.3.1...ebay-mcp-remote-edition-v4.4.0) (2026-05-05)
 
 
