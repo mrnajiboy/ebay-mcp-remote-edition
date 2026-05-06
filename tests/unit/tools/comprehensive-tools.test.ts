@@ -541,10 +541,10 @@ describe('Comprehensive Tools Coverage', () => {
 
     it('ebay_bulk_create_or_replace_inventory_item', async () => {
       const mockResponse = { responses: [] };
-      const requests = { requests: [] };
+      const requests = [];
       vi.mocked(mockApi.inventory.bulkCreateOrReplaceInventoryItem).mockResolvedValue(mockResponse);
       await executeTool(mockApi, 'ebay_bulk_create_or_replace_inventory_item', { requests });
-      expect(mockApi.inventory.bulkCreateOrReplaceInventoryItem).toHaveBeenCalledWith(requests);
+      expect(mockApi.inventory.bulkCreateOrReplaceInventoryItem).toHaveBeenCalledWith({ requests });
     });
 
     it('ebay_bulk_get_inventory_item', async () => {

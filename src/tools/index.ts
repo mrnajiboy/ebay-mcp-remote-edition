@@ -1051,9 +1051,9 @@ export async function executeTool(
 
     // Bulk Operations
     case 'ebay_bulk_create_or_replace_inventory_item':
-      return await api.inventory.bulkCreateOrReplaceInventoryItem(
-        args.requests as Record<string, unknown>
-      );
+      return await api.inventory.bulkCreateOrReplaceInventoryItem({
+        requests: args.requests,
+      });
     case 'ebay_bulk_get_inventory_item':
       return await api.inventory.bulkGetInventoryItem(args.requests as Record<string, unknown>);
     case 'ebay_bulk_update_price_quantity':
