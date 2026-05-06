@@ -27,20 +27,13 @@ export class MediaApi {
   /**
    * Upload an image from a public URL to eBay Picture Services.
    *
-   * Flow:
-   * 1. Download image from URL
-   * 2. Validate dimensions (min 500px, max 4800px) via sharp
-   * 3. Enlarge to minimum 500px if too small (sharp resize)
-   * 4. Convert to JPEG and optimize
-   * 5. Upload to eBay via multipart/form-data
-   * 6. Return hosted URL
+   * Primary flow: Pass URL directly to eBay's createImageFromUrl endpoint
+   * (eBay downloads and processes server-side — no local processing needed).
    *
-   * IMPORTANT: Images smaller than 500px on the longest side are automatically
-   * enlarged using sharp before upload. This ensures eBay's minimum size
-   * requirement is always met. See processImageForUpload() in image-processor.ts.
+   * Fallback: If eBay rejects the image (e.g., too small for 500px minimum),
+   * download → enlarge with Sharp → upload via createImageFromFile.
    *
    * Supported source formats: JPG, GIF, PNG, BMP, TIFF, AVIF, HEIC, WEBP
-   * Output format: JPEG (optimized at 90% quality)
    * Max file size: 10MB per image
    *
    * @param imageUrl - Public URL of the image to upload
@@ -59,43 +52,85 @@ export class MediaApi {
     const baseUrl = this.getMediaBaseUrl();
 
     try {
-      // Step 1: Download the image from the source URL
-      const downloadResponse = await axios.get(imageUrl, {
-        responseType: 'arraybuffer',
-        timeout: 30000,
-        maxContentLength: 10 * 1024 * 1024, // 10MB max
-      });
-      const imageBuffer = Buffer.from(downloadResponse.data);
-
-      // Step 2: Process image — validates dimensions, enlarges to min 500px if too small,
-      // converts to JPEG, and optimizes. Uses sharp library.
-      const processed = await processImageForUpload(imageBuffer);
-
-      // Step 3: Upload processed image to eBay
-      return await this.uploadProcessedImage(
-        processed.buffer,
-        processed.metadata,
-        token,
-        baseUrl,
-        description
+      // Primary: Pass URL directly to eBay — they handle server-side download
+      const createResponse = await axios.post(
+        `${baseUrl}${this.basePath}/image/from_url`,
+        { imageUrl, ...(description && { description }) },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Prefer: 'return=representation',
+          },
+          timeout: 30000,
+        }
       );
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status;
-        const data = error.response?.data;
+
+      const responseData = createResponse.data as Record<string, unknown>;
+      const imageId =
+        typeof responseData.id === 'string'
+          ? responseData.id
+          : createResponse.headers.location?.split('/').pop();
+
+      if (!imageId) {
+        throw new Error('No image ID returned from create endpoint');
+      }
+
+      return await this.getImage(imageId);
+    } catch (primaryError) {
+      // Fallback: if eBay rejects (e.g., image too small), download → Sharp enlarge → upload via file
+      if (axios.isAxiosError(primaryError)) {
+        const status = primaryError.response?.status;
+        // Only fallback on errors that suggest image quality/size issues
+        if (status && (status === 400 || status === 500)) {
+          try {
+            console.log(
+              `[MediaApi] Direct URL upload failed (status ${status}), falling back to Sharp processing for: ${imageUrl}`
+            );
+
+            // Download the image
+            const downloadResponse = await axios.get(imageUrl, {
+              responseType: 'arraybuffer',
+              timeout: 30000,
+              maxContentLength: 10 * 1024 * 1024, // 10MB max
+            });
+            const imageBuffer = Buffer.from(downloadResponse.data);
+
+            // Process with Sharp (enlarge if too small, convert to JPEG)
+            const processed = await processImageForUpload(imageBuffer);
+
+            // Upload via file endpoint
+            return await this.uploadProcessedImage(
+              processed.buffer,
+              processed.metadata,
+              token,
+              baseUrl,
+              description
+            );
+          } catch {
+            // If fallback also fails, throw the original error (more actionable)
+            throw primaryError;
+          }
+        }
+      }
+      // Re-throw non-retryable errors as-is
+      if (axios.isAxiosError(primaryError)) {
+        const status = primaryError.response?.status;
+        const data = primaryError.response?.data;
         const message =
           typeof data === 'object' && data !== null && 'errors' in data
             ? (data.errors as any[])?.[0]?.longMessage ||
               (data.errors as any[])?.[0]?.message ||
-              error.message
-            : error.message;
+              primaryError.message
+            : primaryError.message;
         throw new Error(`Failed to upload image from URL (status ${status}): ${message}`, {
-          cause: error,
+          cause: primaryError,
         });
       }
       throw new Error(
-        `Failed to upload image from URL: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        { cause: error }
+        `Failed to upload image from URL: ${primaryError instanceof Error ? primaryError.message : 'Unknown error'}`,
+        { cause: primaryError }
       );
     }
   }

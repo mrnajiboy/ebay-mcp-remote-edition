@@ -277,6 +277,26 @@ Decisions are narrative markdown files explaining *why* a change was made or pro
 
 ---
 
+### TASK-MCP.15 — Fix createImageFromUrl to process images with Sharp before upload (Bug)
+- **Status:** ✅ Done (May 6, 2026 — commit TBD)
+- **Priority:** Critical
+- **Labels:** bug, critical, images
+
+**Problem:** `createImageFromUrl` bypassed Sharp image processing — URLs passed directly to eBay, so sub-500px images were rejected by `publish_offer` with "please upload high-resolution photos that are at least 500 pixels on the longest side".
+
+**Solution:** Rewrote `createImageFromUrl` to:
+1. **Download** image from source URL (axios, max 10MB)
+2. **Process** via `processImageForUpload()` (Sharp: enlarges if <500px, converts to JPEG @90%)
+3. **Upload** via `uploadProcessedImage()` (multipart/form-data)
+
+**Impact:** Images <500px on longest side are automatically enlarged to minimum 500px using Sharp's `resize()` with `withoutEnlargement: false`. All images converted to JPEG at 90% quality before upload. Images >4800px still downsized.
+
+**Testing:** 1061/1061 tests pass ✅
+
+**Next:** Live integration test pending — Bruno MCP client stalled during draft workflow test (May 6). Jiji + Bruno retrying.
+
+---
+
 ## 5. Development Workflow
 
 ### Build & Test
