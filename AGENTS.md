@@ -78,7 +78,7 @@ Full details in `.backlog/tasks/` and AGENTS.md in parent repo (`../..`).
 | TASK-MCP.10 — update_inventory_item | ✅ Done (May 5) | Deep-merge pattern |
 | TASK-MCP.11 — get_offers schema | ✅ Done (May 5) | SKU parameter required |
 | TASK-MCP.12 — revise_listing fallback | ✅ Done (May 5) | Trading → Inventory API auto-route |
-| TASK-MCP.13 — Hosted MCP timeouts | 🔲 To Do | JiJi runtime investigation |
+| TASK-MCP.13 — Hosted MCP timeouts | ✅ Done (May 6) | Tool timeout wrapper + instrumentation |
 | TASK-MCP.14 — publish_offer policies + images | ✅ Done (May 6) | listingPolicies injection + Location header parsing |
 | TASK-MCP.15 — Image enlargement with Sharp | ✅ Done (May 6) | Sub-500px auto-enlargement pipeline |
 | TASK-MCP.16 — publish_offer Trading API | ✅ Done (May 6) | createListing() with XML transform + Inventory API fallback |

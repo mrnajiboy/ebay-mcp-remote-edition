@@ -1186,6 +1186,10 @@ function mountEnvRouter(
       ],
     });
 
+    // Configurable tool execution timeout (60s default — most tools complete in <10s)
+    // Longer than individual API timeouts (30s) to allow for token refresh + API chaining
+    const TOOL_TIMEOUT_MS = Number(process.env.MCP_TOOL_TIMEOUT_MS ?? 60_000);
+
     const tools = getToolDefinitions();
     for (const toolDef of tools) {
       try {
@@ -1193,12 +1197,42 @@ function mountEnvRouter(
           toolDef.name,
           { description: toolDef.description, inputSchema: toolDef.inputSchema },
           async (args: Record<string, unknown>) => {
+            const startTime = Date.now();
             try {
-              const result = await executeTool(api, toolDef.name, args);
+              // Wrap tool execution with timeout to prevent indefinite hangs
+              const result = await Promise.race([
+                executeTool(api, toolDef.name, args),
+                new Promise<never>((_, reject) => {
+                  setTimeout(
+                    () =>
+                      reject(
+                        new Error(
+                          `Tool ${toolDef.name} timed out after ${TOOL_TIMEOUT_MS}ms`
+                        )
+                      ),
+                    TOOL_TIMEOUT_MS
+                  );
+                }),
+              ]);
+              const duration = Date.now() - startTime;
+              serverLogger.info(`[tool-exec] ${toolDef.name}`, {
+                userId,
+                environment,
+                durationMs: duration,
+                status: 'success',
+              });
               return {
                 content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
               };
             } catch (error) {
+              const duration = Date.now() - startTime;
+              serverLogger.warn(`[tool-exec] ${toolDef.name}`, {
+                userId,
+                environment,
+                durationMs: duration,
+                status: 'error',
+                error: error instanceof Error ? error.message : String(error),
+              });
               return {
                 content: [
                   {
