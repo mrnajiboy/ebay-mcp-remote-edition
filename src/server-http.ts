@@ -1206,9 +1206,7 @@ function mountEnvRouter(
                   setTimeout(
                     () =>
                       reject(
-                        new Error(
-                          `Tool ${toolDef.name} timed out after ${TOOL_TIMEOUT_MS}ms`
-                        )
+                        new Error(`Tool ${toolDef.name} timed out after ${TOOL_TIMEOUT_MS}ms`)
                       ),
                     TOOL_TIMEOUT_MS
                   );
