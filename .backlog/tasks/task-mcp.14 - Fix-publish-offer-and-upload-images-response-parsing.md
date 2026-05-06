@@ -65,7 +65,7 @@ High — both block live listing creation workflow
 - Default policies (from existing published listings): payment=259198675013, return=259198703013, fulfillment=259198453013
 - `categoryId` and `merchantLocationKey` defaults already handled
 
-**⚠️ HACK: Policy IDs are HARDCODED in handler (src/tools/index.ts).** This works for single-account (Hankuk Expo) but MUST be moved to KV store (Upstash Redis or Coolify env vars) before multi-account support. Hardcoded values:
+**⚠️ LEGACY WORKAROUND: Policy IDs are HARDCODED in handler (src/tools/index.ts).** This works for single-account (Hankuk Expo) but MUST be moved to KV store (Upstash Redis or Coolify env vars) before multi-account support. Hardcoded values:
 ```typescript
 const defaultPolicies = {
   paymentPolicyId: '259198675013',
