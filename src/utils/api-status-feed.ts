@@ -85,7 +85,11 @@ export async function getApiStatusFeed(
     const response = await axios.get(RSS_URL, {
       timeout: 15_000,
       responseType: 'text',
-      headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
+      headers: {
+        Accept: 'application/rss+xml, application/xml, text/xml',
+        'User-Agent':
+          'ebay-mcp-remote-edition/1.0 (GitHub Actions CI; +https://github.com/mrnajiboy/ebay-mcp-remote-edition)',
+      },
     });
 
     const xml = response.data as string;
