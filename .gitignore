@@ -212,4 +212,4 @@ bun.lock
 
 # External tool configs
 context7.json
-Taskfile.yml
+Taskfile.ymlpackage-lock.json
