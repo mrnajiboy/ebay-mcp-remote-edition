@@ -391,6 +391,53 @@ export function getIdentityBaseUrl(environment: EbayEnvironment): string {
   return environment === 'production' ? 'https://apiz.ebay.com' : 'https://apiz.sandbox.ebay.com';
 }
 
+/**
+ * Default listing policy IDs sourced from Airtable Reference IDs table.
+ *
+ * The Airtable Reference IDs table stores policy IDs that correspond to eBay
+ * business policies (payment, return, fulfillment). n8n workflows sync these
+ * values to Coolify environment variables so the MCP server can read them at
+ * startup without needing a direct Airtable connection.
+ *
+ * Env vars:
+ * - EBAY_DEFAULT_PAYMENT_POLICY_ID
+ * - EBAY_DEFAULT_RETURN_POLICY_ID
+ * - EBAY_DEFAULT_FULFILLMENT_POLICY_ID
+ *
+ * Fallback values are the hardcoded IDs from before this migration.
+ *
+ * @see TASK-MCP.14 — publish_offer policies (legacy hardcoded values)
+ * @see Airtable "Reference IDs" table — source of truth for policy IDs
+ */
+export interface DefaultPolicyIds {
+  paymentPolicyId: string;
+  returnPolicyId: string;
+  fulfillmentPolicyId: string;
+}
+
+/** Cached default policy IDs — loaded once at first call. */
+let _defaultPolicies: DefaultPolicyIds | null = null;
+
+export function getDefaultPolicyIds(): DefaultPolicyIds {
+  if (_defaultPolicies) return _defaultPolicies;
+
+  const paymentPolicyId =
+    (process.env.EBAY_DEFAULT_PAYMENT_POLICY_ID ?? '').trim() || '259198675013';
+  const returnPolicyId = (process.env.EBAY_DEFAULT_RETURN_POLICY_ID ?? '').trim() || '259198703013';
+  const fulfillmentPolicyId =
+    (process.env.EBAY_DEFAULT_FULFILLMENT_POLICY_ID ?? '').trim() || '259198453013';
+
+  _defaultPolicies = { paymentPolicyId, returnPolicyId, fulfillmentPolicyId };
+  return _defaultPolicies;
+}
+
+/**
+ * Reset the cached policy IDs. Useful for testing or when env vars change.
+ */
+export function resetDefaultPolicyIds(): void {
+  _defaultPolicies = null;
+}
+
 export function getAuthUrl(environment: EbayEnvironment): string;
 export function getAuthUrl(
   clientId: string,

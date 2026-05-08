@@ -4,6 +4,7 @@ import {
   validateScopes,
   getEbayConfig,
   getConfiguredEnvironment,
+  getDefaultPolicyIds,
 } from '@/config/environment.js';
 import {
   accountTools,
@@ -1137,12 +1138,8 @@ export async function executeTool(
         const offerData = offer as Record<string, unknown>;
         const sku = offerData?.sku as string | undefined;
         if (sku) {
-          // Default policy IDs (Hankuk Expo)
-          const defaultPolicies = {
-            paymentPolicyId: '259198675013',
-            returnPolicyId: '259198703013',
-            fulfillmentPolicyId: '259198453013',
-          };
+          // Default policy IDs sourced from env vars (Airtable Reference IDs via n8n → Coolify)
+          const defaultPolicies = getDefaultPolicyIds();
           // Fix offer-level fields first
           let needsOfferUpdate = false;
           const offerUpdate: Record<string, unknown> = {
