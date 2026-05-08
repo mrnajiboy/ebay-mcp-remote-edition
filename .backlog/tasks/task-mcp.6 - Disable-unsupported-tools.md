@@ -2,7 +2,8 @@
 id: TASK-MCP.6
 title: Disable unsupported tools for all agents
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-05'
 updated_date: '2026-05-06'
 labels: [config, medium]

@@ -2,7 +2,8 @@
 id: TASK-MCP.4
 title: Add dual endpoint support to ebay_upload_images
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-05'
 updated_date: '2026-05-05'
 labels: [bug, high]

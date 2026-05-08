@@ -2,7 +2,8 @@
 id: TASK-MCP.12
 title: Add Inventory API compatible revise listing flow
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-05'
 updated_date: '2026-05-05'
 labels: [feature, bug, high, inventory-api]

@@ -2,7 +2,8 @@
 id: TASK-MCP.1.1
 title: Add input validation schema for Trading API item fields
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-03'
 updated_date: '2026-05-03'
 labels: [bug, high]

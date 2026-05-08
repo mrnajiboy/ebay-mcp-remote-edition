@@ -2,7 +2,8 @@
 id: TASK-MCP.7
 title: Fix publish_offer XML transform
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-05'
 updated_date: '2026-05-05'
 labels: [bug, medium]

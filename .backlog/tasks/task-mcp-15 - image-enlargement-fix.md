@@ -2,7 +2,8 @@
 id: TASK-MCP.15
 title: Fix createImageFromUrl to process images with sharp before upload
 status: Done
-assignee: [Bruno]
+assignee:
+  - '@Bruno'
 created_date: '2026-05-06'
 updated_date: '2026-05-06'
 labels: [bug, critical]

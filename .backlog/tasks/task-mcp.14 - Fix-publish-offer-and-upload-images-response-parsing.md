@@ -2,7 +2,8 @@
 id: TASK-MCP.14
 title: Fix publish_offer listingPolicies requirement and upload_images response parsing
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-06'
 updated_date: '2026-05-06'
 labels: [bug, high]

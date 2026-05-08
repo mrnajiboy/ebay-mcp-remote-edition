@@ -2,7 +2,8 @@
 id: TASK-MCP.1
 title: Fix ebay_create_listing XML generation
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-03'
 updated_date: '2026-05-05'
 labels: [bug, critical]

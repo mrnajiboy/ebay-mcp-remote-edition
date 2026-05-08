@@ -2,7 +2,8 @@
 id: TASK-MCP.11
 title: Fix get_offers listing behavior
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-05'
 updated_date: '2026-05-05'
 labels: [bug, medium, inventory-api]

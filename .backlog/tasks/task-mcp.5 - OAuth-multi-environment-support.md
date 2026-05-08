@@ -2,7 +2,8 @@
 id: TASK-MCP.5
 title: OAuth multi-environment support for ebay_get_oauth_url
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-05'
 updated_date: '2026-05-05'
 labels: [bug, medium]

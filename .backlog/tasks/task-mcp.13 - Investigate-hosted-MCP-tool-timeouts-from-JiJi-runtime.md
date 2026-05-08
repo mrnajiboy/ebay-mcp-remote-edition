@@ -2,7 +2,8 @@
 id: TASK-MCP.13
 title: Investigate hosted MCP tool timeouts from JiJi runtime
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-05'
 updated_date: '2026-05-06'
 labels: [bug, high, hosted-mcp, transport]

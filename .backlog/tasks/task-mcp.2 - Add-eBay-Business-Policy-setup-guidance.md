@@ -2,7 +2,8 @@
 id: TASK-MCP.2
 title: Add eBay Business Policy setup guidance
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-03'
 updated_date: '2026-05-06'
 labels: [medium]

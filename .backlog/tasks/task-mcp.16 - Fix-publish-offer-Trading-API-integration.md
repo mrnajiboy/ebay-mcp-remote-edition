@@ -2,7 +2,8 @@
 id: TASK-MCP.16
 title: Fix publish_offer Trading API integration with XML transform
 status: Done
-assignee: []
+assignee:
+  - '@Bruno'
 created_date: '2026-05-06'
 updated_date: '2026-05-06'
 labels: [bug, high, trading-api]
