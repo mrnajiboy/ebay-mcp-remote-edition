@@ -421,16 +421,21 @@ let _defaultPolicies: DefaultPolicyIds | null = null;
 export function getDefaultPolicyIds(): DefaultPolicyIds {
   if (_defaultPolicies) return _defaultPolicies;
 
-  const paymentPolicyId =
-    (process.env.EBAY_DEFAULT_PAYMENT_POLICY_ID ?? '').trim() || '259198675013';
-  const returnPolicyId = (process.env.EBAY_DEFAULT_RETURN_POLICY_ID ?? '').trim() || '259198703013';
-  const fulfillmentPolicyId =
-    (process.env.EBAY_DEFAULT_FULFILLMENT_POLICY_ID ?? '').trim() || '259198453013';
+  const paymentPolicyId = (process.env.EBAY_DEFAULT_PAYMENT_POLICY_ID ?? '').trim();
+  const returnPolicyId = (process.env.EBAY_DEFAULT_RETURN_POLICY_ID ?? '').trim();
+  const fulfillmentPolicyId = (process.env.EBAY_DEFAULT_FULFILLMENT_POLICY_ID ?? '').trim();
+
+  if (!paymentPolicyId || !returnPolicyId || !fulfillmentPolicyId) {
+    throw new Error(
+      'Missing eBay policy IDs. Set EBAY_DEFAULT_PAYMENT_POLICY_ID, ' +
+        'EBAY_DEFAULT_RETURN_POLICY_ID, and EBAY_DEFAULT_FULFILLMENT_POLICY_ID ' +
+        'env vars (sourced from Airtable Reference IDs via n8n → Coolify).'
+    );
+  }
 
   _defaultPolicies = { paymentPolicyId, returnPolicyId, fulfillmentPolicyId };
   return _defaultPolicies;
 }
-
 /**
  * Reset the cached policy IDs. Useful for testing or when env vars change.
  */
