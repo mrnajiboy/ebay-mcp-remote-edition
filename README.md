@@ -301,7 +301,7 @@ UPSTASH_REDIS_REST_TOKEN=
 # eBay Research session-expiry alerts (optional but recommended when using
 # first-party research in hosted mode)
 TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=1574052684
+TELEGRAM_CHAT_ID=
 QSTASH_URL=
 QSTASH_TOKEN=
 QSTASH_CURRENT_SIGNING_KEY=
