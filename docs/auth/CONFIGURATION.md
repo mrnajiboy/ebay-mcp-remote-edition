@@ -15,10 +15,14 @@ This guide provides detailed instructions for configuring the eBay MCP server, i
 
 ## Overview
 
-The eBay MCP server requires configuration through environment variables stored in a `.env` file. These variables control authentication, API endpoints, and token management. The server supports two authentication methods:
+The eBay MCP server can run in two modes:
 
-1. **Client Credentials Flow** (Default) - Lower rate limits (1,000 requests/day)
-2. **OAuth 2.0 Authorization Code Grant Flow** (Recommended) - Higher rate limits (10,000-50,000 requests/day)
+| Mode | Command | Transport | Typical authorization |
+|------|---------|-----------|-----------------------|
+| Local STDIO | `pnpm start` or `pnpm run dev` | stdin/stdout | The local process reads eBay credentials and optional `EBAY_USER_REFRESH_TOKEN` from environment variables. |
+| Hosted HTTP | `pnpm run start:http` or `pnpm run dev:http` | Streamable HTTP | Users authorize in a browser and call MCP with `Authorization: Bearer <session-token>`. Admin tooling may use the documented admin-key bypass. |
+
+Local STDIO supports the eBay client credentials and OAuth user-token flows described below. Hosted HTTP adds OAuth 2.1 discovery, environment-scoped route trees, persistent multi-user token/session storage, and admin/validation endpoints.
 
 ## Environment Variables
 
@@ -48,18 +52,19 @@ These credentials are obtained from the [eBay Developer Portal](https://develope
 - **Required:** Yes (for all authentication methods)
 - **Security:** ⚠️ **KEEP THIS SECRET** - Never commit this to version control or share it publicly
 
-#### `EBAY_REDIRECT_URI`
+#### `EBAY_RUNAME`, `EBAY_REDIRECT_URI`, and the public Redirect URL
 
-- **Description:** Your RuName (Redirect URL name) registered with your eBay application
+- **Description:** Your RuName (Redirect URL name) registered with your eBay application. `EBAY_RUNAME` is the eBay-generated identifier used as eBay's OAuth `redirect_uri` value. The public Redirect URL / callback URL is a separate HTTPS URL registered in the eBay Developer Portal and served by this project at `/oauth/callback` under `PUBLIC_BASE_URL`.
 - **Where to Find:**
   1. Log in to [eBay Developer Portal](https://developer.ebay.com/)
   2. Navigate to **My Account** → **OAuth Settings** or visit:
      - Sandbox: https://developer.ebay.com/my/auth?env=sandbox&index=0
      - Production: https://developer.ebay.com/my/auth?env=production&index=0
   3. Find your **RuName** (Redirect URL name) - it will look like: `YourAppId-YourAppId-abc-def-ghi`
-- **Example:** `YourAppId-YourAppId-abc-def-ghi`
+- **Example:** `YourAppId-YourAppId-SB-abc-def-ghi` or `YourAppId-YourAppId-PR-abc-def-ghi`
 - **Required:** Yes (for OAuth user token flow)
-- **Important:** This is **NOT** a full URL - it's just the RuName identifier. The server constructs the full redirect URL automatically.
+- **Important:** The RuName is **NOT** a full URL. The public Redirect URL is **NOT** a RuName. They serve different purposes and must not be used as fallbacks for each other.
+- **Compatibility:** `EBAY_REDIRECT_URI` is a legacy environment variable name. Prefer `EBAY_RUNAME` (or `EBAY_SANDBOX_RUNAME` / `EBAY_PRODUCTION_RUNAME`) for the RuName and use `PUBLIC_BASE_URL` to configure the browser callback URL.
 
 #### `EBAY_ENVIRONMENT`
 
@@ -67,8 +72,8 @@ These credentials are obtained from the [eBay Developer Portal](https://develope
 - **Valid Values:**
   - `sandbox` - For testing and development (recommended for initial setup)
   - `production` - For live eBay marketplace operations
-- **Default:** `sandbox` (if not specified)
-- **Required:** Yes
+- **Default:** Source falls back to `production` when both `EBAY_ENVIRONMENT` and `EBAY_DEFAULT_ENVIRONMENT` are unset; keep this set explicitly.
+- **Required:** Recommended for predictable behavior
 - **Recommendation:** Start with `sandbox` for testing, then switch to `production` when ready
 
 #### `EBAY_MARKETPLACE_ID`
@@ -98,6 +103,66 @@ These credentials are obtained from the [eBay Developer Portal](https://develope
 - **Lifespan:** Typically 18 months (varies by eBay account)
 - **Security:** ⚠️ **KEEP THIS SECRET** - This token provides long-term access to your eBay account
 - **Note:** Once set, the server automatically uses this to refresh access tokens when they expire
+
+
+### Hosted HTTP Environment Variables
+
+Hosted HTTP uses `pnpm run start:http` after `pnpm run build` or `pnpm run dev:http` during development.
+
+#### Required for hosted HTTP
+
+| Variable | Required when | Notes |
+|----------|---------------|-------|
+| `PUBLIC_BASE_URL` | Hosted OAuth is enabled | Public origin used for discovery URLs and `/oauth/callback`; examples: `https://your-server.com` or local `https://ebay-local.test:3000`. This is the source for the public Redirect URL and is not a RuName fallback. |
+| `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | Unless `EBAY_CONFIG_FILE` supplies credentials | Generic credentials used when environment-specific credentials are absent. |
+| `EBAY_RUNAME` | Unless per-env variables or `EBAY_CONFIG_FILE` supplies values | eBay-generated RuName identifier. Do not set this to the public Redirect URL. |
+| `EBAY_TOKEN_STORE_BACKEND` plus backend credentials | Hosted multi-user sessions | Defaults to `cloudflare-kv` if unset. Use `cloudflare-kv` with `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_KV_NAMESPACE_ID`, `CLOUDFLARE_API_TOKEN`, or `upstash-redis` with `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`. |
+| `ADMIN_API_KEY` | Admin routes, validation routes, or MCP admin bypass | Required by `/admin/*` and `/validation/*`; also enables privileged MCP `Authorization: Bearer <ADMIN_API_KEY>` bypass. |
+
+#### Optional hosted HTTP variables
+
+| Variable | Behavior |
+|----------|----------|
+| `PORT` | HTTP listen port; defaults to `3000`. Hosted platforms commonly inject this. |
+| `MCP_HOST` | Bind host; defaults to `0.0.0.0`. |
+| `EBAY_ENVIRONMENT` / `EBAY_DEFAULT_ENVIRONMENT` | Root and legacy route environment selection. `EBAY_ENVIRONMENT` wins; source fallback is `production`. |
+| `EBAY_PRODUCTION_CLIENT_ID`, `EBAY_PRODUCTION_CLIENT_SECRET`, `EBAY_PRODUCTION_RUNAME`, `EBAY_PRODUCTION_REDIRECT_URI` | Production-specific credential overrides. Prefer `EBAY_PRODUCTION_RUNAME`; `EBAY_PRODUCTION_REDIRECT_URI` is a legacy variable name and is not the public callback URL. |
+| `EBAY_SANDBOX_CLIENT_ID`, `EBAY_SANDBOX_CLIENT_SECRET`, `EBAY_SANDBOX_RUNAME`, `EBAY_SANDBOX_REDIRECT_URI` | Sandbox-specific credential overrides. Prefer `EBAY_SANDBOX_RUNAME`; `EBAY_SANDBOX_REDIRECT_URI` is a legacy variable name and is not the public callback URL. |
+| `EBAY_CONFIG_FILE` | Path to a JSON file with `production` and/or `sandbox` credential objects. |
+| `OAUTH_START_KEY` | Optional shared secret for `/oauth/start`; implementation accepts `X-OAuth-Start-Key: <key>` or `?key=<key>`. |
+| `SESSION_TTL_SECONDS` | Hosted session lifetime in seconds; default is 30 days. |
+| `EBAY_MARKETPLACE_ID`, `EBAY_CONTENT_LANGUAGE` | API defaults; source defaults are `EBAY_US` and `en-US`. |
+| `VALIDATION_RUNNER_USER_ID`, `VALIDATION_RUNNER_USER_ID_SANDBOX`, `VALIDATION_RUNNER_USER_ID_PRODUCTION` | Required only for `/validation/run` and `/validation/health` to find a stored runner user. |
+| `SOLD_ITEMS_API_URL`, `SOLD_ITEMS_API_KEY`, `PERPLEXITY_API_KEY`, `TWITTER_BEARER_TOKEN`, `YOUTUBE_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | Optional validation providers. |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL` | Optional eBay Research session expiry alerting. |
+
+#### Admin key authorization behavior
+
+`ADMIN_API_KEY` is intentionally privileged and has two implemented authorization paths:
+
+| Use | Exact name accepted by source | Applies to |
+|-----|-------------------------------|------------|
+| Admin and validation routes | `X-Admin-API-Key: <ADMIN_API_KEY>` HTTP header | `/admin/session/:sessionToken`, `/admin/session/:sessionToken/revoke`, `/admin/session/:sessionToken`, `/sandbox/validation/*`, `/production/validation/*`, and legacy `/validation/*`. |
+| Hosted MCP bypass | `Authorization: Bearer <ADMIN_API_KEY>` HTTP header | `/sandbox/mcp`, `/production/mcp`, and legacy `/mcp`. |
+
+No admin-key query parameter, body field, or alternate environment variable name is implemented. When used as a hosted MCP Bearer token, the server does not look up a hosted session. It sets the request context to `userId: admin`, uses the requested environment, and continues to MCP handling.
+
+Security requirements:
+
+- Treat `ADMIN_API_KEY` as a root credential for this MCP server.
+- Use a long, random value stored in a deployment secret manager.
+- Use it only for server-to-server automation, operational checks, or tightly controlled admin tooling.
+- Do not expose it to browsers, desktop MCP clients used by regular users, logs, or screenshots.
+- OAuth browser authorization and hosted session tokens remain the normal user authorization path.
+
+#### OAuth start key behavior
+
+If `OAUTH_START_KEY` is configured, `/oauth/start` accepts only:
+
+- `X-OAuth-Start-Key: <OAUTH_START_KEY>`
+- `?key=<OAUTH_START_KEY>`
+
+The server appends `key=<OAUTH_START_KEY>` to generated `authorization_url` values when returning unauthenticated MCP responses. No request-body field is implemented for this key.
 
 ### Auto-Generated (Do Not Set Manually)
 
@@ -139,13 +204,13 @@ These variables are automatically managed by the server. You should **NOT** set 
 5. Save your credentials:
    - **App ID (Client ID)** → This is your `EBAY_CLIENT_ID`
    - **Cert ID (Client Secret)** → This is your `EBAY_CLIENT_SECRET`
-   - **RuName (Redirect URI)** → This is your `EBAY_REDIRECT_URI`
+   - **RuName (Redirect URL name)** → This is your `EBAY_RUNAME`; it is distinct from the public Redirect URL callback
 
 ### Step 3: Configure OAuth Settings
 
 1. Navigate to **My Account** → **OAuth Settings**
 2. Verify your **RuName (Redirect URL name)** is correctly configured
-3. Note the RuName value - this is what you'll use for `EBAY_REDIRECT_URI`
+3. Note the RuName value - this is what you'll use for `EBAY_RUNAME`; keep the public Redirect URL configured separately through `PUBLIC_BASE_URL`
 
 ## Authentication Methods
 
@@ -188,7 +253,7 @@ These variables are automatically managed by the server. You should **NOT** set 
 
 - `EBAY_CLIENT_ID`
 - `EBAY_CLIENT_SECRET`
-- `EBAY_REDIRECT_URI` (RuName)
+- `EBAY_RUNAME` (environment-specific variants are also supported)
 - `EBAY_ENVIRONMENT`
 - `EBAY_USER_REFRESH_TOKEN` (obtained through OAuth flow)
 
@@ -220,7 +285,7 @@ Before starting the OAuth flow, ensure you have:
 
 - ✅ `EBAY_CLIENT_ID` set in your `.env` file
 - ✅ `EBAY_CLIENT_SECRET` set in your `.env` file
-- ✅ `EBAY_REDIRECT_URI` (RuName) set in your `.env` file
+- ✅ `EBAY_RUNAME` set to your RuName in your `.env` file
 - ✅ `EBAY_ENVIRONMENT` set to `sandbox` or `production`
 
 ### Step-by-Step OAuth Flow
@@ -236,7 +301,7 @@ Ask your AI assistant to generate an OAuth authorization URL:
 **What Happens:**
 
 - The AI assistant uses the `ebay_get_oauth_url` tool
-- The tool reads your `EBAY_CLIENT_ID`, `EBAY_REDIRECT_URI`, and `EBAY_ENVIRONMENT` from your `.env` file
+- The tool reads your `EBAY_CLIENT_ID`, RuName/redirect setting, and `EBAY_ENVIRONMENT` from your `.env` file
 - An authorization URL is generated with the appropriate scopes for your environment
 
 **Response:**
@@ -487,7 +552,9 @@ EBAY_CONTENT_LANGUAGE=en-US
 # Required: eBay Application Credentials
 EBAY_CLIENT_ID=YourAppId-Prod-1234-5678-90ab-cdef
 EBAY_CLIENT_SECRET=YourAppId-Prod-1234-5678-90ab-cdef-YourSecretKey
-EBAY_REDIRECT_URI=YourAppId-YourAppId-abc-def-ghi
+EBAY_RUNAME=YourAppId-YourAppId-SB-abc-def-ghi
+EBAY_REDIRECT_URI=
+PUBLIC_BASE_URL=https://ebay-local.test:3000
 EBAY_ENVIRONMENT=sandbox
 EBAY_MARKETPLACE_ID=EBAY_US
 EBAY_CONTENT_LANGUAGE=en-US
@@ -508,7 +575,9 @@ EBAY_USER_REFRESH_TOKEN=v^1.1#r^1#i^1#p^3#I^3#f^0#t^H4sIAAAAAAAAAOVXa2...
 # .env file
 EBAY_CLIENT_ID=YourAppId-Prod-1234-5678-90ab-cdef
 EBAY_CLIENT_SECRET=YourAppId-Prod-1234-5678-90ab-cdef-YourSecretKey
-EBAY_REDIRECT_URI=YourAppId-YourAppId-abc-def-ghi
+EBAY_RUNAME=YourAppId-YourAppId-PR-abc-def-ghi
+EBAY_REDIRECT_URI=
+PUBLIC_BASE_URL=https://your-server.com
 EBAY_ENVIRONMENT=production
 EBAY_MARKETPLACE_ID=EBAY_US
 EBAY_CONTENT_LANGUAGE=en-US
@@ -600,13 +669,14 @@ New MCP session initialized
 
 #### "Redirect URI is required"
 
-**Problem:** `EBAY_REDIRECT_URI` is missing or incorrect.
+**Problem:** eBay OAuth could not resolve the RuName identifier or the public callback URL is not registered correctly.
 
 **Solution:**
 
 1. Verify your RuName in the [eBay Developer Portal](https://developer.ebay.com/my/auth)
-2. Ensure `EBAY_REDIRECT_URI` is set to your RuName (not a full URL)
-3. The RuName should look like: `YourAppId-YourAppId-abc-def-ghi`
+2. Ensure `EBAY_RUNAME` is set to your RuName (not a full URL)
+3. Ensure `PUBLIC_BASE_URL` points to the public origin whose `/oauth/callback` URL is registered with eBay
+4. The RuName should look like: `YourAppId-YourAppId-SB-abc-def-ghi` or `YourAppId-YourAppId-PR-abc-def-ghi`
 
 #### "Failed to exchange code for token"
 
@@ -623,7 +693,7 @@ New MCP session initialized
 
 1. Generate a new authorization URL and try again
 2. Ensure you copy the **entire** code value from the redirect URL
-3. Verify your `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, and `EBAY_REDIRECT_URI` are correct
+3. Verify your `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_RUNAME`, and registered public Redirect URL are correct
 4. Check that you're using the same environment (sandbox/production) for the OAuth flow
 
 #### "Failed to refresh access token"
@@ -638,7 +708,7 @@ New MCP session initialized
 
 **Solution:**
 
-1. Run `npm run diagnose` to check token status
+1. Run `pnpm run diagnose` to check token status
 2. If the refresh token is expired, complete the OAuth flow again to get a new one
 3. Verify the refresh token format starts with `v^1.1#`
 4. Check your eBay Developer Portal for any account restrictions
@@ -680,7 +750,7 @@ The server includes diagnostic tools to help troubleshoot configuration issues:
 #### Interactive Diagnostics
 
 ```bash
-npm run diagnose
+pnpm run diagnose
 ```
 
 This interactive tool checks:
@@ -691,14 +761,6 @@ This interactive tool checks:
 - Token validity
 - Available scopes and permissions
 
-#### Export Diagnostic Report
-
-```bash
-npm run diagnose:export
-```
-
-Exports a detailed diagnostic report that you can share when seeking help.
-
 ### Getting Help
 
 If you're still experiencing issues:
@@ -708,7 +770,7 @@ If you're still experiencing issues:
    - Search [GitHub Discussions](https://github.com/mrnajiboy/ebay-mcp-remote-edition/discussions)
 
 2. **Create a New Issue:**
-   - Include your diagnostic report (`npm run diagnose:export`)
+   - Include your diagnostic output from `pnpm run diagnose`
    - Provide steps to reproduce the problem
    - Include error messages or logs
    - Specify your environment (OS, Node version, MCP client)
@@ -726,7 +788,7 @@ The HTTP server (`pnpm run start:http`) exposes **dedicated route trees for each
 |------|-------------|
 | `POST/GET/DELETE /sandbox/mcp` | Always sandbox |
 | `POST/GET/DELETE /production/mcp` | Always production |
-| `POST/GET/DELETE /mcp` | Auto-detect from `?env=` or `EBAY_ENVIRONMENT` (legacy) |
+| `POST/GET/DELETE /mcp` | Auto-detect from `?env=`, resource/RuName signals, or `EBAY_ENVIRONMENT` (legacy) |
 
 Each scoped path has its own OAuth 2.1 discovery document:
 
@@ -745,7 +807,23 @@ GET /oauth/start?env=sandbox    # legacy
 GET /oauth/start?env=production # legacy
 ```
 
-eBay's callback URL (`/oauth/callback`) is always at the root because eBay requires a single registered redirect URI per application. The environment is recovered from the OAuth state record stored at flow-start time.
+eBay's callback URL (`/oauth/callback`) is always at the root because eBay requires a single registered redirect URI per application. The environment is recovered from the OAuth state record stored at flow-start time. If `OAUTH_START_KEY` is configured, start URLs require `X-OAuth-Start-Key` or `?key=`.
+
+### Hosted MCP authorization
+
+Normal hosted MCP calls use:
+
+```text
+Authorization: Bearer <session-token>
+```
+
+Privileged admin automation may instead use:
+
+```text
+Authorization: Bearer <ADMIN_API_KEY>
+```
+
+That bypass is limited to the MCP endpoints and is separate from the `X-Admin-API-Key` header required by admin and validation HTTP routes.
 
 ---
 
@@ -798,7 +876,7 @@ The `expiresAt` field is now included in the session introspection response:
 - [eBay Developer Portal](https://developer.ebay.com/) - API documentation and credentials
 - [eBay API License Agreement](https://developer.ebay.com/join/api-license-agreement) - Terms of use
 - [eBay Data Handling Requirements](https://developer.ebay.com/api-docs/static/data-handling-update.html) - Data protection guidelines
-- [Main README](../README.md) - Project overview and quick start
+- [Main README](../../README.md) - Project overview and quick start
 - [OAuth Setup Guide](./) - Additional OAuth documentation
 
 ---

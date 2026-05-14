@@ -167,7 +167,7 @@ Once you have your policy IDs, use them when creating offers:
 ```json
 {
   "sku": "YOUR_ITEM_SKU",
-  "marketplaceId": "EBAY-US",
+  "marketplaceId": "EBAY_US",
   "format": "FixedPriceItem",
   "availableQuantity": 10,
   "categoryId": "15032",

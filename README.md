@@ -51,12 +51,12 @@ This is an open-source project provided "as is" without warranty of any kind. No
 
 ## Choose a runtime mode
 
-| Mode | Transport | Best for |
-|------|-----------|----------|
-| **Local STDIO** | stdin/stdout | Single-user local AI client (Claude Desktop, Cline, Cursor, etc.) |
-| **Hosted HTTP** | Streamable HTTP | Multi-user server deployment; remote MCP clients |
+| Mode | Command | Transport | Best for | Authorization model |
+|------|---------|-----------|----------|---------------------|
+| **Local STDIO** | `pnpm start` / `pnpm run dev` | stdin/stdout | Single-user local AI client (Claude Desktop, Cline, Cursor, etc.) | The local process reads eBay credentials and optional `EBAY_USER_REFRESH_TOKEN` from environment variables. |
+| **Hosted HTTP** | `pnpm run start:http` / `pnpm run dev:http` | Streamable HTTP | Multi-user server deployment; remote MCP clients | Users normally authorize through the browser OAuth flow and then call MCP with `Authorization: Bearer <session-token>`. |
 
-Both modes use the same eBay tools. Local reads credentials from `.env`. Hosted handles multi-user OAuth server-side with session tokens.
+Both modes use the same eBay tool registry. Local STDIO is best when one trusted local client owns the eBay credentials. Hosted HTTP runs an Express server with OAuth 2.1 discovery, environment-scoped route trees, server-side token/session storage, and admin-only operational endpoints.
 
 ---
 
@@ -70,9 +70,9 @@ Both modes use the same eBay tools. Local reads credentials from `.env`. Hosted 
 **Getting credentials:**
 1. Log in to [eBay Developer Portal](https://developer.ebay.com/my/keys)
 2. Create an application, copy **App ID (Client ID)** and **Cert ID (Client Secret)**
-3. Under **User Tokens → Add RuName**, register your OAuth callback URL and copy the **RuName** string
+3. Under **User Tokens → Add RuName**, register your public HTTPS OAuth callback URL and copy the generated **RuName** string
 
-> **`EBAY_RUNAME` is the RuName string eBay generates, not the callback URL.** It looks like `YourApp-YourApp-SBX-abcdefghi`.
+> **`EBAY_RUNAME` and the public Redirect URL are distinct.** `EBAY_RUNAME` is the eBay-generated RuName string used as eBay's OAuth `redirect_uri` identifier (for example, `YourApp-YourApp-SB-abcdefghi`). The public Redirect URL is the real browser callback URL you register in eBay, such as `https://your-server.com/oauth/callback` or `https://ebay-local.test:3000/oauth/callback`; it is derived from `PUBLIC_BASE_URL` in this project. Do not use either value as a fallback for the other.
 
 ### HTTPS callback URL (required by eBay)
 
@@ -151,7 +151,8 @@ Create `.env` (see `.env.example`):
 ```bash
 EBAY_CLIENT_ID=your_client_id
 EBAY_CLIENT_SECRET=your_client_secret
-EBAY_RUNAME=your_runame_string
+EBAY_RUNAME=your_runame_string       # eBay-generated RuName, not a URL
+EBAY_REDIRECT_URI=                  # legacy env name; do not set to the public callback URL
 EBAY_ENVIRONMENT=sandbox           # or production
 EBAY_MARKETPLACE_ID=EBAY_US        # optional, defaults to EBAY_US
 EBAY_CONTENT_LANGUAGE=en-US        # optional, defaults to en-US
@@ -186,6 +187,7 @@ pnpm run setup --diagnose  # connectivity and token checks only
         "EBAY_CLIENT_SECRET": "YOUR_CLIENT_SECRET",
         "EBAY_ENVIRONMENT": "sandbox",
         "EBAY_RUNAME": "YOUR_RUNAME",
+        "EBAY_REDIRECT_URI": "",
         "EBAY_USER_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN"
       }
     }
@@ -210,44 +212,56 @@ Zed, Windsurf, Continue.dev, Roo Code, and Amazon Q follow the same `mcpServers`
 
 ### Environment variables
 
+Hosted HTTP reads the same eBay credential variables as local STDIO plus the HTTP, storage, and security variables below. The start script is `pnpm run start:http`; development uses `pnpm run dev:http`.
+
 ```bash
-# Server
-PORT=3000
-MCP_HOST=0.0.0.0
+# Required for hosted OAuth URLs and eBay callback registration
 PUBLIC_BASE_URL=https://your-server.com
-EBAY_DEFAULT_ENVIRONMENT=production
 
-# Token storage backend (required for multi-user)
+# Required eBay credentials unless EBAY_CONFIG_FILE provides them
+EBAY_CLIENT_ID=
+EBAY_CLIENT_SECRET=
+EBAY_RUNAME=
+EBAY_REDIRECT_URI=                  # legacy env name; not the public callback URL
+# Recommended when serving both environments from one host
+EBAY_PRODUCTION_CLIENT_ID=
+EBAY_PRODUCTION_CLIENT_SECRET=
+EBAY_PRODUCTION_RUNAME=
+EBAY_PRODUCTION_REDIRECT_URI=
+EBAY_SANDBOX_CLIENT_ID=
+EBAY_SANDBOX_CLIENT_SECRET=
+EBAY_SANDBOX_RUNAME=
+EBAY_SANDBOX_REDIRECT_URI=
+
+# Required for hosted multi-user token/session persistence
 EBAY_TOKEN_STORE_BACKEND=upstash-redis  # cloudflare-kv | upstash-redis | memory
+UPSTASH_REDIS_REST_URL=                 # required when backend is upstash-redis
+UPSTASH_REDIS_REST_TOKEN=               # required when backend is upstash-redis
+CLOUDFLARE_ACCOUNT_ID=                  # required when backend is cloudflare-kv
+CLOUDFLARE_KV_NAMESPACE_ID=             # required when backend is cloudflare-kv
+CLOUDFLARE_API_TOKEN=                   # required when backend is cloudflare-kv
 
-# Upstash Redis
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
+# Required for admin/validation endpoints and privileged MCP bypass
+ADMIN_API_KEY=
 
-# Cloudflare KV
-CLOUDFLARE_ACCOUNT_ID=
-CLOUDFLARE_KV_NAMESPACE_ID=
-CLOUDFLARE_API_TOKEN=
+# Optional HTTP/server behavior
+PORT=3000                               # defaults to 3000; many hosts inject this
+MCP_HOST=0.0.0.0                        # defaults to 0.0.0.0
+EBAY_ENVIRONMENT=production             # root/legacy default selector
+EBAY_DEFAULT_ENVIRONMENT=production     # fallback when EBAY_ENVIRONMENT is unset
+SESSION_TTL_SECONDS=2592000             # default: 30 days
+OAUTH_START_KEY=                        # optional gate for /oauth/start
+EBAY_CONFIG_FILE=/etc/secrets/ebay-config.json
+EBAY_MARKETPLACE_ID=EBAY_US
+EBAY_CONTENT_LANGUAGE=en-US
+EBAY_LOG_LEVEL=info
 
-# Research session alerts (optional)
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-QSTASH_URL=
-QSTASH_TOKEN=
-QSTASH_CURRENT_SIGNING_KEY=
-QSTASH_NEXT_SIGNING_KEY=
-EBAY_RESEARCH_SESSION_ALERTS_ENABLED=true
-EBAY_RESEARCH_SESSION_ALERT_WINDOW_24H=true
-EBAY_RESEARCH_SESSION_ALERT_WINDOW_6H=true
-EBAY_RESEARCH_SESSION_ALERT_ON_EXPIRED=true
-EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL=
-
-# Validation runner identity
+# Optional validation runner identity
 VALIDATION_RUNNER_USER_ID=
 VALIDATION_RUNNER_USER_ID_SANDBOX=
 VALIDATION_RUNNER_USER_ID_PRODUCTION=
 
-# External providers (optional)
+# Optional validation/research providers and alerts
 SOLD_ITEMS_API_URL=
 SOLD_ITEMS_API_KEY=
 PERPLEXITY_API_KEY=
@@ -256,22 +270,17 @@ YOUTUBE_API_KEY=
 REDDIT_CLIENT_ID=
 REDDIT_CLIENT_SECRET=
 REDDIT_USER_AGENT=
-
-# Security
-ADMIN_API_KEY=              # required for admin endpoints
-OAUTH_START_KEY=            # optional; protects /oauth/start
-
-# Session TTL (default: 30 days)
-SESSION_TTL_SECONDS=2592000
-
-# Credentials (prefer secret file)
-EBAY_CONFIG_FILE=/etc/secrets/ebay-config.json
-
-# Logging
-EBAY_LOG_LEVEL=info
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+QSTASH_URL=
+QSTASH_TOKEN=
+QSTASH_CURRENT_SIGNING_KEY=
+QSTASH_NEXT_SIGNING_KEY=
+EBAY_RESEARCH_SESSION_ALERTS_ENABLED=true
+EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL=
 ```
 
-> Use `EBAY_TOKEN_STORE_BACKEND=memory` only for local dev — all tokens are lost on restart.
+> `EBAY_TOKEN_STORE_BACKEND` defaults to Cloudflare KV when unset or unrecognized. Use `memory` only for tests or throwaway local development because hosted sessions and tokens are lost on restart.
 
 ### Secret file
 
@@ -282,12 +291,14 @@ Mount a JSON file with credentials (e.g., Render Secret File at `/etc/secrets/eb
   "production": {
     "clientId": "PROD_CLIENT_ID",
     "clientSecret": "PROD_CLIENT_SECRET",
-    "redirectUri": "YOUR_PRODUCTION_RUNAME"
+    "redirectUri": "YOUR_PRODUCTION_RUNAME",
+    "ruName": "YOUR_PRODUCTION_RUNAME"
   },
   "sandbox": {
     "clientId": "SANDBOX_CLIENT_ID",
     "clientSecret": "SANDBOX_CLIENT_SECRET",
-    "redirectUri": "YOUR_SANDBOX_RUNAME"
+    "redirectUri": "YOUR_SANDBOX_RUNAME",
+    "ruName": "YOUR_SANDBOX_RUNAME"
   }
 }
 ```
@@ -308,7 +319,7 @@ GET /sandbox/oauth/start      # sandbox browser login
 GET /production/oauth/start   # production browser login
 ```
 
-If `OAUTH_START_KEY` is set, append `?key=YOUR_KEY` or header `X-OAuth-Start-Key`.
+If `OAUTH_START_KEY` is set, start URLs require either `?key=YOUR_KEY` or the `X-OAuth-Start-Key: YOUR_KEY` header. The server also includes this key as `key` in generated `authorization_url` values for unauthenticated MCP requests.
 
 After login, the callback page shows your **session token** with copy buttons.
 
@@ -333,13 +344,31 @@ Each includes OAuth 2.1 discovery: `GET /sandbox/.well-known/oauth-authorization
 
 **Legacy auto-detect:**
 ```
-POST/GET/DELETE /mcp   # resolves from ?env= or EBAY_DEFAULT_ENVIRONMENT
+POST/GET/DELETE /mcp   # resolves from ?env= or EBAY_ENVIRONMENT/EBAY_DEFAULT_ENVIRONMENT
 ```
 
 **Auth behavior:**
 - `GET /mcp` without token → redirects to `oauth/start`
-- `POST /mcp` without token → `401` JSON with `authorization_url`
-- All requests: `Authorization: Bearer <session-token>`
+- `POST /mcp` without token → `401` JSON with `authorization_url`, `resource_metadata`, and a `WWW-Authenticate` Bearer challenge
+- Normal user requests: `Authorization: Bearer <session-token>`
+- Privileged admin bypass: `Authorization: Bearer <ADMIN_API_KEY>` when `ADMIN_API_KEY` is configured
+
+#### Admin key bypass
+
+`ADMIN_API_KEY` is used in two distinct ways:
+
+| Use | Exact implementation | Scope |
+|-----|----------------------|-------|
+| Admin/validation HTTP routes | `X-Admin-API-Key: <ADMIN_API_KEY>` header | Required for `/admin/session/:sessionToken`, `/admin/session/:sessionToken/revoke`, `/admin/session/:sessionToken`, `/sandbox/validation/*`, `/production/validation/*`, and legacy `/validation/*`. |
+| MCP authorization bypass | `Authorization: Bearer <ADMIN_API_KEY>` header | Lets privileged server-to-server/admin tooling call `/sandbox/mcp`, `/production/mcp`, or `/mcp` without a hosted user session lookup. The request runs with `userId` set to `admin` and the requested environment. |
+
+The admin bypass does **not** use query parameters or request body fields. `ADMIN_API_KEY` must be configured on the server; if it is unset, admin HTTP routes return `500` and the MCP bypass is disabled.
+
+Security caveats:
+- Treat `ADMIN_API_KEY` as a privileged root credential for this MCP server.
+- Generate a long, random value and store it only in your deployment secret manager.
+- Use it only for server-to-server automation, operational checks, or admin tooling. Do not ship it to browsers, desktop clients, or regular users.
+- OAuth browser authorization and hosted session tokens remain the normal path for user MCP access.
 
 **Utility endpoints:**
 
@@ -361,7 +390,7 @@ GET  /sandbox/validation/health       # check runner status
 GET  /production/validation/health
 ```
 
-Both require `X-Admin-API-Key`. The server impersonates the configured validation runner user from `VALIDATION_RUNNER_USER_ID` env vars.
+Both require `X-Admin-API-Key: <ADMIN_API_KEY>`. The server impersonates the configured validation runner user from `VALIDATION_RUNNER_USER_ID` env vars.
 
 See [Validation architecture](#validation-architecture) below for provider details.
 
@@ -582,6 +611,11 @@ curl -H "Authorization: Bearer <token>" https://your-server.com/whoami
 curl https://your-server.com/sandbox/validation/health \
   -H "X-Admin-API-Key: YOUR_ADMIN_API_KEY"
 
+# Privileged MCP admin-key bypass check
+curl https://your-server.com/sandbox/mcp \
+  -H "Authorization: Bearer YOUR_ADMIN_API_KEY" \
+  -H "Accept: application/json, text/event-stream"
+
 # MCP auth challenge test
 curl -X POST https://your-server.com/sandbox/mcp \
   -H "Content-Type: application/json" \
@@ -645,7 +679,8 @@ After deploying new code, agents' MCP sessions may still point to old container 
 ## Security checklist
 
 - Do not commit `.env` or session tokens
-- Protect `/oauth/start` with `OAUTH_START_KEY`, `/admin/*` with `ADMIN_API_KEY`
+- Protect `/oauth/start` with `OAUTH_START_KEY`, `/admin/*` and `/validation/*` with `ADMIN_API_KEY`
+- Keep `ADMIN_API_KEY` long, random, server-side only, and separate from user session tokens; it also works as a privileged MCP Bearer-token bypass
 - Keep `/oauth/callback` publicly reachable (eBay redirects here)
 - Keep `/health` reachable for deployment health checks
 - Rotate exposed eBay credentials and update secret file

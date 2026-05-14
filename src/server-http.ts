@@ -221,7 +221,7 @@ async function createUserScopedApi(
 // requirement.
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
-function createApp(): express.Application {
+export function createApp(): express.Application {
   const app = express();
   app.disable('x-powered-by');
   const currentFilename = fileURLToPath(import.meta.url);
@@ -1138,14 +1138,28 @@ function mountEnvRouter(
       sendAuthorizationRequired('missing_session_token');
       return;
     }
-    const sessionToken = authHeader.slice('Bearer '.length).trim();
+    const bearerToken = authHeader.slice('Bearer '.length).trim();
 
-    const session = await authStore.getSession(sessionToken);
+    if (CONFIG.adminApiKey && bearerToken === CONFIG.adminApiKey) {
+      (
+        req as express.Request & {
+          userContext?: { userId: string; environment: EbayEnvironment; sessionToken: string };
+        }
+      ).userContext = {
+        userId: 'admin',
+        environment: requestedEnv,
+        sessionToken: '__admin__',
+      };
+      next();
+      return;
+    }
+
+    const session = await authStore.getSession(bearerToken);
     if (!session || session.revokedAt) {
       sendAuthorizationRequired('invalid_session_token');
       return;
     }
-    await authStore.touchSession(sessionToken);
+    await authStore.touchSession(bearerToken);
     (
       req as express.Request & {
         userContext?: { userId: string; environment: EbayEnvironment; sessionToken: string };
@@ -1153,7 +1167,7 @@ function mountEnvRouter(
     ).userContext = {
       userId: session.userId,
       environment: session.environment,
-      sessionToken,
+      sessionToken: bearerToken,
     };
     next();
   };

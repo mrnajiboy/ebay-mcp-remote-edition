@@ -6,6 +6,8 @@ Use this CLEAN format (no excessive URL encoding):
 https://auth.ebay.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&response_type=code&redirect_uri=YOUR_REDIRECT_URI&scope=SCOPES_SEPARATED_BY_PLUS
 ```
 
+In eBay OAuth, the `redirect_uri` query value is the eBay-generated RuName identifier, not the public HTTPS callback URL. The public Redirect URL / callback URL is registered in the eBay Developer Portal and served by this project at `/oauth/callback` under `PUBLIC_BASE_URL`. These values have distinct purposes and are not fallbacks for each other.
+
 ## Common Scopes
 **Basic scope (required):**
 - `https://api.ebay.com/oauth/api_scope`
@@ -46,13 +48,13 @@ ebay:ebay_get_oauth_url
 Optional parameters:
 - `scopes`: Array of specific scopes needed (see Common Scopes above)
 - `state`: CSRF protection token (optional)
-- `redirectUri`: Override default redirect URI (optional)
+- `redirectUri`: Override the eBay RuName identifier sent as OAuth `redirect_uri` (optional). Do not pass the public callback URL here.
 
 ### Step 2: User Authorization
 1. Open the generated OAuth URL in a browser
 2. Log in to your eBay account
 3. Authorize the application
-4. You'll be redirected to your RuName's Accept URL with the authorization code:
+4. You'll be redirected to the public Redirect URL registered for your RuName with the authorization code:
    ```
    https://your-redirect-uri?code=v%5E1.1%23...&expires_in=299
    ```
@@ -235,6 +237,8 @@ https://your-server.com/sandbox/oauth/start
 https://your-server.com/production/oauth/start
 ```
 
+If `OAUTH_START_KEY` is configured, include either `?key=<OAUTH_START_KEY>` or the `X-OAuth-Start-Key: <OAUTH_START_KEY>` header. No request-body field is implemented for this key.
+
 ### OAuth 2.1 discovery (used by Cline / other MCP clients)
 
 ```text
@@ -261,6 +265,22 @@ Authorization: Bearer <session-token>
 ```
 
 Returns `userId`, `environment`, `createdAt`, `expiresAt`, `lastUsedAt`, `revokedAt`.
+
+### Admin key bypass
+
+Normal hosted MCP users should authorize through OAuth and use `Authorization: Bearer <session-token>`. For privileged server-to-server/admin tooling only, the hosted MCP endpoints also accept:
+
+```text
+Authorization: Bearer <ADMIN_API_KEY>
+```
+
+This bypass is implemented for `/sandbox/mcp`, `/production/mcp`, and `/mcp`; it is not accepted through query parameters or request bodies. Admin and validation HTTP routes use a different header:
+
+```text
+X-Admin-API-Key: <ADMIN_API_KEY>
+```
+
+Use a long, random `ADMIN_API_KEY`, keep it server-side, and do not distribute it to regular users or browser-based clients.
 
 ---
 
