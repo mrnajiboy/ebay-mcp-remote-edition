@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.6.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.5.1...ebay-mcp-remote-edition-v4.6.0) (2026-05-14)
+
+
+### Features
+
+* add admin key authorization bypass ([6925b19](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6925b193963c9ed732e8a8d7f9c33609f27ba1a3))
+
+
+### Bug Fixes
+
+* bulk inventory schema - add locale field, fix double-nested requests wrapper ([973b83a](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/973b83a11dbf06df561cd53606cc444b74e66a9d))
+* bulk inventory tool handler - wrap requests in proper object format, update test ([dfdfefe](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/dfdfefe64d7ee6ab4eefa8558eaa73330a43ca62))
+
+
+### Documentation
+
+* cleanup README — remove redundant explanations, add tool discovery for agents ([1271d57](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/1271d57a4bd0544444bc5613288c070a9c61de54))
+* update API status snapshot [skip ci] ([35fcaa3](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/35fcaa34f702f2831001e0b3eca1098bc99f2a26))
+
 ## [4.5.1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.5.0...ebay-mcp-remote-edition-v4.5.1) (2026-05-06)
 
 
