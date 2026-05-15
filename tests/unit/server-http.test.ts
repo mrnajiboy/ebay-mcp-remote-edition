@@ -45,4 +45,23 @@ describe('server-http MCP authentication', () => {
     expect(response.status).toBe(401);
     expect(response.body.error).toBe('invalid_server_request_auth');
   });
+
+  it('starts sandbox OAuth with EBAY_SANDBOX_RUNAME when legacy REDIRECT_URI is unset', async () => {
+    process.env.EBAY_SANDBOX_CLIENT_ID = 'test-sandbox-client-id';
+    process.env.EBAY_SANDBOX_CLIENT_SECRET = 'test-sandbox-client-secret';
+    process.env.EBAY_SANDBOX_RUNAME = 'Example-App-SB-123';
+    delete process.env.EBAY_SANDBOX_REDIRECT_URI;
+    delete process.env.EBAY_REDIRECT_URI;
+
+    const { createApp } = await import('@/server-http.js');
+
+    const response = await request(createApp()).get('/sandbox/oauth/start');
+
+    expect(response.status).toBe(302);
+    const location = response.headers.location;
+    expect(location).toContain('https://auth.sandbox.ebay.com/oauth2/authorize');
+    const parsed = new URL(location);
+    expect(parsed.searchParams.get('client_id')).toBe('test-sandbox-client-id');
+    expect(parsed.searchParams.get('redirect_uri')).toBe('Example-App-SB-123');
+  });
 });

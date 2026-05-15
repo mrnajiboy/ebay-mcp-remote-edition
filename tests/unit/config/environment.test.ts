@@ -4,6 +4,7 @@ import {
   getBaseUrl,
   getAuthUrl,
   validateEnvironmentConfig,
+  validateCredentialsForEnvironment,
 } from '@/config/environment.js';
 
 describe('Environment Configuration', () => {
@@ -111,6 +112,50 @@ describe('Environment Configuration', () => {
 
       expect(config.marketplaceId).toBe('EBAY_DE');
       expect(config.contentLanguage).toBe('de-DE');
+    });
+
+    it('should expose environment-specific RuName without requiring legacy REDIRECT_URI', () => {
+      process.env.EBAY_ENVIRONMENT = 'sandbox';
+      process.env.EBAY_SANDBOX_CLIENT_ID = 'test_sandbox_client_id';
+      process.env.EBAY_SANDBOX_CLIENT_SECRET = 'test_sandbox_client_secret';
+      process.env.EBAY_SANDBOX_RUNAME = 'Example-App-SB-123';
+      delete process.env.EBAY_SANDBOX_REDIRECT_URI;
+      delete process.env.EBAY_REDIRECT_URI;
+
+      const config = getEbayConfig('sandbox');
+
+      expect(config).toMatchObject({
+        clientId: 'test_sandbox_client_id',
+        clientSecret: 'test_sandbox_client_secret',
+        ruName: 'Example-App-SB-123',
+        environment: 'sandbox',
+      });
+      expect(config.redirectUri).toBeUndefined();
+    });
+  });
+
+  describe('validateCredentialsForEnvironment', () => {
+    it('should validate against EBAY_SANDBOX_RUNAME when legacy REDIRECT_URI is unset', () => {
+      process.env.EBAY_SANDBOX_RUNAME = 'Example-App-SB-123';
+      delete process.env.EBAY_SANDBOX_REDIRECT_URI;
+      delete process.env.EBAY_REDIRECT_URI;
+
+      const result = validateCredentialsForEnvironment('sandbox');
+
+      expect(result.valid).toBe(true);
+      expect(result.detectedEnv).toBe('sandbox');
+    });
+
+    it('should reject a production RuName for sandbox even when supplied via EBAY_SANDBOX_RUNAME', () => {
+      process.env.EBAY_SANDBOX_RUNAME = 'Example-App-PR-123';
+      delete process.env.EBAY_SANDBOX_REDIRECT_URI;
+      delete process.env.EBAY_REDIRECT_URI;
+
+      const result = validateCredentialsForEnvironment('sandbox');
+
+      expect(result.valid).toBe(false);
+      expect(result.detectedEnv).toBe('production');
+      expect(result.error).toContain('targets sandbox');
     });
   });
 

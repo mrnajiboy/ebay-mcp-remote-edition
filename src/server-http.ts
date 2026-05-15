@@ -58,6 +58,10 @@ function getExpectedOAuthCallbackUrl(serverUrl = getServerBaseUrl()): string {
   return `${serverUrl.replace(/\/+$/, '')}/oauth/callback`;
 }
 
+function getEbayOAuthRedirectUri(ebayConfig: ReturnType<typeof getEbayConfig>): string | undefined {
+  return ebayConfig.ruName || ebayConfig.redirectUri;
+}
+
 function isLocalDevelopmentBaseUrl(baseUrl: string): boolean {
   if (!baseUrl) {
     return false;
@@ -905,7 +909,8 @@ function mountEnvRouter(
       }
 
       const ebayConfig = getEbayConfig(environment);
-      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
+      const ebayRedirectUri = getEbayOAuthRedirectUri(ebayConfig);
+      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayRedirectUri) {
         res.status(500).json({
           error: 'server_error',
           error_description: `Missing eBay configuration for ${environment}`,
@@ -921,7 +926,7 @@ function mountEnvRouter(
       serverLogger.info(`[${prefix || 'root'}/authorize] Credential check`, {
         environment,
         envSource,
-        ruName: ebayConfig.ruName || ebayConfig.redirectUri,
+        ruName: ebayRedirectUri,
         ruNameDetectedEnv: credCheck.detectedEnv,
         credentialValid: credCheck.valid,
       });
@@ -946,7 +951,7 @@ function mountEnvRouter(
 
       const oauthUrl = getOAuthAuthorizationUrl(
         ebayConfig.clientId,
-        ebayConfig.redirectUri,
+        ebayRedirectUri,
         environment,
         getHostedOauthScopes(environment),
         undefined,
@@ -955,7 +960,7 @@ function mountEnvRouter(
       serverLogger.info(`[${prefix || 'root'}/authorize] Redirecting to eBay OAuth`, {
         state: stateRecord.state,
         environment,
-        ruName: ebayConfig.ruName || ebayConfig.redirectUri,
+        ruName: ebayRedirectUri,
         expectedCallbackUrl: getExpectedOAuthCallbackUrl(serverUrl),
       });
       res.redirect(oauthUrl);
@@ -1065,14 +1070,15 @@ function mountEnvRouter(
       const environment = resolveEnv(req);
       const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : undefined;
       const ebayConfig = getEbayConfig(environment);
-      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayConfig.redirectUri) {
+      const ebayRedirectUri = getEbayOAuthRedirectUri(ebayConfig);
+      if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayRedirectUri) {
         res.status(500).json({ error: `Missing eBay configuration for ${environment}` });
         return;
       }
       const stateRecord = await authStore.createOAuthState(environment, returnTo);
       const oauthUrl = getOAuthAuthorizationUrl(
         ebayConfig.clientId,
-        ebayConfig.redirectUri,
+        ebayRedirectUri,
         environment,
         getHostedOauthScopes(environment),
         undefined,
@@ -1081,7 +1087,7 @@ function mountEnvRouter(
       serverLogger.info(`[${prefix || 'root'}/oauth/start] Redirecting to eBay OAuth`, {
         state: stateRecord.state,
         environment,
-        ruName: ebayConfig.ruName || ebayConfig.redirectUri,
+        ruName: ebayRedirectUri,
         expectedCallbackUrl: getExpectedOAuthCallbackUrl(serverUrl),
         returnTo,
       });

@@ -200,7 +200,7 @@ export function validateCredentialsForEnvironment(environment: EbayEnvironment):
   error?: string;
 } {
   const config = getEbayConfig(environment);
-  const ruName = config.redirectUri;
+  const ruName = config.ruName || config.redirectUri;
   const detectedEnv = ruNameToEnvironment(ruName);
 
   if (detectedEnv === null) {
