@@ -811,7 +811,39 @@ eBay's callback URL (`/oauth/callback`) is always at the root because eBay requi
 
 ### Hosted MCP authorization
 
-Normal hosted MCP calls use:
+Hosted MCP now supports a per-request server mode for clients that need to handle
+both normal user OAuth requests and server-to-server requests from the same MCP
+configuration. To select server mode for a request, send:
+
+```text
+X-Ebay-Server-Request: true
+```
+
+Then authenticate the stored Redis/KV user token record with either identity
+headers:
+
+```text
+X-Ebay-Server-Request: true
+X-Ebay-Client-Id: <eBay client ID>
+X-Ebay-User-Id: <stored user ID shown after OAuth>
+X-Ebay-Environment: production   # or sandbox
+```
+
+Or, for MCP clients that support authorization headers, use the server-issued
+bearer token shown after OAuth:
+
+```text
+X-Ebay-Server-Request: true
+Authorization: Bearer <server-issued-token>
+```
+
+Both server-mode variants resolve the same stored user token record and avoid
+requiring a hosted session token for server setups. The server-issued bearer
+token is not an eBay access token; it is a lookup credential whose backend TTL is
+kept aligned with the stored eBay refresh token.
+
+Legacy hosted MCP calls can still use the session token returned by the OAuth
+flow:
 
 ```text
 Authorization: Bearer <session-token>

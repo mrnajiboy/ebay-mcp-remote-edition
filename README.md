@@ -54,7 +54,7 @@ This is an open-source project provided "as is" without warranty of any kind. No
 | Mode | Command | Transport | Best for | Authorization model |
 |------|---------|-----------|----------|---------------------|
 | **Local STDIO** | `pnpm start` / `pnpm run dev` | stdin/stdout | Single-user local AI client (Claude Desktop, Cline, Cursor, etc.) | The local process reads eBay credentials and optional `EBAY_USER_REFRESH_TOKEN` from environment variables. |
-| **Hosted HTTP** | `pnpm run start:http` / `pnpm run dev:http` | Streamable HTTP | Multi-user server deployment; remote MCP clients | Users normally authorize through the browser OAuth flow and then call MCP with `Authorization: Bearer <session-token>`. |
+| **Hosted HTTP** | `pnpm run start:http` / `pnpm run dev:http` | Streamable HTTP | Multi-user server deployment; remote MCP clients | Users authorize through browser OAuth. Requests can use normal session Bearer auth or opt into server-request auth with `X-Ebay-Server-Request: true`. |
 
 Both modes use the same eBay tool registry. Local STDIO is best when one trusted local client owns the eBay credentials. Hosted HTTP runs an Express server with OAuth 2.1 discovery, environment-scoped route trees, server-side token/session storage, and admin-only operational endpoints.
 
@@ -321,7 +321,15 @@ GET /production/oauth/start   # production browser login
 
 If `OAUTH_START_KEY` is set, start URLs require either `?key=YOUR_KEY` or the `X-OAuth-Start-Key: YOUR_KEY` header. The server also includes this key as `key` in generated `authorization_url` values for unauthenticated MCP requests.
 
-After login, the callback page shows your **session token** with copy buttons.
+After login, the callback page shows three hosted auth options with copy buttons:
+
+| Hosted auth mode | How to select it | Best for |
+|------------------|------------------|----------|
+| **User/session mode** | Send `Authorization: Bearer <session-token>` and omit `X-Ebay-Server-Request` | Normal OAuth-aware MCP clients and user-scoped desktop clients. |
+| **Server request mode — identity headers** | Send `X-Ebay-Server-Request: true`, `X-Ebay-Client-Id`, `X-Ebay-User-Id`, and optional `X-Ebay-Environment` | Server/client setups that need to handle both regular user requests and backend server requests without copying a session token. |
+| **Server request mode — bearer-capable clients** | Send `X-Ebay-Server-Request: true` plus `Authorization: Bearer <server-issued-token>` | MCP clients or automation platforms that can store an authorization header but should not use the admin key. |
+
+Switching between modes is per request, not a server-wide environment toggle. The same hosted MCP server can handle user/session requests and server requests concurrently; the client chooses server mode by adding `X-Ebay-Server-Request: true`.
 
 **Session TTL schedule:**
 
@@ -351,7 +359,11 @@ POST/GET/DELETE /mcp   # resolves from ?env= or EBAY_ENVIRONMENT/EBAY_DEFAULT_EN
 - `GET /mcp` without token → redirects to `oauth/start`
 - `POST /mcp` without token → `401` JSON with `authorization_url`, `resource_metadata`, and a `WWW-Authenticate` Bearer challenge
 - Normal user requests: `Authorization: Bearer <session-token>`
+- Server requests with identity headers: `X-Ebay-Server-Request: true`, `X-Ebay-Client-Id: <client-id>`, `X-Ebay-User-Id: <user-id>`, `X-Ebay-Environment: sandbox|production`
+- Server requests with bearer-capable clients: `X-Ebay-Server-Request: true` plus `Authorization: Bearer <server-issued-token>`
 - Privileged admin bypass: `Authorization: Bearer <ADMIN_API_KEY>` when `ADMIN_API_KEY` is configured
+
+The `X-Ebay-Server-Request` header is intentionally client-side and per-request. Leave it off for normal user/session OAuth calls. Add it when the MCP client is making a server-style request and should resolve the stored Redis/KV user token record by headers or by the server-issued bearer lookup token.
 
 #### Admin key bypass
 
@@ -421,10 +433,48 @@ Cline auto-discovers OAuth, opens browser login, exchanges auth code, and stores
 }
 ```
 
+**Server request mode (custom headers):**
+1. Open `https://your-server.com/sandbox/oauth/start` or `https://your-server.com/production/oauth/start`
+2. Complete eBay login
+3. Copy the server request headers shown on the callback page
+4. Configure the MCP client with those headers:
+```json
+{
+  "mcpServers": {
+    "ebay-production-server": {
+      "url": "https://your-server.com/production/mcp",
+      "headers": {
+        "X-Ebay-Server-Request": "true",
+        "X-Ebay-Client-Id": "YOUR_EBAY_CLIENT_ID",
+        "X-Ebay-User-Id": "STORED_USER_ID_FROM_CALLBACK",
+        "X-Ebay-Environment": "production"
+      }
+    }
+  }
+}
+```
+
+**Server request mode (bearer-capable clients):**
+Use this when the MCP client can set `Authorization` but cannot easily send several custom identity headers:
+```json
+{
+  "mcpServers": {
+    "ebay-production-server": {
+      "url": "https://your-server.com/production/mcp",
+      "headers": {
+        "X-Ebay-Server-Request": "true",
+        "Authorization": "Bearer SERVER_ISSUED_TOKEN_FROM_CALLBACK"
+      }
+    }
+  }
+}
+```
+
 **Make / Zapier / other platforms:**
 1. Complete OAuth via browser at `/oauth/start`
-2. Paste session token as API Key / Bearer token in connector settings
-3. Set MCP URL to `https://your-server.com/sandbox/mcp`
+2. If the platform supports multiple headers, use server request mode identity headers
+3. If the platform only supports one auth header, use server request mode with the server-issued Bearer token
+4. Set MCP URL to `https://your-server.com/sandbox/mcp`
 
 ---
 

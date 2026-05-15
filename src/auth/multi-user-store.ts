@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { EbayEnvironment } from '@/config/environment.js';
 import type { StoredTokenData } from '@/types/ebay.js';
 import { createKVStore, type KVStore } from '@/auth/kv-store.js';
@@ -29,6 +29,26 @@ const DEFAULT_REFRESH_TOKEN_TTL_S = 18 * 30 * 24 * 60 * 60;
 
 function secondsFromNow(ttlSeconds: number): string {
   return new Date(Date.now() + ttlSeconds * 1_000).toISOString();
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function getTokenTtlSeconds(tokenData: StoredTokenData): number {
+  let ttlSeconds = DEFAULT_REFRESH_TOKEN_TTL_S;
+  if (tokenData.userRefreshTokenExpiry) {
+    const expiryMs =
+      typeof tokenData.userRefreshTokenExpiry === 'number'
+        ? tokenData.userRefreshTokenExpiry
+        : new Date(tokenData.userRefreshTokenExpiry).getTime();
+    const remaining = Math.floor((expiryMs - Date.now()) / 1_000);
+    if (remaining > 0) {
+      ttlSeconds = remaining;
+    }
+  }
+
+  return ttlSeconds;
 }
 
 export interface OAuthStateRecord {
@@ -81,6 +101,27 @@ export interface UserTokenRecord {
   expiresAt: string;
 }
 
+export interface UserTokenIndexRecord {
+  userId: string;
+  environment: EbayEnvironment;
+  clientIdHash: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+}
+
+export interface ServerBearerTokenRecord {
+  tokenHash: string;
+  userId: string;
+  environment: EbayEnvironment;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface CreatedServerBearerToken extends ServerBearerTokenRecord {
+  token: string;
+}
+
 export interface SessionRecord {
   sessionToken: string;
   userId: string;
@@ -122,6 +163,18 @@ export class MultiUserAuthStore {
 
   private userTokenKey(userId: string, environment: EbayEnvironment): string {
     return `user:${userId}:env:${environment}:tokens`;
+  }
+
+  private userTokenIndexKey(
+    clientId: string,
+    userId: string,
+    environment: EbayEnvironment
+  ): string {
+    return `user_index:env:${environment}:client:${sha256(clientId)}:user:${userId}`;
+  }
+
+  private serverBearerKey(token: string): string {
+    return `server_bearer:${sha256(token)}`;
   }
 
   private sessionKey(sessionToken: string): string {
@@ -175,26 +228,33 @@ export class MultiUserAuthStore {
     tokenData: StoredTokenData
   ): Promise<void> {
     // Derive TTL from refresh token expiry when available; fall back to 18 months.
-    let ttlSeconds = DEFAULT_REFRESH_TOKEN_TTL_S;
-    if (tokenData.userRefreshTokenExpiry) {
-      const expiryMs =
-        typeof tokenData.userRefreshTokenExpiry === 'number'
-          ? tokenData.userRefreshTokenExpiry
-          : new Date(tokenData.userRefreshTokenExpiry).getTime();
-      const remaining = Math.floor((expiryMs - Date.now()) / 1_000);
-      if (remaining > 0) {
-        ttlSeconds = remaining;
-      }
-    }
+    const ttlSeconds = getTokenTtlSeconds(tokenData);
+    const now = new Date().toISOString();
 
     const record: UserTokenRecord = {
       userId,
       environment,
       tokenData,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
       expiresAt: secondsFromNow(ttlSeconds),
     };
     await this.kv.put(this.userTokenKey(userId, environment), record, ttlSeconds);
+
+    if (tokenData.clientId) {
+      const indexRecord: UserTokenIndexRecord = {
+        userId,
+        environment,
+        clientIdHash: sha256(tokenData.clientId),
+        createdAt: now,
+        updatedAt: now,
+        expiresAt: record.expiresAt,
+      };
+      await this.kv.put(
+        this.userTokenIndexKey(tokenData.clientId, userId, environment),
+        indexRecord,
+        ttlSeconds
+      );
+    }
   }
 
   async getUserTokens(
@@ -202,6 +262,62 @@ export class MultiUserAuthStore {
     environment: EbayEnvironment
   ): Promise<UserTokenRecord | null> {
     return await this.kv.get<UserTokenRecord>(this.userTokenKey(userId, environment));
+  }
+
+  async getUserTokensByClientUser(
+    clientId: string,
+    userId: string,
+    environment: EbayEnvironment
+  ): Promise<UserTokenRecord | null> {
+    const index = await this.kv.get<UserTokenIndexRecord>(
+      this.userTokenIndexKey(clientId, userId, environment)
+    );
+    if (!index || index.userId !== userId || index.environment !== environment) {
+      return null;
+    }
+
+    const record = await this.getUserTokens(index.userId, index.environment);
+    if (!record || record.tokenData.clientId !== clientId) {
+      return null;
+    }
+
+    return record;
+  }
+
+  async createServerBearerToken(
+    userId: string,
+    environment: EbayEnvironment
+  ): Promise<CreatedServerBearerToken> {
+    const record = await this.getUserTokens(userId, environment);
+    if (!record?.tokenData) {
+      throw new Error(`Cannot create server bearer token without stored user tokens for ${userId}`);
+    }
+
+    const ttlSeconds = getTokenTtlSeconds(record.tokenData);
+    const token = `ebay_mcp_${randomUUID()}${randomUUID()}`;
+    const tokenHash = sha256(token);
+    const bearerRecord: ServerBearerTokenRecord = {
+      tokenHash,
+      userId,
+      environment,
+      createdAt: new Date().toISOString(),
+      expiresAt: secondsFromNow(ttlSeconds),
+    };
+    await this.kv.put(this.serverBearerKey(token), bearerRecord, ttlSeconds);
+
+    return {
+      ...bearerRecord,
+      token,
+    };
+  }
+
+  async getUserTokensByServerBearerToken(token: string): Promise<UserTokenRecord | null> {
+    const bearerRecord = await this.kv.get<ServerBearerTokenRecord>(this.serverBearerKey(token));
+    if (!bearerRecord) {
+      return null;
+    }
+
+    return await this.getUserTokens(bearerRecord.userId, bearerRecord.environment);
   }
 
   async createSession(userId: string, environment: EbayEnvironment): Promise<SessionRecord> {

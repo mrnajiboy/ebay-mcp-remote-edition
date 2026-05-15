@@ -116,6 +116,18 @@ function getRetryTimestampFromBody(body: unknown): string {
   return new Date(Date.now() + 30 * 60 * 1000).toISOString();
 }
 
+function getSingleHeader(req: express.Request, name: string): string {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) {
+    return value[0]?.trim() ?? '';
+  }
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isTruthyHeader(value: string): boolean {
+  return ['1', 'true', 'yes', 'y'].includes(value.toLowerCase());
+}
+
 function getAxiosFailureDebug(error: unknown): {
   responseStatus: number | null;
   responseBodyExcerpt: string | null;
@@ -1088,6 +1100,21 @@ function mountEnvRouter(
   ): Promise<void> => {
     const authHeader = req.headers.authorization;
     const requestedEnv = resolveEnv(req);
+    const setUserContext = (
+      userId: string,
+      environment: EbayEnvironment,
+      sessionToken: string
+    ): void => {
+      (
+        req as express.Request & {
+          userContext?: { userId: string; environment: EbayEnvironment; sessionToken: string };
+        }
+      ).userContext = {
+        userId,
+        environment,
+        sessionToken,
+      };
+    };
 
     const sendAuthorizationRequired = (
       reason: 'missing_session_token' | 'invalid_session_token'
@@ -1134,6 +1161,50 @@ function mountEnvRouter(
       });
     };
 
+    const isServerRequest = isTruthyHeader(getSingleHeader(req, 'x-ebay-server-request'));
+
+    if (isServerRequest) {
+      const headerClientId = getSingleHeader(req, 'x-ebay-client-id');
+      const headerUserId = getSingleHeader(req, 'x-ebay-user-id');
+      const headerEnvironment = getSingleHeader(req, 'x-ebay-environment');
+      const serverEnv =
+        headerEnvironment === 'sandbox' || headerEnvironment === 'production'
+          ? headerEnvironment
+          : requestedEnv;
+
+      if (headerClientId && headerUserId) {
+        const stored = await authStore.getUserTokensByClientUser(
+          headerClientId,
+          headerUserId,
+          serverEnv
+        );
+        if (stored?.tokenData) {
+          setUserContext(stored.userId, stored.environment, '__server_headers__');
+          next();
+          return;
+        }
+      }
+
+      if (authHeader?.startsWith('Bearer ')) {
+        const bearerToken = authHeader.slice('Bearer '.length).trim();
+        const stored = await authStore.getUserTokensByServerBearerToken(bearerToken);
+        if (stored?.tokenData && stored.environment === serverEnv) {
+          setUserContext(stored.userId, stored.environment, '__server_bearer__');
+          next();
+          return;
+        }
+      }
+
+      res.status(401).json({
+        error: 'invalid_server_request_auth',
+        authorization_required: true,
+        environment: serverEnv,
+        message:
+          'Server requests require X-Ebay-Server-Request: true plus X-Ebay-Client-Id and X-Ebay-User-Id headers, or a valid Authorization: Bearer <server-token>.',
+      });
+      return;
+    }
+
     if (!authHeader?.startsWith('Bearer ')) {
       sendAuthorizationRequired('missing_session_token');
       return;
@@ -1141,15 +1212,7 @@ function mountEnvRouter(
     const bearerToken = authHeader.slice('Bearer '.length).trim();
 
     if (CONFIG.adminApiKey && bearerToken === CONFIG.adminApiKey) {
-      (
-        req as express.Request & {
-          userContext?: { userId: string; environment: EbayEnvironment; sessionToken: string };
-        }
-      ).userContext = {
-        userId: 'admin',
-        environment: requestedEnv,
-        sessionToken: '__admin__',
-      };
+      setUserContext('admin', requestedEnv, '__admin__');
       next();
       return;
     }
@@ -1160,15 +1223,7 @@ function mountEnvRouter(
       return;
     }
     await authStore.touchSession(bearerToken);
-    (
-      req as express.Request & {
-        userContext?: { userId: string; environment: EbayEnvironment; sessionToken: string };
-      }
-    ).userContext = {
-      userId: session.userId,
-      environment: session.environment,
-      sessionToken: bearerToken,
-    };
+    setUserContext(session.userId, session.environment, bearerToken);
     next();
   };
 
@@ -1521,6 +1576,7 @@ async function handleOAuthCallback(
     // ── Non-MCP flow: show tokens page ────────────────────────────────────
     serverLogger.info('[oauth/callback] Non-MCP flow: creating hosted session', { userId });
     const session = await authStore.createSession(userId, environment);
+    const serverBearer = await authStore.createServerBearerToken(userId, environment);
 
     res.status(200).send(`<!doctype html>
 <html>
@@ -1543,23 +1599,40 @@ async function handleOAuthCallback(
   <body>
     <h1>eBay account connected ✓</h1>
     <p>Your <strong>${htmlEscape(environment)}</strong> account has been connected successfully.</p>
-    <p>Session expires: <strong>${htmlEscape(session.expiresAt)}</strong></p>
+    <p>Stored token record expires: <strong>${htmlEscape(serverBearer.expiresAt)}</strong></p>
 
-    <h2>① Session token — paste as Bearer token in your MCP client</h2>
+    <h2>① Server request headers — for MCP clients that support custom headers</h2>
+    <div class="card">
+      <pre id="server-headers">X-Ebay-Server-Request: true
+X-Ebay-Client-Id: ${htmlEscape(ebayConfig.clientId)}
+X-Ebay-User-Id: ${htmlEscape(userId)}
+X-Ebay-Environment: ${htmlEscape(environment)}</pre>
+      <button class="copy-btn" data-copy-source="server-headers" data-copy-status="sh-status">Copy</button><span id="sh-status" class="copy-status"></span>
+      <p class="muted">These headers select the stored Redis/KV user token record directly and do not require a hosted session token.</p>
+    </div>
+
+    <h2>② Bearer token — for MCP clients that support Authorization headers</h2>
+    <div class="card">
+      <pre id="server-bearer">Authorization: Bearer ${htmlEscape(serverBearer.token)}</pre>
+      <button class="copy-btn" data-copy-source="server-bearer" data-copy-status="sb-status">Copy</button><span id="sb-status" class="copy-status"></span>
+      <p class="muted">This server-issued token maps to the same stored user token record. It expires with the eBay refresh token.</p>
+    </div>
+
+    <h2>③ Legacy hosted session token</h2>
     <div class="card">
       <pre id="session-token">${htmlEscape(session.sessionToken)}</pre>
       <button class="copy-btn" data-copy-source="session-token" data-copy-status="st-status">Copy</button><span id="st-status" class="copy-status"></span>
-      <p class="muted">Set as <code>EBAY_SESSION_TOKEN</code> in your server env to survive restarts.</p>
+      <p class="muted">Kept for backward compatibility with the older hosted session flow. Prefer the server headers or server bearer token above.</p>
     </div>
 
-    <h2>② eBay user access token</h2>
+    <h2>④ eBay user access token</h2>
     <div class="card">
       <pre id="access-token">${htmlEscape(tokenData.access_token)}</pre>
       <button class="copy-btn" data-copy-source="access-token" data-copy-status="at-status">Copy</button><span id="at-status" class="copy-status"></span>
       <p class="muted">Set as <code>EBAY_USER_ACCESS_TOKEN</code> in your server env (optional — auto-refreshed from refresh token).</p>
     </div>
 
-    <h2>③ eBay user refresh token</h2>
+    <h2>⑤ eBay user refresh token</h2>
     <div class="card">
       <pre id="refresh-token">${htmlEscape(tokenData.refresh_token ?? '')}</pre>
       <button class="copy-btn" data-copy-source="refresh-token" data-copy-status="rt-status">Copy</button><span id="rt-status" class="copy-status"></span>
@@ -1567,10 +1640,12 @@ async function handleOAuthCallback(
     </div>
 
     <div class="card">
-      <p><strong>After copying, add these 3 lines to your server env and restart:</strong></p>
-      <pre>EBAY_SESSION_TOKEN=${htmlEscape(session.sessionToken)}
-EBAY_USER_ACCESS_TOKEN=${htmlEscape(tokenData.access_token)}
-EBAY_USER_REFRESH_TOKEN=${htmlEscape(tokenData.refresh_token ?? '')}</pre>
+      <p><strong>Recommended MCP client server-request configuration:</strong></p>
+      <pre>headers:
+  X-Ebay-Server-Request: "true"
+  X-Ebay-Client-Id: "${htmlEscape(ebayConfig.clientId)}"
+  X-Ebay-User-Id: "${htmlEscape(userId)}"
+  X-Ebay-Environment: "${htmlEscape(environment)}"</pre>
     </div>
 
     <p><strong>MCP endpoints:</strong></p>

@@ -29,6 +29,17 @@ export class EbayOAuthClient {
     return `${getOAuthTokenBaseUrl(this.config.environment)}/identity/v1/oauth2/token`;
   }
 
+  private getEffectiveClientCredentials(): { clientId: string; clientSecret: string } {
+    return {
+      clientId: this.userTokens?.clientId || this.config.clientId,
+      clientSecret: this.userTokens?.clientSecret || this.config.clientSecret,
+    };
+  }
+
+  private getEffectiveRedirectUri(): string | undefined {
+    return this.userTokens?.ruName || this.userTokens?.redirectUri || this.config.ruName || this.config.redirectUri;
+  }
+
   async initialize(): Promise<void> {
     if (this.context?.userId && this.context.environment) {
       const stored = await this.authStore.getUserTokens(
@@ -160,7 +171,8 @@ export class EbayOAuthClient {
     }
 
     const authUrl = this.getTokenEndpoint();
-    const credentials = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
+    const effectiveCredentials = this.getEffectiveClientCredentials();
+    const credentials = Buffer.from(`${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`).toString(
       'base64'
     );
 
@@ -184,7 +196,7 @@ export class EbayOAuthClient {
   }
 
   async exchangeCodeForToken(code: string): Promise<EbayUserToken> {
-    const redirectUriForExchange = this.config.ruName || this.config.redirectUri;
+    const redirectUriForExchange = this.getEffectiveRedirectUri();
     if (!redirectUriForExchange) {
       throw new Error(
         'RuName (EBAY_RUNAME) or redirectUri is required for authorization code exchange'
@@ -192,7 +204,8 @@ export class EbayOAuthClient {
     }
 
     const tokenUrl = this.getTokenEndpoint();
-    const credentials = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
+    const effectiveCredentials = this.getEffectiveClientCredentials();
+    const credentials = Buffer.from(`${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`).toString(
       'base64'
     );
 
@@ -215,10 +228,10 @@ export class EbayOAuthClient {
       const tokenData = response.data;
       const now = Date.now();
       this.userTokens = {
-        clientId: this.config.clientId,
-        clientSecret: this.config.clientSecret,
+        clientId: effectiveCredentials.clientId,
+        clientSecret: effectiveCredentials.clientSecret,
         redirectUri: this.config.redirectUri,
-        ruName: this.config.ruName,
+        ruName: redirectUriForExchange,
         userAccessToken: tokenData.access_token,
         userRefreshToken: tokenData.refresh_token,
         tokenType: tokenData.token_type,
@@ -249,7 +262,8 @@ export class EbayOAuthClient {
     }
 
     const authUrl = this.getTokenEndpoint();
-    const credentials = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
+    const effectiveCredentials = this.getEffectiveClientCredentials();
+    const credentials = Buffer.from(`${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`).toString(
       'base64'
     );
 
@@ -270,10 +284,10 @@ export class EbayOAuthClient {
     const tokenData = response.data;
     const now = Date.now();
     this.userTokens = {
-      clientId: this.config.clientId,
-      clientSecret: this.config.clientSecret,
-      redirectUri: this.config.redirectUri,
-      ruName: this.config.ruName,
+      clientId: effectiveCredentials.clientId,
+      clientSecret: effectiveCredentials.clientSecret,
+      redirectUri: this.userTokens.redirectUri || this.config.redirectUri,
+      ruName: this.userTokens.ruName || this.config.ruName,
       userAccessToken: tokenData.access_token,
       userRefreshToken: tokenData.refresh_token || this.userTokens.userRefreshToken,
       tokenType: tokenData.token_type,

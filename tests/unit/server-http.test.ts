@@ -31,4 +31,18 @@ describe('server-http MCP authentication', () => {
       error_description: 'Invalid or missing session ID',
     });
   });
+
+  it('rejects invalid per-request server auth without redirecting to OAuth', async () => {
+    const { createApp } = await import('@/server-http.js');
+
+    const response = await request(createApp())
+      .get('/production/mcp')
+      .set('X-Ebay-Server-Request', 'true')
+      .set('X-Ebay-Client-Id', 'missing-client')
+      .set('X-Ebay-User-Id', 'missing-user')
+      .set('Accept', 'application/json');
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('invalid_server_request_auth');
+  });
 });
