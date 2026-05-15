@@ -37,7 +37,12 @@ export class EbayOAuthClient {
   }
 
   private getEffectiveRedirectUri(): string | undefined {
-    return this.userTokens?.ruName || this.userTokens?.redirectUri || this.config.ruName || this.config.redirectUri;
+    return (
+      this.userTokens?.ruName ||
+      this.userTokens?.redirectUri ||
+      this.config.ruName ||
+      this.config.redirectUri
+    );
   }
 
   async initialize(): Promise<void> {
@@ -172,9 +177,9 @@ export class EbayOAuthClient {
 
     const authUrl = this.getTokenEndpoint();
     const effectiveCredentials = this.getEffectiveClientCredentials();
-    const credentials = Buffer.from(`${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`).toString(
-      'base64'
-    );
+    const credentials = Buffer.from(
+      `${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`
+    ).toString('base64');
 
     const response = await axios.post<EbayAppAccessTokenResponse>(
       authUrl,
@@ -205,9 +210,9 @@ export class EbayOAuthClient {
 
     const tokenUrl = this.getTokenEndpoint();
     const effectiveCredentials = this.getEffectiveClientCredentials();
-    const credentials = Buffer.from(`${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`).toString(
-      'base64'
-    );
+    const credentials = Buffer.from(
+      `${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`
+    ).toString('base64');
 
     try {
       const response = await axios.post<EbayUserToken>(
@@ -263,9 +268,9 @@ export class EbayOAuthClient {
 
     const authUrl = this.getTokenEndpoint();
     const effectiveCredentials = this.getEffectiveClientCredentials();
-    const credentials = Buffer.from(`${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`).toString(
-      'base64'
-    );
+    const credentials = Buffer.from(
+      `${effectiveCredentials.clientId}:${effectiveCredentials.clientSecret}`
+    ).toString('base64');
 
     const response = await axios.post<EbayUserToken>(
       authUrl,

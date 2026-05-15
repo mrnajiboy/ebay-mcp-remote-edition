@@ -272,12 +272,12 @@ export class MultiUserAuthStore {
     const index = await this.kv.get<UserTokenIndexRecord>(
       this.userTokenIndexKey(clientId, userId, environment)
     );
-    if (!index || index.userId !== userId || index.environment !== environment) {
+    if (index?.userId !== userId || index.environment !== environment) {
       return null;
     }
 
     const record = await this.getUserTokens(index.userId, index.environment);
-    if (!record || record.tokenData.clientId !== clientId) {
+    if (record?.tokenData.clientId !== clientId) {
       return null;
     }
 
