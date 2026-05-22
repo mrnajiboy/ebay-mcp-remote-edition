@@ -1,0 +1,678 @@
+﻿[
+  {
+    "status": "ok",
+    "validationId": "rec1xACJU0ADcLaOg",
+    "writes": {
+      "avgWatchersPerListing": null,
+      "preOrderListingsCount": 144,
+      "activeAvgPriceUsd": 23.6,
+      "activeAvgShippingUsd": 6.32,
+      "activeListingsCount": 144,
+      "activeAvgWatchersPerListing": null,
+      "twitterTrending": true,
+      "soldAvgPriceUsd": null,
+      "soldMedianPriceUsd": null,
+      "soldAvgShippingUsd": null,
+      "soldListingsCount": null,
+      "soldSellThroughPct": null,
+      "soldTotalRevenueUsd": null,
+      "marketPriceUsd": 23.6,
+      "avgShippingCostUsd": 6.32,
+      "competitionLevel": 144,
+      "marketPriceTrend": "Stable",
+      "day1Sold": null,
+      "day2Sold": null,
+      "day3Sold": null,
+      "day4Sold": null,
+      "day5Sold": null,
+      "daysTracked": null,
+      "perplexityHistoricalContextScore": 7,
+      "historicalContextNotes": "The most likely prior comparable release is LE SSERAFIM's previous studio-album cycle, 'CRAZY' (2024), which is the closest major comeback to benchmark collector/preorder behavior for 'PUREFLOW' pt.1. The provided sources confirm 'PUREFLOW' pt.1 has official pre-order activity and multiple versions/collectible formats…",
+      "researchConfidence": "Low",
+      "monitoringNotes": "External watch-state controls were not satisfied, so automation will not schedule another item validation run for 2nd studio album ‘pureflow’ pt.1. Historical context (Low, score 7/20): The most likely prior comparable release is LE SSERAFIM's previous studio-album cycle, 'CRAZY' (2024), which is the closest major comeback to benchmark collector/preorder behavior for 'PUREFLOW' pt.1. The provided sources confirm 'PUREFLOW' pt.1 has official pre-order activity and multiple versions/collectible formats…",
+      "lastDataSnapshot": "{\"effectiveContext\":{\"sourceType\":\"item\",\"mode\":\"item\",\"validationScope\":\"Album\",\"queryScope\":\"Artist + Album\",\"directQueryActive\":false,\"resolvedSearchQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"effectiveSearchQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"searchArtist\":\"le sserafim\",\"searchAlbum\":null,\"searchItem\":\"2nd studio album ‘pureflow’ pt.1\",\"searchEvent\":null,\"searchLocation\":null,\"hasItem\":true,\"hasEvent\":false,\"itemRecordId\":\"rec7u6KVlQWDWJB0d\",\"eventRecordId\":null,\"itemName\":\"(POB) LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1 (Weverse Albums ver.) (SET)\",\"eventDate\":\"2026-05-22T00:00:00.000Z\",\"dDay\":0,\"requestTimestamp\":\"2026-05-22T19:21:02.100Z\"},\"ebay\":{\"avgWatchersPerListing\":null,\"preOrderListingsCount\":144,\"marketPriceUsd\":23.6,\"avgShippingCostUsd\":6.32,\"competitionLevel\":144,\"marketPriceTrend\":\"Stable\",\"ebayQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"queryCandidates\":[\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"le sserafim 2nd studio album ‘pureflow’ pt.1 Platform Album\",\"LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1\",\"le sserafim POB 2nd studio album ‘pureflow’ pt.1\",\"2nd studio album ‘pureflow’ pt.1\"],\"selectedQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"selectedQueryTier\":1,\"queryDiagnostics\":[{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"tier\":1,\"family\":\"resolved_query_context\",\"itemSummaryCount\":25,\"totalListings\":144}],\"selectionReason\":\"Selected because this cleaned browse candidate produced sufficient listing depth.\",\"sampleSize\":25,\"soldVelocity\":{\"day1Sold\":null,\"day2Sold\":null,\"day3Sold\":null,\"day4Sold\":null,\"day5Sold\":null,\"daysTracked\":null},\"queryResolution\":{\"queryContextUsed\":true,\"querySource\":\"resolved_query_context\",\"resolvedSearchQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"validationScope\":\"Album\",\"queryScope\":\"Artist + Album\"}},\"sold\":{\"provider\":\"third_party_sold_api\",\"confidence\":\"Low\",\"soldResultsCount\":null,\"soldAveragePriceUsd\":null,\"soldMedianPriceUsd\":null,\"soldMinPriceUsd\":null,\"soldMaxPriceUsd\":null,\"soldItemsSample\":[],\"soldVelocity\":{\"day1Sold\":null,\"day2Sold\":null,\"day3Sold\":null,\"day4Sold\":null,\"day5Sold\":null,\"daysTracked\":null},\"recentSoldCount7d\":null,\"soldBucketDebug\":{\"status\":\"skipped\",\"notes\":[\"sold bucketing did not run\"],\"totalItemsExamined\":0,\"withSoldAt\":0,\"missingSoldAt\":0,\"dateParseFailures\":0,\"futureDated\":0,\"bucketedItems\":0},\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"queryCandidates\":[\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"le sserafim 2nd studio album ‘pureflow’ pt.1 POB\",\"le sserafim 2nd studio album ‘pureflow’ pt.1 MAKESTAR\",\"le sserafim 2nd studio album ‘pureflow’ pt.1 Platform Album\",\"LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1\",\"2nd studio album ‘pureflow’ pt.1 POB\",\"2nd studio album ‘pureflow’ pt.1\"],\"selectedQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"selectedQueryTier\":1,\"selectedQueryFamily\":null,\"broadAlbumQuery\":\"recdrjKzp9a2uY4mU 2nd studio album ‘pureflow’ pt.1\",\"subtypeSpecificQuery\":\"recdrjKzp9a2uY4mU 2nd studio album ‘pureflow’ pt.1 pob\",\"querySelectionReason\":\"No sold candidate evaluation completed; returning fallback query for traceability.\",\"responseUrl\":null,\"status\":\"error\",\"errorMessage\":\"Request failed with status code 429\",\"queryDiagnostics\":[{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"tier\":1,\"family\":\"resolved_query_context\",\"soldResultsCount\":null,\"recentSoldCount7d\":null,\"titleMatchScore\":null,\"status\":\"error\",\"note\":\"Request failed with status code 403\"},{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt.1 POB\",\"tier\":2,\"family\":\"artist_album_subtype\",\"soldResultsCount\":null,\"recentSoldCount7d\":null,\"titleMatchScore\":null,\"status\":\"error\",\"note\":\"Request failed with status code 429\"},{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt.1 MAKESTAR\",\"tier\":3,\"family\":\"artist_album_descriptor\",\"soldResultsCount\":null,\"recentSoldCount7d\":null,\"titleMatchScore\":null,\"status\":\"error\",\"note\":\"Request failed with status code 429\"},{\"query\":\"LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1\",\"tier\":5,\"family\":\"artist_title_listing\",\"soldResultsCount\":null,\"recentSoldCount7d\":null,\"titleMatchScore\":null,\"status\":\"error\",\"note\":\"Request failed with status code 429\"}],\"queryResolution\":{\"queryContextUsed\":true,\"querySource\":\"resolved_query_context\",\"resolvedSearchQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"validationScope\":\"Album\",\"queryScope\":\"Artist + Album\"}},\"terapeak\":{\"avgWatchersPerListing\":null,\"preOrderListingsCount\":null,\"activeAvgPriceUsd\":null,\"activeAvgShippingUsd\":null,\"activeListingsCount\":null,\"activeAvgWatchersPerListing\":null,\"soldAvgPriceUsd\":null,\"soldMedianPriceUsd\":null,\"soldAvgShippingUsd\":null,\"marketPriceUsd\":null,\"researchSoldPriceUsd\":null,\"avgShippingCostUsd\":null,\"competitionLevel\":null,\"soldSellThroughPct\":null,\"soldTotalRevenueUsd\":null,\"previousPobAvgPriceUsd\":null,\"previousPobSellThroughPct\":null,\"currentListingsCount\":null,\"soldListingsCount\":null,\"soldVelocity\":{\"day1Sold\":null,\"day2Sold\":null,\"day3Sold\":null,\"day4Sold\":null,\"day5Sold\":null,\"daysTracked\":null},\"recentSoldCount7d\":null,\"soldBucketDebug\":{\"status\":\"skipped\",\"notes\":[\"research sold bucketing did not run\"],\"totalItemsExamined\":0,\"withSoldAt\":0,\"missingSoldAt\":0,\"dateParseFailures\":0,\"futureDated\":0,\"bucketedItems\":0},\"provider\":\"ebay_research_ui\",\"confidence\":\"Low\",\"queryDebug\":{\"currentQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"previousPobQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"currentQueryFamily\":null,\"previousPobQueryFamily\":null,\"selectedMode\":\"current_market\",\"currentResultCount\":null,\"previousPobResultCount\":null,\"queryResolution\":{\"queryContextUsed\":true,\"querySource\":\"resolved_query_context\",\"resolvedSearchQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"validationScope\":\"Album\",\"queryScope\":\"Artist + Album\"},\"currentModulesSeen\":[],\"previousPobModulesSeen\":[],\"currentPageErrors\":[],\"previousPobPageErrors\":[],\"currentActiveEndpointUrl\":\"https://www.ebay.com/sh/research/api/search?marketplace=EBAY-US&keywords=le+sserafim+2nd+studio+album+%E2%80%98pureflow%E2%80%99+pt.1&dayRange=90&endDate=1779477663434&startDate=1771701663434&categoryId=0&offset=0&limit=50&tabName=ACTIVE&tz=Asia%2FSeoul&modules=aggregates&modules=searchResults&modules=resultsHeader\",\"currentSoldEndpointUrl\":\"https://www.ebay.com/sh/research/api/search?marketplace=EBAY-US&keywords=le+sserafim+2nd+studio+album+%E2%80%98pureflow%E2%80%99+pt.1&dayRange=90&endDate=1779477663434&startDate=1771701663434&categoryId=0&offset=0&limit=50&tabName=SOLD&tz=Asia%2FSeoul&modules=aggregates&modules=searchResults&modules=resultsHeader\",\"previousPobActiveEndpointUrl\":\"https://www.ebay.com/sh/research/api/search?marketplace=EBAY-US&keywords=le+sserafim+2nd+studio+album+%E2%80%98pureflow%E2%80%99+pt.1&dayRange=90&endDate=1779477664260&startDate=1771701664260&categoryId=0&offset=0&limit=50&tabName=ACTIVE&tz=Asia%2FSeoul&modules=aggregates&modules=searchResults&modules=resultsHeader\",\"previousPobSoldEndpointUrl\":\"https://www.ebay.com/sh/research/api/search?marketplace=EBAY-US&keywords=le+sserafim+2nd+studio+album+%E2%80%98pureflow%E2%80%99+pt.1&dayRange=90&endDate=1779477664260&startDate=1771701664260&categoryId=0&offset=0&limit=50&tabName=SOLD&tz=Asia%2FSeoul&modules=aggregates&modules=searchResults&modules=resultsHeader\",\"authState\":\"missing\",\"sessionStrategy\":\"none\",\"sessionSource\":null,\"kvLoadAttempted\":true,\"kvLoadSucceeded\":false,\"kvStorageStateBytes\":6763,\"envLoadAttempted\":false,\"envLoadSucceeded\":false,\"filesystemLoadAttempted\":false,\"filesystemLoadSucceeded\":false,\"profileLoadAttempted\":false,\"profileLoadSucceeded\":false,\"authValidationAttempted\":false,\"authValidationSucceeded\":false,\"candidateDiagnostics\":[{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"tier\":1,\"family\":\"resolved_query_context\",\"activeListings\":null,\"soldTotal\":null,\"avgWatchersPerListing\":null,\"watcherCoverageCount\":null,\"sellThroughPct\":null,\"titleMatchScore\":0,\"subtypeAligned\":false,\"tooNarrow\":false,\"score\":18,\"status\":\"ok\"}],\"previousPobCandidateDiagnostics\":[{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"tier\":1,\"family\":\"resolved_query_context\",\"activeListings\":null,\"soldTotal\":null,\"avgWatchersPerListing\":null,\"watcherCoverageCount\":null,\"sellThroughPct\":null,\"titleMatchScore\":0,\"subtypeAligned\":false,\"tooNarrow\":false,\"score\":12,\"status\":\"ok\"}],\"fallbackReasons\":[\"Sanitized upstash-redis storage state before use/persistence by removing 27 non-eBay cookies and 0 non-eBay origins.\",\"No evaluated eBay Research candidate returned useful ACTIVE or SOLD data.\"],\"writeSources\":{\"activeAvgPriceUsd\":\"none\",\"activeAvgShippingUsd\":\"none\",\"activeListingsCount\":\"none\",\"activeAvgWatchersPerListing\":\"none\",\"soldAvgPriceUsd\":\"none\",\"soldMedianPriceUsd\":\"none\",\"soldAvgShippingUsd\":\"none\",\"soldListingsCount\":\"none\",\"soldSellThroughPct\":\"none\",\"soldTotalRevenueUsd\":\"none\",\"previousPobAvgPriceUsd\":\"none\",\"previousPobSellThroughPct\":\"none\"},\"notes\":\"Sanitized upstash-redis storage state before use/persistence by removing 27 non-eBay cookies and 0 non-eBay origins. upstash-redis storage state did not contain any usable eBay cookies. No usable eBay cookies after sanitization (failure #1/3). Session preserved. Raw cookies=27 sample=[__uzma@no-domain, __uzmb@no-domain, __uzme@no-domain, __ssds@no-domain, __ssuzjsr2@no-domain]. Authenticated eBay Research session is not available. Bootstrap a signed-in Playwright profile or provide storage-state cookies. Sanitized upstash-redis storage state before use/persistence by removing 27 non-eBay cookies and 0 non-eBay origins. upstash-redis storage state did not contain any usable eBay cookies. No usable eBay cookies after sanitization (failure #1/3). Session preserved. Raw cookies=27 sample=[__uzma@no-domain, __uzmb@no-domain, __uzme@no-domain, __ssds@no-domain, __ssuzjsr2@no-domain]. Authenticated eBay Research session is not available. Bootstrap a signed-in Playwright profile or provide storage-state cookies. No useful authenticated eBay Research candidate could be selected for current-market validation, but previous-POB research signals were preserved.\"}},\"social\":{\"twitterTrending\":true,\"youtubeViews24hMillions\":null,\"redditPostsCount7d\":null,\"debug\":{\"twitter\":{\"checked\":true,\"rawItemTitleInput\":\"(POB) LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1 (Weverse Albums ver.) (SET)\",\"rawSocialQueryInput\":\"2nd studio album ‘pureflow’ pt.1\",\"normalizedSocialQueryBase\":\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"strippedVariationTerms\":[\"Weverse Albums ver\",\"Weverse Albums\",\"ver\"],\"variationStripNote\":\"Variation terms stripped for social broadening: Weverse Albums ver, Weverse Albums, ver\",\"queryCandidates\":[\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"le sserafim\",\"2nd studio album ‘pureflow’ pt 1\"],\"selectedQuery\":\"le sserafim\",\"query\":\"le sserafim\",\"searchUrl\":\"https://api.x.com/2/tweets/counts/recent?query=le%20sserafim\",\"totalTweetCount\":387732,\"granularity\":\"day\",\"queryDiagnostics\":[{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"family\":\"resolved_query_context\",\"totalTweetCount\":null,\"responseStatus\":400,\"note\":\"Request failed with status code 400\"},{\"query\":\"le sserafim\",\"family\":\"artist_only_fallback\",\"totalTweetCount\":387732,\"responseStatus\":200},{\"query\":\"2nd studio album ‘pureflow’ pt 1\",\"family\":\"album_only_fallback\",\"totalTweetCount\":null,\"responseStatus\":400,\"note\":\"Request failed with status code 400\"}],\"confidence\":\"High\",\"note\":\"Recent X post count over the last 7 days used as a conversation-volume proxy.\",\"queryResolution\":{\"queryContextUsed\":true,\"querySource\":\"resolved_query_context\",\"resolvedSearchQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"validationScope\":\"Album\",\"queryScope\":\"Artist + Album\"}},\"youtube\":{\"checked\":true,\"rawItemTitleInput\":\"(POB) LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1 (Weverse Albums ver.) (SET)\",\"rawSocialQueryInput\":\"2nd studio album ‘pureflow’ pt.1\",\"normalizedSocialQueryBase\":\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"strippedVariationTerms\":[\"Weverse Albums ver\",\"Weverse Albums\",\"ver\"],\"variationStripNote\":\"Variation terms stripped for social broadening: Weverse Albums ver, Weverse Albums, ver\",\"queryCandidates\":[\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"le sserafim 2nd studio album ‘pureflow’ pt 1 official\",\"le sserafim 2nd studio album ‘pureflow’ pt 1 mv\",\"le sserafim 2nd studio album ‘pureflow’ pt 1 teaser\",\"le sserafim\"],\"selectedQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"selectedCandidateClass\":null,\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"searchUrl\":\"https://www.googleapis.com/youtube/v3/search?q=le%20sserafim%202nd%20studio%20album%20%E2%80%98pureflow%E2%80%99%20pt%201\",\"resultsExamined\":0,\"queryDiagnostics\":[],\"selectedVideoId\":null,\"selectedVideoTitle\":null,\"selectedVideoUrl\":null,\"selectedVideoViews\":null,\"selectedVideoPublishedAt\":null,\"selectedVideoDaysLive\":null,\"selectedVideoAvgDailyViews\":null,\"candidateVideos\":[],\"topVideoTitle\":null,\"topVideoUrl\":null,\"publishedAt\":null,\"totalViews\":null,\"daysLive\":null,\"avgDailyViews\":null,\"confidence\":\"Low\",\"note\":\"Request failed with status code 403\",\"queryResolution\":{\"queryContextUsed\":true,\"querySource\":\"resolved_query_context\",\"resolvedSearchQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"validationScope\":\"Album\",\"queryScope\":\"Artist + Album\"}},\"reddit\":{\"checked\":true,\"rawItemTitleInput\":\"(POB) LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1 (Weverse Albums ver.) (SET)\",\"rawSocialQueryInput\":\"2nd studio album ‘pureflow’ pt.1\",\"normalizedSocialQueryBase\":\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"strippedVariationTerms\":[\"Weverse Albums ver\",\"Weverse Albums\",\"ver\"],\"variationStripNote\":\"Variation terms stripped for social broadening: Weverse Albums ver, Weverse Albums, ver\",\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt 1 discussion\",\"queryCandidates\":[\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"2nd studio album ‘pureflow’ pt 1 le sserafim\",\"le sserafim 2nd studio album ‘pureflow’ pt 1 discussion\"],\"selectedQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt 1 discussion\",\"searchUrl\":\"https://old.reddit.com/search.json?q=le%20sserafim%202nd%20studio%20album%20%E2%80%98pureflow%E2%80%99%20pt%201%20discussion&sort=new&t=week&limit=100\",\"queryDiagnostics\":[{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt 1\",\"family\":\"resolved_query_context\",\"recentResultCount\":null,\"pageLimitReached\":null,\"endpointTried\":\"https://www.reddit.com/search.json\",\"alternateEndpointTried\":\"https://old.reddit.com/search.json\",\"statusCode\":403,\"userAgentUsed\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36\",\"note\":\"Primary endpoint failed (Request failed with status code 403); alternate endpoint failed (Request failed with status code 403).\"},{\"query\":\"2nd studio album ‘pureflow’ pt 1 le sserafim\",\"family\":\"album_artist_discussion\",\"recentResultCount\":null,\"pageLimitReached\":null,\"endpointTried\":\"https://www.reddit.com/search.json\",\"alternateEndpointTried\":\"https://old.reddit.com/search.json\",\"statusCode\":403,\"userAgentUsed\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36\",\"note\":\"Primary endpoint failed (Request failed with status code 403); alternate endpoint failed (Request failed with status code 403).\"},{\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt 1 discussion\",\"family\":\"artist_album_comeback\",\"recentResultCount\":null,\"pageLimitReached\":null,\"endpointTried\":\"https://www.reddit.com/search.json\",\"alternateEndpointTried\":\"https://old.reddit.com/search.json\",\"statusCode\":403,\"userAgentUsed\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36\",\"note\":\"Primary endpoint failed (Request failed with status code 403); alternate endpoint failed (Request failed with status code 403).\"}],\"recentResultCount\":null,\"pageLimit\":100,\"pageLimitReached\":null,\"endpointTried\":\"https://www.reddit.com/search.json\",\"alternateEndpointTried\":\"https://old.reddit.com/search.json\",\"statusCode\":403,\"userAgentUsed\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36\",\"confidence\":\"Low\",\"note\":\"All Reddit discussion-oriented query candidates failed before a usable sample count was returned.\",\"queryResolution\":{\"queryContextUsed\":true,\"querySource\":\"resolved_query_context\",\"resolvedSearchQuery\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"validationScope\":\"Album\",\"queryScope\":\"Artist + Album\"}}}},\"chart\":{},\"research\":{\"previousAlbumTitle\":\"CRAZY\",\"previousComebackFirstWeekSales\":null,\"perplexityHistoricalContextScore\":7,\"historicalContextNotes\":\"The most likely prior comparable release is LE SSERAFIM's previous studio-album cycle, 'CRAZY' (2024), which is the closest major comeback to benchmark collector/preorder behavior for 'PUREFLOW' pt.1. The provided sources confirm 'PUREFLOW' pt.1 has official pre-order activity and multiple versions/collectible formats…\",\"confidence\":\"Low\",\"notes\":\"The most likely prior comparable release is LE SSERAFIM's previous studio-album cycle, 'CRAZY' (2024), which is the closest major comeback to benchmark collector/preorder behavior for 'PUREFLOW' pt.1. The provided sources confirm 'PUREFLOW' pt.1 has official pre-order activity and multiple versions/collectible formats…\",\"sources\":[\"https://kpop.fandom.com/wiki/Pureflow_Pt.1\",\"https://weverse.io/lesserafim/notice/34880\",\"https://www.youtube.com/shorts/5ns-mKH4IA4\",\"https://www.kpopusaonline.com/product/le-sserafim-2nd-studio-album-pureflow-pt-1-weverse-album-ver-pre/\",\"https://hello82.com/products/le-sserafim-2nd-studio-album-pureflow-pt-1-compact-ver-hello82-pop-up-exclusive\",\"https://shop.le-sserafim.us/collections/2nd-studio-album-pureflow-pt-1\"],\"debug\":{\"providerStatus\":\"ok\",\"parseStatus\":\"ok\",\"query\":\"le sserafim 2nd studio album ‘pureflow’ pt.1\",\"promptFocus\":[\"identify the most likely previous comeback or prior comparable release\",\"look for collector, POB, or preorder demand commentary from the prior cycle\",\"note whether prior demand was strong enough to support current collector-focused monitoring\"],\"citations\":[\"https://kpop.fandom.com/wiki/Pureflow_Pt.1\",\"https://weverse.io/lesserafim/notice/34880\",\"https://www.youtube.com/shorts/5ns-mKH4IA4\",\"https://www.kpopusaonline.com/product/le-sserafim-2nd-studio-album-pureflow-pt-1-weverse-album-ver-pre/\",\"https://hello82.com/products/le-sserafim-2nd-studio-album-pureflow-pt-1-compact-ver-hello82-pop-up-exclusive\",\"https://shop.le-sserafim.us/collections/2nd-studio-album-pureflow-pt-1\"],\"sourceSnippets\":[\"[NOTICE] LE SSERAFIM “PUREFLOW” pt.1 and - Weverse: 'will be released on Friday, May 22' and 'available for pre-order starting today, April 13.'\",\"[NOTICE] Weverse: '[Lead Single “CELEBRATION” Release Date] - 1 pm, Friday, April 24, 2026 (KST)'\",\"hello82: 'This is a PRE-ORDER product. (Release Date : 2026-05-22). This is an official release ... and counts towards the Billboard (U.S. Sales Only)'\",\"LE SSERAFIM Official Store: multiple collectible items listed (e.g., cassettes) under '2nd Studio Album PUREFLOW pt.1'\"],\"resolvedPriorRelease\":\"CRAZY\",\"extractedConfidence\":\"Low\",\"computedConfidence\":\"Low\",\"confidenceReason\":\"The answer is based on limited provided snippets and general release-format signals, not on verified chart data or prior-cycle collector metrics.\",\"scoreAssignmentReason\":\"Collector/preorder monitoring is justified by the presence of multiple official and retailer pre-order formats, but the strength of prior demand cannot be confirmed from the supplied evidence.\",\"rawResponseText\":\"{\\n  \\\"previousAlbumTitle\\\": \\\"CRAZY\\\",\\n  \\\"previousComebackFirstWeekSales\\\": null,\\n  \\\"historicalContextNotes\\\": \\\"The most likely prior comparable release is LE SSERAFIM's previous studio-album cycle, 'CRAZY' (2024), which is the closest major comeback to benchmark collector/preorder behavior for 'PUREFLOW' pt.1. The provided sources confirm 'PUREFLOW' pt.1 has official pre-order activity and multiple versions/collectible formats, suggesting a collector-driven launch strategy similar to earlier LE SSERAFIM eras.\\\",\\n  \\\"researchConfidence\\\": \\\"Low\\\",\\n  \\\"commercialStrengthContext\\\": \\\"LE SSERAFIM is a consistently strong physical-sales group, but the provided evidence does not include verified first-week sales for the prior cycle. On that basis, prior commercial strength is plausible but not numerically confirmed here.\\\",\\n  \\\"collectorDemandContext\\\": \\\"The current release setup includes multiple purchasable variants and exclusive formats, which is consistent with a collector-focused rollout. However, the supplied evidence does not directly document prior-cycle POB scarcity, sellouts, or unusually strong collector demand.\\\",\\n  \\\"preorderDemandContext\\\": \\\"The Weverse notice shows an advance pre-order window beginning April 13, 2026 and a lead single rollout before album release, indicating structured preorder marketing. No direct prior-cycle preorder demand metrics or commentary were available in the provided sources.\\\",\\n  \\\"sourceSnippets\\\": [\\n    \\\"[NOTICE] LE SSERAFIM “PUREFLOW” pt.1 and - Weverse: 'will be released on Friday, May 22' and 'available for pre-order starting today, April 13.'\\\",\\n    \\\"[NOTICE] Weverse: '[Lead Single “CELEBRATION” Release Date] - 1 pm, Friday, April 24, 2026 (KST)'\\\",\\n    \\\"hello82: 'This is a PRE-ORDER product. (Release Date : 2026-05-22). This is an official release ... and counts towards the Billboard (U.S. Sales Only)'\\\",\\n    \\\"LE SSERAFIM Official Store: multiple collectible items listed (e.g., cassettes) under '2nd Studio Album PUREFLOW pt.1'\\\"\\n  ],\\n  \\\"ambiguities\\\": [\\n    \\\"The query names 'PUREFLOW' pt.1, but the search result also appears to reference stylized punctuation/branding variations; release naming may be inconsistent across sources.\\\",\\n    \\\"No verified source in the provided set confirms the prior album title 'CRAZY' as the direct predecessor or gives first-week sales figures.\\\",\\n    \\\"No direct evidence of prior POB scarcity, sellouts, reseller premiums, or preorder rush was included.\\\"\\n  ],\\n  \\\"confidenceReason\\\": \\\"The answer is based on limited provided snippets and general release-format signals, not on verified chart data or prior-cycle collector metrics.\\\",\\n  \\\"scoreReason\\\": \\\"Collector/preorder monitoring is justified by the presence of multiple official and retailer pre-order formats, but the strength of prior demand cannot be confirmed from the supplied evidence.\\\",\\n  \\\"notEnoughEvidence\\\": true\\n}\",\"errorMessage\":null}}}",
+      "latestAiRecommendation": "Automatic tracking paused because the validation is no longer in a watchable state.",
+      "latestAiConfidence": "High",
+      "validationError": ""
+    },
+    "decision": {
+      "buyDecision": "Watching",
+      "automationStatus": "Paused",
+      "trackingCadence": "Off",
+      "shouldAutoTrack": false,
+      "nextCheckAt": null
+    },
+    "debug": {
+      "sourceContext": {
+        "sourceType": "item",
+        "hasItem": true,
+        "hasEvent": false,
+        "itemRecordId": "rec7u6KVlQWDWJB0d",
+        "eventRecordId": null
+      },
+      "effectiveSourceType": "item",
+      "effectiveContextMode": "item",
+      "effectiveSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+      "hasItem": true,
+      "hasEvent": false,
+      "effectiveContext": {
+        "sourceType": "item",
+        "mode": "item",
+        "validationScope": "Album",
+        "queryScope": "Artist + Album",
+        "directQueryActive": false,
+        "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+        "effectiveSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+        "searchArtist": "le sserafim",
+        "searchAlbum": null,
+        "searchItem": "2nd studio album ‘pureflow’ pt.1",
+        "searchEvent": null,
+        "searchLocation": null,
+        "hasItem": true,
+        "hasEvent": false,
+        "itemRecordId": "rec7u6KVlQWDWJB0d",
+        "eventRecordId": null,
+        "itemName": "(POB) LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1 (Weverse Albums ver.) (SET)",
+        "eventDate": "2026-05-22T00:00:00.000Z",
+        "dDay": 0,
+        "requestTimestamp": "2026-05-22T19:21:02.100Z"
+      },
+      "ebayQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+      "soldQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+      "queryCandidates": {
+        "ebay": [
+          "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "le sserafim 2nd studio album ‘pureflow’ pt.1 Platform Album",
+          "LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1",
+          "le sserafim POB 2nd studio album ‘pureflow’ pt.1",
+          "2nd studio album ‘pureflow’ pt.1"
+        ],
+        "sold": [
+          "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "le sserafim 2nd studio album ‘pureflow’ pt.1 POB",
+          "le sserafim 2nd studio album ‘pureflow’ pt.1 MAKESTAR",
+          "le sserafim 2nd studio album ‘pureflow’ pt.1 Platform Album",
+          "LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1",
+          "2nd studio album ‘pureflow’ pt.1 POB",
+          "2nd studio album ‘pureflow’ pt.1"
+        ],
+        "terapeak": [
+          "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "le sserafim 2nd studio album ‘pureflow’ pt.1"
+        ]
+      },
+      "browseSampleSize": 25,
+      "soldResultsCount": null,
+      "omittedOptionalWrites": [
+        "avgWatchersPerListing",
+        "activeAvgWatchersPerListing",
+        "soldAvgPriceUsd",
+        "soldMedianPriceUsd",
+        "soldAvgShippingUsd",
+        "soldListingsCount",
+        "soldSellThroughPct",
+        "soldTotalRevenueUsd",
+        "youtubeViews24hMillions",
+        "redditPostsCount7d",
+        "day1Sold",
+        "day2Sold",
+        "day3Sold",
+        "day4Sold",
+        "day5Sold",
+        "daysTracked",
+        "previousPobAvgPriceUsd",
+        "previousPobSellThroughPct",
+        "previousComebackFirstWeekSales"
+      ],
+      "writeResolution": {
+        "avgWatchersPerListing": "none",
+        "preOrderListingsCount": "ebay",
+        "activeAvgPriceUsd": "ebay",
+        "activeAvgShippingUsd": "ebay",
+        "activeListingsCount": "ebay",
+        "activeAvgWatchersPerListing": "none",
+        "soldAvgPriceUsd": "none",
+        "soldMedianPriceUsd": "none",
+        "soldAvgShippingUsd": "none",
+        "soldListingsCount": "none",
+        "soldSellThroughPct": "none",
+        "soldTotalRevenueUsd": "none",
+        "marketPriceUsd": "ebay",
+        "avgShippingCostUsd": "ebay",
+        "competitionLevel": "ebay",
+        "twitterTrending": "social",
+        "youtubeViews24hMillions": "none",
+        "redditPostsCount7d": "none",
+        "day1Sold": "none",
+        "day2Sold": "none",
+        "day3Sold": "none",
+        "day4Sold": "none",
+        "day5Sold": "none",
+        "daysTracked": "none",
+        "previousPobAvgPriceUsd": "none",
+        "previousPobSellThroughPct": "none",
+        "previousComebackFirstWeekSales": "none",
+        "perplexityHistoricalContextScore": "research",
+        "historicalContextNotes": "research",
+        "researchConfidence": "research"
+      },
+      "finalFieldSources": {
+        "marketPriceUsd": "ebay",
+        "avgShippingCostUsd": "ebay",
+        "competitionLevel": "ebay"
+      },
+      "providerResolution": {
+        "activeSource": "ebay_browse",
+        "soldSource": "ebay_browse",
+        "soldFallbackUsed": false,
+        "fallbackReason": "First-party research sold signals were unavailable or insufficient, but no legacy sold fallback data was available."
+      },
+      "sourceSet": [
+        "ebay",
+        "sold",
+        "terapeak",
+        "social",
+        "chart",
+        "research"
+      ],
+      "providers": {
+        "ebay": {
+          "status": "ok",
+          "confidence": "medium",
+          "browseSampleSize": 25,
+          "queryCandidates": [
+            "le sserafim 2nd studio album ‘pureflow’ pt.1",
+            "le sserafim 2nd studio album ‘pureflow’ pt.1 Platform Album",
+            "LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1",
+            "le sserafim POB 2nd studio album ‘pureflow’ pt.1",
+            "2nd studio album ‘pureflow’ pt.1"
+          ],
+          "selectedQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "selectedQueryTier": 1,
+          "queryDiagnostics": [
+            {
+              "query": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+              "tier": 1,
+              "family": "resolved_query_context",
+              "itemSummaryCount": 25,
+              "totalListings": 144
+            }
+          ],
+          "queryContextUsed": true,
+          "querySource": "resolved_query_context",
+          "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "validationScope": "Album",
+          "queryScope": "Artist + Album",
+          "selectionReason": "Selected because this cleaned browse candidate produced sufficient listing depth.",
+          "contributedFields": [
+            "preOrderListingsCount",
+            "marketPriceUsd",
+            "avgShippingCostUsd",
+            "competitionLevel"
+          ],
+          "omittedFields": [
+            "avgWatchersPerListing"
+          ]
+        },
+        "sold": {
+          "status": "error",
+          "provider": "third_party_sold_api",
+          "confidence": "low",
+          "soldResultsCount": null,
+          "recentSoldCount7d": null,
+          "queryCandidates": [
+            "le sserafim 2nd studio album ‘pureflow’ pt.1",
+            "le sserafim 2nd studio album ‘pureflow’ pt.1 POB",
+            "le sserafim 2nd studio album ‘pureflow’ pt.1 MAKESTAR",
+            "le sserafim 2nd studio album ‘pureflow’ pt.1 Platform Album",
+            "LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1",
+            "2nd studio album ‘pureflow’ pt.1 POB",
+            "2nd studio album ‘pureflow’ pt.1"
+          ],
+          "selectedQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "selectedQueryTier": 1,
+          "selectedQueryFamily": null,
+          "broadAlbumQuery": "recdrjKzp9a2uY4mU 2nd studio album ‘pureflow’ pt.1",
+          "subtypeSpecificQuery": "recdrjKzp9a2uY4mU 2nd studio album ‘pureflow’ pt.1 pob",
+          "queryDiagnostics": [
+            {
+              "query": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+              "tier": 1,
+              "family": "resolved_query_context",
+              "soldResultsCount": null,
+              "recentSoldCount7d": null,
+              "titleMatchScore": null,
+              "status": "error",
+              "note": "Request failed with status code 403"
+            },
+            {
+              "query": "le sserafim 2nd studio album ‘pureflow’ pt.1 POB",
+              "tier": 2,
+              "family": "artist_album_subtype",
+              "soldResultsCount": null,
+              "recentSoldCount7d": null,
+              "titleMatchScore": null,
+              "status": "error",
+              "note": "Request failed with status code 429"
+            },
+            {
+              "query": "le sserafim 2nd studio album ‘pureflow’ pt.1 MAKESTAR",
+              "tier": 3,
+              "family": "artist_album_descriptor",
+              "soldResultsCount": null,
+              "recentSoldCount7d": null,
+              "titleMatchScore": null,
+              "status": "error",
+              "note": "Request failed with status code 429"
+            },
+            {
+              "query": "LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1",
+              "tier": 5,
+              "family": "artist_title_listing",
+              "soldResultsCount": null,
+              "recentSoldCount7d": null,
+              "titleMatchScore": null,
+              "status": "error",
+              "note": "Request failed with status code 429"
+            }
+          ],
+          "querySelectionReason": "No sold candidate evaluation completed; returning fallback query for traceability.",
+          "soldBucketDebug": {
+            "status": "skipped",
+            "notes": [
+              "sold bucketing did not run"
+            ],
+            "totalItemsExamined": 0,
+            "withSoldAt": 0,
+            "missingSoldAt": 0,
+            "dateParseFailures": 0,
+            "futureDated": 0,
+            "bucketedItems": 0
+          },
+          "queryContextUsed": true,
+          "querySource": "resolved_query_context",
+          "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "validationScope": "Album",
+          "queryScope": "Artist + Album",
+          "contributedFields": [],
+          "omittedFields": [
+            "soldAveragePriceUsd",
+            "soldMedianPriceUsd",
+            "soldMinPriceUsd",
+            "soldMaxPriceUsd",
+            "day1Sold",
+            "day2Sold",
+            "day3Sold",
+            "day4Sold",
+            "day5Sold",
+            "daysTracked"
+          ],
+          "errorMessage": "Request failed with status code 429"
+        },
+        "terapeak": {
+          "status": "partial",
+          "provider": "ebay_research_ui",
+          "confidence": "low",
+          "queryCandidates": [
+            "le sserafim 2nd studio album ‘pureflow’ pt.1",
+            "le sserafim 2nd studio album ‘pureflow’ pt.1"
+          ],
+          "currentQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "previousPobQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "queryContextUsed": true,
+          "querySource": "resolved_query_context",
+          "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "validationScope": "Album",
+          "queryScope": "Artist + Album",
+          "selectedMode": "current_market",
+          "currentQueryFamily": null,
+          "previousPobQueryFamily": null,
+          "currentResultCount": null,
+          "previousPobResultCount": null,
+          "candidateDiagnostics": [
+            {
+              "query": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+              "tier": 1,
+              "family": "resolved_query_context",
+              "activeListings": null,
+              "soldTotal": null,
+              "avgWatchersPerListing": null,
+              "watcherCoverageCount": null,
+              "sellThroughPct": null,
+              "titleMatchScore": 0,
+              "subtypeAligned": false,
+              "tooNarrow": false,
+              "score": 18,
+              "status": "ok"
+            }
+          ],
+          "previousPobCandidateDiagnostics": [
+            {
+              "query": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+              "tier": 1,
+              "family": "resolved_query_context",
+              "activeListings": null,
+              "soldTotal": null,
+              "avgWatchersPerListing": null,
+              "watcherCoverageCount": null,
+              "sellThroughPct": null,
+              "titleMatchScore": 0,
+              "subtypeAligned": false,
+              "tooNarrow": false,
+              "score": 12,
+              "status": "ok"
+            }
+          ],
+          "fallbackReasons": [
+            "Sanitized upstash-redis storage state before use/persistence by removing 27 non-eBay cookies and 0 non-eBay origins.",
+            "No evaluated eBay Research candidate returned useful ACTIVE or SOLD data."
+          ],
+          "writeSources": {
+            "activeAvgPriceUsd": "none",
+            "activeAvgShippingUsd": "none",
+            "activeListingsCount": "none",
+            "activeAvgWatchersPerListing": "none",
+            "soldAvgPriceUsd": "none",
+            "soldMedianPriceUsd": "none",
+            "soldAvgShippingUsd": "none",
+            "soldListingsCount": "none",
+            "soldSellThroughPct": "none",
+            "soldTotalRevenueUsd": "none",
+            "previousPobAvgPriceUsd": "none",
+            "previousPobSellThroughPct": "none"
+          },
+          "soldBucketDebug": {
+            "status": "skipped",
+            "notes": [
+              "research sold bucketing did not run"
+            ],
+            "totalItemsExamined": 0,
+            "withSoldAt": 0,
+            "missingSoldAt": 0,
+            "dateParseFailures": 0,
+            "futureDated": 0,
+            "bucketedItems": 0
+          },
+          "recentSoldCount7d": null,
+          "authState": "missing",
+          "sessionStrategy": "none",
+          "contributedFields": [],
+          "omittedFields": [
+            "avgWatchersPerListing",
+            "preOrderListingsCount",
+            "activeAvgPriceUsd",
+            "activeAvgShippingUsd",
+            "activeListingsCount",
+            "activeAvgWatchersPerListing",
+            "soldAvgPriceUsd",
+            "soldMedianPriceUsd",
+            "soldAvgShippingUsd",
+            "marketPriceUsd",
+            "avgShippingCostUsd",
+            "competitionLevel",
+            "soldSellThroughPct",
+            "soldTotalRevenueUsd",
+            "previousPobAvgPriceUsd",
+            "previousPobSellThroughPct",
+            "day1Sold",
+            "day2Sold",
+            "day3Sold",
+            "day4Sold",
+            "day5Sold",
+            "daysTracked"
+          ],
+          "notes": "Sanitized upstash-redis storage state before use/persistence by removing 27 non-eBay cookies and 0 non-eBay origins. upstash-redis storage state did not contain any usable eBay cookies. No usable eBay cookies after sanitization (failure #1/3). Session preserved. Raw cookies=27 sample=[__uzma@no-domain, __uzmb@no-domain, __uzme@no-domain, __ssds@no-domain, __ssuzjsr2@no-domain]. Authenticated eBay Research session is not available. Bootstrap a signed-in Playwright profile or provide storage-state cookies. Sanitized upstash-redis storage state before use/persistence by removing 27 non-eBay cookies and 0 non-eBay origins. upstash-redis storage state did not contain any usable eBay cookies. No usable eBay cookies after sanitization (failure #1/3). Session preserved. Raw cookies=27 sample=[__uzma@no-domain, __uzmb@no-domain, __uzme@no-domain, __ssds@no-domain, __ssuzjsr2@no-domain]. Authenticated eBay Research session is not available. Bootstrap a signed-in Playwright profile or provide storage-state cookies. No useful authenticated eBay Research candidate could be selected for current-market validation, but previous-POB research signals were preserved."
+        },
+        "social": {
+          "status": "ok",
+          "confidence": "low",
+          "queryContextUsed": true,
+          "querySource": "resolved_query_context",
+          "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "validationScope": "Album",
+          "queryScope": "Artist + Album",
+          "contributedFields": [
+            "twitterTrending"
+          ],
+          "omittedFields": [
+            "youtubeViews24hMillions",
+            "redditPostsCount7d"
+          ],
+          "details": {
+            "twitter": {
+              "checked": true,
+              "rawItemTitleInput": "(POB) LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1 (Weverse Albums ver.) (SET)",
+              "rawSocialQueryInput": "2nd studio album ‘pureflow’ pt.1",
+              "normalizedSocialQueryBase": "le sserafim 2nd studio album ‘pureflow’ pt 1",
+              "strippedVariationTerms": [
+                "Weverse Albums ver",
+                "Weverse Albums",
+                "ver"
+              ],
+              "variationStripNote": "Variation terms stripped for social broadening: Weverse Albums ver, Weverse Albums, ver",
+              "queryCandidates": [
+                "le sserafim 2nd studio album ‘pureflow’ pt 1",
+                "le sserafim",
+                "2nd studio album ‘pureflow’ pt 1"
+              ],
+              "selectedQuery": "le sserafim",
+              "query": "le sserafim",
+              "searchUrl": "https://api.x.com/2/tweets/counts/recent?query=le%20sserafim",
+              "totalTweetCount": 387732,
+              "granularity": "day",
+              "queryDiagnostics": [
+                {
+                  "query": "le sserafim 2nd studio album ‘pureflow’ pt 1",
+                  "family": "resolved_query_context",
+                  "totalTweetCount": null,
+                  "responseStatus": 400,
+                  "note": "Request failed with status code 400"
+                },
+                {
+                  "query": "le sserafim",
+                  "family": "artist_only_fallback",
+                  "totalTweetCount": 387732,
+                  "responseStatus": 200
+                },
+                {
+                  "query": "2nd studio album ‘pureflow’ pt 1",
+                  "family": "album_only_fallback",
+                  "totalTweetCount": null,
+                  "responseStatus": 400,
+                  "note": "Request failed with status code 400"
+                }
+              ],
+              "confidence": "High",
+              "note": "Recent X post count over the last 7 days used as a conversation-volume proxy.",
+              "queryResolution": {
+                "queryContextUsed": true,
+                "querySource": "resolved_query_context",
+                "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+                "validationScope": "Album",
+                "queryScope": "Artist + Album"
+              }
+            },
+            "youtube": {
+              "checked": true,
+              "rawItemTitleInput": "(POB) LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1 (Weverse Albums ver.) (SET)",
+              "rawSocialQueryInput": "2nd studio album ‘pureflow’ pt.1",
+              "normalizedSocialQueryBase": "le sserafim 2nd studio album ‘pureflow’ pt 1",
+              "strippedVariationTerms": [
+                "Weverse Albums ver",
+                "Weverse Albums",
+                "ver"
+              ],
+              "variationStripNote": "Variation terms stripped for social broadening: Weverse Albums ver, Weverse Albums, ver",
+              "queryCandidates": [
+                "le sserafim 2nd studio album ‘pureflow’ pt 1",
+                "le sserafim 2nd studio album ‘pureflow’ pt 1 official",
+                "le sserafim 2nd studio album ‘pureflow’ pt 1 mv",
+                "le sserafim 2nd studio album ‘pureflow’ pt 1 teaser",
+                "le sserafim"
+              ],
+              "selectedQuery": "le sserafim 2nd studio album ‘pureflow’ pt 1",
+              "selectedCandidateClass": null,
+              "query": "le sserafim 2nd studio album ‘pureflow’ pt 1",
+              "searchUrl": "https://www.googleapis.com/youtube/v3/search?q=le%20sserafim%202nd%20studio%20album%20%E2%80%98pureflow%E2%80%99%20pt%201",
+              "resultsExamined": 0,
+              "queryDiagnostics": [],
+              "selectedVideoId": null,
+              "selectedVideoTitle": null,
+              "selectedVideoUrl": null,
+              "selectedVideoViews": null,
+              "selectedVideoPublishedAt": null,
+              "selectedVideoDaysLive": null,
+              "selectedVideoAvgDailyViews": null,
+              "candidateVideos": [],
+              "topVideoTitle": null,
+              "topVideoUrl": null,
+              "publishedAt": null,
+              "totalViews": null,
+              "daysLive": null,
+              "avgDailyViews": null,
+              "confidence": "Low",
+              "note": "Request failed with status code 403",
+              "queryResolution": {
+                "queryContextUsed": true,
+                "querySource": "resolved_query_context",
+                "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+                "validationScope": "Album",
+                "queryScope": "Artist + Album"
+              }
+            },
+            "reddit": {
+              "checked": true,
+              "rawItemTitleInput": "(POB) LE SSERAFIM - 2nd Studio Album ‘PUREFLOW’ pt.1 (Weverse Albums ver.) (SET)",
+              "rawSocialQueryInput": "2nd studio album ‘pureflow’ pt.1",
+              "normalizedSocialQueryBase": "le sserafim 2nd studio album ‘pureflow’ pt 1",
+              "strippedVariationTerms": [
+                "Weverse Albums ver",
+                "Weverse Albums",
+                "ver"
+              ],
+              "variationStripNote": "Variation terms stripped for social broadening: Weverse Albums ver, Weverse Albums, ver",
+              "query": "le sserafim 2nd studio album ‘pureflow’ pt 1 discussion",
+              "queryCandidates": [
+                "le sserafim 2nd studio album ‘pureflow’ pt 1",
+                "2nd studio album ‘pureflow’ pt 1 le sserafim",
+                "le sserafim 2nd studio album ‘pureflow’ pt 1 discussion"
+              ],
+              "selectedQuery": "le sserafim 2nd studio album ‘pureflow’ pt 1 discussion",
+              "searchUrl": "https://old.reddit.com/search.json?q=le%20sserafim%202nd%20studio%20album%20%E2%80%98pureflow%E2%80%99%20pt%201%20discussion&sort=new&t=week&limit=100",
+              "queryDiagnostics": [
+                {
+                  "query": "le sserafim 2nd studio album ‘pureflow’ pt 1",
+                  "family": "resolved_query_context",
+                  "recentResultCount": null,
+                  "pageLimitReached": null,
+                  "endpointTried": "https://www.reddit.com/search.json",
+                  "alternateEndpointTried": "https://old.reddit.com/search.json",
+                  "statusCode": 403,
+                  "userAgentUsed": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+                  "note": "Primary endpoint failed (Request failed with status code 403); alternate endpoint failed (Request failed with status code 403)."
+                },
+                {
+                  "query": "2nd studio album ‘pureflow’ pt 1 le sserafim",
+                  "family": "album_artist_discussion",
+                  "recentResultCount": null,
+                  "pageLimitReached": null,
+                  "endpointTried": "https://www.reddit.com/search.json",
+                  "alternateEndpointTried": "https://old.reddit.com/search.json",
+                  "statusCode": 403,
+                  "userAgentUsed": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+                  "note": "Primary endpoint failed (Request failed with status code 403); alternate endpoint failed (Request failed with status code 403)."
+                },
+                {
+                  "query": "le sserafim 2nd studio album ‘pureflow’ pt 1 discussion",
+                  "family": "artist_album_comeback",
+                  "recentResultCount": null,
+                  "pageLimitReached": null,
+                  "endpointTried": "https://www.reddit.com/search.json",
+                  "alternateEndpointTried": "https://old.reddit.com/search.json",
+                  "statusCode": 403,
+                  "userAgentUsed": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+                  "note": "Primary endpoint failed (Request failed with status code 403); alternate endpoint failed (Request failed with status code 403)."
+                }
+              ],
+              "recentResultCount": null,
+              "pageLimit": 100,
+              "pageLimitReached": null,
+              "endpointTried": "https://www.reddit.com/search.json",
+              "alternateEndpointTried": "https://old.reddit.com/search.json",
+              "statusCode": 403,
+              "userAgentUsed": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+              "confidence": "Low",
+              "note": "All Reddit discussion-oriented query candidates failed before a usable sample count was returned.",
+              "queryResolution": {
+                "queryContextUsed": true,
+                "querySource": "resolved_query_context",
+                "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+                "validationScope": "Album",
+                "queryScope": "Artist + Album"
+              }
+            }
+          }
+        },
+        "chart": {
+          "status": "stub",
+          "confidence": "low",
+          "contributedFields": [],
+          "omittedFields": [
+            "chartMomentum"
+          ]
+        },
+        "research": {
+          "status": "ok",
+          "confidence": "low",
+          "previousAlbumTitle": "CRAZY",
+          "previousComebackFirstWeekSales": null,
+          "perplexityHistoricalContextScore": 7,
+          "historicalContextNotes": "The most likely prior comparable release is LE SSERAFIM's previous studio-album cycle, 'CRAZY' (2024), which is the closest major comeback to benchmark collector/preorder behavior for 'PUREFLOW' pt.1. The provided sources confirm 'PUREFLOW' pt.1 has official pre-order activity and multiple versions/collectible formats…",
+          "contributedFields": [
+            "previousAlbumTitle",
+            "perplexityHistoricalContextScore",
+            "historicalContextNotes",
+            "researchConfidence"
+          ],
+          "omittedFields": [
+            "previousComebackFirstWeekSales"
+          ],
+          "notes": "The most likely prior comparable release is LE SSERAFIM's previous studio-album cycle, 'CRAZY' (2024), which is the closest major comeback to benchmark collector/preorder behavior for 'PUREFLOW' pt.1. The provided sources confirm 'PUREFLOW' pt.1 has official pre-order activity and multiple versions/collectible formats…",
+          "sources": [
+            "https://kpop.fandom.com/wiki/Pureflow_Pt.1",
+            "https://weverse.io/lesserafim/notice/34880",
+            "https://www.youtube.com/shorts/5ns-mKH4IA4",
+            "https://www.kpopusaonline.com/product/le-sserafim-2nd-studio-album-pureflow-pt-1-weverse-album-ver-pre/",
+            "https://hello82.com/products/le-sserafim-2nd-studio-album-pureflow-pt-1-compact-ver-hello82-pop-up-exclusive",
+            "https://shop.le-sserafim.us/collections/2nd-studio-album-pureflow-pt-1"
+          ],
+          "query": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+          "promptFocus": [
+            "identify the most likely previous comeback or prior comparable release",
+            "look for collector, POB, or preorder demand commentary from the prior cycle",
+            "note whether prior demand was strong enough to support current collector-focused monitoring"
+          ],
+          "sourceSnippets": [
+            "[NOTICE] LE SSERAFIM “PUREFLOW” pt.1 and - Weverse: 'will be released on Friday, May 22' and 'available for pre-order starting today, April 13.'",
+            "[NOTICE] Weverse: '[Lead Single “CELEBRATION” Release Date] - 1 pm, Friday, April 24, 2026 (KST)'",
+            "hello82: 'This is a PRE-ORDER product. (Release Date : 2026-05-22). This is an official release ... and counts towards the Billboard (U.S. Sales Only)'",
+            "LE SSERAFIM Official Store: multiple collectible items listed (e.g., cassettes) under '2nd Studio Album PUREFLOW pt.1'"
+          ],
+          "resolvedPriorRelease": "CRAZY",
+          "extractedConfidence": "Low",
+          "computedConfidence": "Low",
+          "confidenceReason": "The answer is based on limited provided snippets and general release-format signals, not on verified chart data or prior-cycle collector metrics.",
+          "scoreAssignmentReason": "Collector/preorder monitoring is justified by the presence of multiple official and retailer pre-order formats, but the strength of prior demand cannot be confirmed from the supplied evidence.",
+          "providerStatus": "ok",
+          "parseStatus": "ok",
+          "errorMessage": null
+        }
+      },
+      "queryContextUsed": true,
+      "querySource": "resolved_query_context",
+      "resolvedSearchQuery": "le sserafim 2nd studio album ‘pureflow’ pt.1",
+      "validationScope": "Album",
+      "queryScope": "Artist + Album"
+    }
+  }
+]

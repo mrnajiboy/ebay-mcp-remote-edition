@@ -712,9 +712,15 @@ function sanitizeResearchStorageState(
   sourceLabel?: string,
   notes?: string[]
 ): ResearchStorageState {
-  const cookies = normalizeResearchCookies(storageState.cookies).filter(
-    (cookie) => typeof cookie.domain === 'string' && isEbayResearchHostname(cookie.domain)
-  );
+  const cookies = normalizeResearchCookies(storageState.cookies).filter((cookie) => {
+    // Preserve cookies without an explicit domain (first-party cookies from the
+    // signed-in eBay Research session captured by Playwright storageState()).
+    // Only filter out cookies with an explicitly non-eBay domain.
+    if (typeof cookie.domain !== 'string' || cookie.domain.length === 0) {
+      return true;
+    }
+    return isEbayResearchHostname(cookie.domain);
+  });
   const origins = storageState.origins.filter((entry) => {
     const hostname = getResearchOriginHostname(entry.origin);
     return hostname !== null && isEbayResearchHostname(hostname);
