@@ -745,6 +745,10 @@ export function createApp(): express.Application {
   // ── Admin: Playwright Cookie Capture Page ──────────────────────────────────
 
   app.get('/admin/playwright-capture', requireAdmin, (_req, res) => {
+    res.set(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+    );
     res.status(200).send(`<!doctype html>
 <html lang="en">
 <head>
@@ -796,7 +800,7 @@ export function createApp(): express.Application {
       <button class="btn" id="btnOpenIframe" onclick="openIframe()">Open eBay Research</button>
     </div>
     <div class="iframe-container" id="iframeContainer">
-      <iframe id="ebayIframe" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>
+      <iframe id="ebayIframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>
       <div class="iframe-overlay" id="iframeOverlay">
         ⚠️ If the iframe shows a blank page or can't load, eBay's security policies may be blocking it. Switch to <strong>Manual Export</strong> tab below.
       </div>
