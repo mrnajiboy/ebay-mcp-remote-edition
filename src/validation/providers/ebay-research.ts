@@ -217,8 +217,88 @@ interface ResearchSessionValidationResult {
   note: string;
 }
 
+/** Maximum consecutive auth failures before session deletion (grace period). */
+const RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE = 3;
+/** Cooldown (ms) after a deletion before another deletion is considered. Prevents rapid re-deletion. */
+const RESEARCH_SESSION_DELETION_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+
+interface ResearchSessionDegradationState {
+  consecutiveFailures: number;
+  lastFailureAt: string;
+  lastFailurePath: 'auth_rejection' | 'no_cookies' | 'parse_failure';
+  lastFailureDetail: string;
+}
+
 function isExplicitResearchAuthRejection(validation: ResearchSessionValidationResult): boolean {
   return validation.responseStatus === 401 || validation.responseStatus === 403;
+}
+
+function readDegradationState(meta: EbayResearchSessionStoreMeta | null): ResearchSessionDegradationState | null {
+  if (!meta) return null;
+  const raw = (meta as Record<string, unknown>).__degradation as Record<string, unknown> | undefined;
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    consecutiveFailures: typeof raw.consecutiveFailures === 'number' ? raw.consecutiveFailures : 0,
+    lastFailureAt: typeof raw.lastFailureAt === 'string' ? raw.lastFailureAt : '',
+    lastFailurePath: typeof raw.lastFailurePath === 'string' ? raw.lastFailurePath as ResearchSessionDegradationState['lastFailurePath'] : 'auth_rejection',
+    lastFailureDetail: typeof raw.lastFailureDetail === 'string' ? raw.lastFailureDetail : '',
+  };
+}
+
+function buildDegradationMeta(
+  baseMeta: EbayResearchSessionStoreMeta,
+  degradation: ResearchSessionDegradationState
+): EbayResearchSessionStoreMeta {
+  return {
+    ...baseMeta,
+    __degradation: degradation,
+  };
+}
+
+async function updateDegradationMeta(
+  resolution: EbayResearchSessionStoreResolution,
+  degradation: ResearchSessionDegradationState,
+  existingMeta: EbayResearchSessionStoreMeta | null
+): Promise<void> {
+  if (!resolution.store) return;
+  try {
+    const updatedMeta = existingMeta
+      ? buildDegradationMeta(existingMeta, degradation)
+      : ({
+          updatedAt: new Date().toISOString(),
+          expiresAt: null,
+          ttlSeconds: RESEARCH_SESSION_STORE_TTL_S,
+          storeTtlSeconds: RESEARCH_SESSION_STORE_TTL_S,
+          backend: resolution.selected,
+          sessionStore: resolution.selected,
+          marketplace: 'EBAY-US',
+          source: 'storage_state',
+          sessionVersion: new Date().toISOString(),
+          sessionSource: 'kv',
+          storageStateBytes: 0,
+          __degradation: degradation,
+        } as EbayResearchSessionStoreMeta);
+    await resolution.store.setMeta(updatedMeta, { ttlSeconds: RESEARCH_SESSION_STORE_TTL_S });
+  } catch {
+    // Meta update failure is non-fatal — session deletion logic still proceeds
+  }
+}
+
+function shouldSkipDeletion(meta: EbayResearchSessionStoreMeta | null): boolean {
+  const degradation = readDegradationState(meta);
+  if (!degradation) return false;
+  // If we haven't reached max failures yet, skip deletion
+  if (degradation.consecutiveFailures < RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE) {
+    return true;
+  }
+  // If within cooldown, skip deletion
+  if (degradation.lastFailureAt) {
+    const lastFailureMs = new Date(degradation.lastFailureAt).getTime();
+    if (Date.now() - lastFailureMs < RESEARCH_SESSION_DELETION_COOLDOWN_MS) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -658,7 +738,56 @@ function buildResearchAuthDebug(
   | 'modulesSeen'
   | 'pageErrors'
   | 'notes'
-> {
+> & {
+    errorCode?: string;
+    authErrorDetail?: string;
+    validationDebug?: {
+      httpStatus?: number | null;
+      validationModulesSeen?: string[];
+      validationResponseBodyExcerpt?: string;
+    };
+    cookieDebug?: {
+      cookieCount: number;
+      cookieNames: string[];
+      cookieDomains: string[];
+      sampleCookies: string[];
+    };
+  } {
+  const errorCode = (() => {
+    if (authState.cookies.length === 0 && authState.authState === 'missing') return 'AUTH_MISSING_NO_SOURCES';
+    if (authState.cookies.length === 0 && authState.authState === 'expired') return 'AUTH_EXPIRED_NO_RECOVERY';
+    if (authState.cookies.length > 0 && authState.authState === 'expired') return 'AUTH_EXPIRED';
+    if (authState.authState === 'loaded' || authState.authState === 'authenticated') return 'NONE';
+    return 'AUTH_UNKNOWN';
+  })();
+
+  const authErrorDetail = (() => {
+    if (authState.authState === 'missing') {
+      const sourcesAttempted = [];
+      if (authState.kvLoadAttempted) sourcesAttempted.push(`kv(${authState.kvLoadSucceeded ? 'succeeded' : 'failed'})`);
+      if (authState.envLoadAttempted) sourcesAttempted.push(`env(${authState.envLoadSucceeded ? 'succeeded' : 'failed'})`);
+      if (authState.filesystemLoadAttempted) sourcesAttempted.push(`filesystem(${authState.filesystemLoadSucceeded ? 'succeeded' : 'failed'})`);
+      if (authState.profileLoadAttempted) sourcesAttempted.push(`profile(${authState.profileLoadSucceeded ? 'succeeded' : 'failed'})`);
+      return `No authenticated session found. Sources attempted: ${sourcesAttempted.join(', ') || 'none'}. Store: ${authState.sessionStoreSelected}.`;
+    }
+    if (authState.authState === 'expired') {
+      return `Session expired. Cookies exist (${authState.cookies.length}) but validation failed. Validation: ${authState.authValidationAttempted ? 'attempted' : 'skipped'}, ${authState.authValidationSucceeded ? 'succeeded' : 'failed'}.`;
+    }
+    return undefined;
+  })();
+
+  const cookieDebug = authState.cookies.length > 0 ? {
+    cookieCount: authState.cookies.length,
+    cookieNames: authState.cookies.map(c => c.name),
+    cookieDomains: [...new Set(authState.cookies.map(c => c.domain ?? ''))].filter(Boolean),
+    sampleCookies: authState.cookies.slice(0, 3).map(c => `${c.name}@${c.domain ?? 'none'}`),
+  } : {
+    cookieCount: 0,
+    cookieNames: [],
+    cookieDomains: [],
+    sampleCookies: [],
+  };
+
   return {
     authState: authState.authState,
     sessionStrategy: authState.sessionStrategy,
@@ -681,6 +810,30 @@ function buildResearchAuthDebug(
     profileLoadSucceeded: authState.profileLoadSucceeded,
     authValidationAttempted: authState.authValidationAttempted,
     authValidationSucceeded: authState.authValidationSucceeded,
+    errorCode,
+    authErrorDetail,
+    cookieDebug,
+  };
+}
+
+function buildValidationDebug(error: unknown, authState: ResearchAuthState): {
+  httpStatus: number | null;
+  validationModulesSeen: string[];
+  validationResponseBodyExcerpt: string | null;
+  errorMessage: string;
+} {
+  const msg = error instanceof Error ? error.message : String(error);
+  return {
+    httpStatus: (() => {
+      const match = msg.match(/HTTP (\d+)/);
+      return match ? parseInt(match[1]) : null;
+    })(),
+    validationModulesSeen: authState.notes.filter(n => n.includes('modulesSeen')),
+    validationResponseBodyExcerpt: (() => {
+      const match = msg.match(/responseBody="(.*?)"/);
+      return match ? match[1].slice(0, 500) : null;
+    })(),
+    errorMessage: msg,
   };
 }
 
@@ -1008,6 +1161,9 @@ async function validateResearchAuthState(options: {
     });
     const parsedPayload = parseResearchModules(response.data);
     const modulesSeen = parsedPayload.modulesSeen;
+    const responseBodyExcerpt = response.data.slice(0, 300);
+    const cookieDomains = [...new Set(options.cookies.map(c => c.domain))].slice(0, 5).join(',');
+    const cookieNames = options.cookies.slice(0, 5).map(c => c.name).join(',');
     const ok = response.status >= 200 && response.status < 300 && modulesSeen.length > 0;
     const result: ResearchSessionValidationResult = ok
       ? {
@@ -1022,8 +1178,8 @@ async function validateResearchAuthState(options: {
           modulesSeen,
           note:
             response.status === 401 || response.status === 403
-              ? `${options.sourceLabel} was rejected by the ACTIVE endpoint with status ${response.status}.`
-              : `${options.sourceLabel} reached the ACTIVE endpoint but did not return usable research modules.`,
+              ? `${options.sourceLabel} rejected HTTP ${response.status} modulesSeen=[${modulesSeen.join(',')}] cookieDomains=[${cookieDomains}] cookieNames=[${cookieNames}] responseBody="${responseBodyExcerpt}"`
+              : `${options.sourceLabel} reached endpoint HTTP ${response.status} but no usable modules modulesSeen=[${modulesSeen.join(',')}] cookieDomains=[${cookieDomains}] cookieNames=[${cookieNames}] responseBody="${responseBodyExcerpt}"`,
         };
 
     researchAuthValidationCache[cacheKey] = {
@@ -2044,6 +2200,12 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
     if (kvStorageStateRecord) {
       diagnostics.kvStorageStateBytes = kvStorageStateRecord.bytes;
       diagnostics.storageStateBytes = kvStorageStateRecord.bytes;
+
+      // ── Debug: log storage shape without exposing cookie values ──
+      logResearchSession(
+        `Storage shape debug: bytes=${kvStorageStateRecord.bytes} rawType=${typeof kvStorageStateRecord.raw} rawLength=${kvStorageStateRecord.raw.length} hasCookies=${Array.isArray(JSON.parse(kvStorageStateRecord.raw).cookies) ?? false} cookieCount=${(JSON.parse(kvStorageStateRecord.raw).cookies ?? []).length} hasOrigins=${Array.isArray(JSON.parse(kvStorageStateRecord.raw).origins) ?? false} updatedAt=${kvStorageStateRecord.updatedAt ?? 'null'} source=${kvStorageStateRecord.source ?? 'null'}`
+      );
+
       if (kvStorageStateRecord.parsed) {
         const resolvedSession = await resolveStorageStateCookies(
           kvStorageStateRecord.parsed,
@@ -2058,7 +2220,7 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
           if (storeResolution.selected === 'upstash-redis') {
             diagnostics.upstashLoadSucceeded = true;
           }
-          logResearchSession(`Storage state load succeeded (${kvStorageStateRecord.bytes} bytes)`);
+          logResearchSession(`Storage state load succeeded (${kvStorageStateRecord.bytes} bytes, ${resolvedSession.cookies.length} eBay cookies after sanitization)`);
           diagnostics.authValidationAttempted = true;
           const validation = await validateResearchAuthState({
             marketplace,
@@ -2069,6 +2231,17 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
           notes.push(validation.note);
           if (validation.ok) {
             logResearchSession('Auth validation succeeded');
+            // Reset degradation counter on success
+            const existingDegradation = readDegradationState(kvStorageStateRecord.meta);
+            if (existingDegradation) {
+              const resetDegradation: ResearchSessionDegradationState = {
+                consecutiveFailures: 0,
+                lastFailureAt: '',
+                lastFailurePath: 'auth_rejection',
+                lastFailureDetail: 'Validation succeeded — degradation counter reset',
+              };
+              await updateDegradationMeta(storeResolution, resetDegradation, kvStorageStateRecord.meta);
+            }
             const value: ResearchAuthState = {
               cookies: resolvedSession.cookies,
               storageState: resolvedSession.storageState,
@@ -2087,31 +2260,99 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
             };
             return value;
           }
-          logResearchSession('Auth validation failed');
+
+          // ── Path A: Auth validation failed ──
+          logResearchSession(
+            `Auth validation failed: status=${validation.responseStatus ?? 'null'} modulesSeen=${validation.modulesSeen.length} note=${validation.note}`
+          );
+
           if (isExplicitResearchAuthRejection(validation)) {
-            await deleteResearchSessionFromStore(marketplace);
-            notes.push(
-              `Deleted invalid canonical eBay Research storage state from ${storeResolution.selected} after explicit auth rejection.`
-            );
+            const existingDegradation = readDegradationState(kvStorageStateRecord.meta);
+            const newFailures = (existingDegradation?.consecutiveFailures ?? 0) + 1;
+            const degradation: ResearchSessionDegradationState = {
+              consecutiveFailures: newFailures,
+              lastFailureAt: new Date().toISOString(),
+              lastFailurePath: 'auth_rejection',
+              lastFailureDetail: `HTTP ${validation.responseStatus}: ${validation.note}`,
+            };
+            await updateDegradationMeta(storeResolution, degradation, kvStorageStateRecord.meta);
+
+            if (shouldSkipDeletion({ ...(kvStorageStateRecord.meta ?? {}), __degradation: degradation })) {
+              notes.push(
+                `Auth rejection detected (failure #${newFailures}/${RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE}). Session preserved — will delete after ${RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE} consecutive rejections. Validation: HTTP ${validation.responseStatus}.`
+              );
+              logResearchSession(
+                `SESSION DELETION SKIPPED: auth_rejection failure #${newFailures}/${RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE}, status=${validation.responseStatus}, cooldown active=${degradation.lastFailureAt ? 'true' : 'false'}`
+              );
+            } else {
+              logResearchSession(
+                `SESSION DELETION: auth_rejection after ${newFailures} consecutive failures, status=${validation.responseStatus}, note=${validation.note}`
+              );
+              await deleteResearchSessionFromStore(marketplace);
+              notes.push(
+                `Deleted canonical eBay Research storage state from ${storeResolution.selected} after ${newFailures} consecutive auth rejections (HTTP ${validation.responseStatus}).`
+              );
+            }
           } else {
             notes.push(
-              `Preserved canonical eBay Research storage state in ${storeResolution.selected} because validation did not return an explicit auth rejection.`
+              `Preserved canonical eBay Research storage state in ${storeResolution.selected} because validation did not return an explicit auth rejection (status=${validation.responseStatus ?? 'null'}, modulesSeen=${validation.modulesSeen.length}).`
             );
           }
         } else {
-          await deleteCanonicalResearchStorageStateFromStore(marketplace);
-          notes.push(
-            `Deleted unusable canonical eBay Research storage state from ${storeResolution.selected} because no usable cookies could be restored.`
-          );
+          // ── Path B: Storage exists but no cookies after sanitization ──
+          const existingDegradation = readDegradationState(kvStorageStateRecord.meta);
+          const newFailures = (existingDegradation?.consecutiveFailures ?? 0) + 1;
+          const cookieDomainDebug = kvStorageStateRecord.parsed.cookies
+            .slice(0, 5)
+            .map((c: any) => `${c.name}@${c.domain ?? 'no-domain'}`)
+            .join(', ');
+          const degradation: ResearchSessionDegradationState = {
+            consecutiveFailures: newFailures,
+            lastFailureAt: new Date().toISOString(),
+            lastFailurePath: 'no_cookies',
+            lastFailureDetail: `Raw cookie count=${kvStorageStateRecord.parsed.cookies.length} sample=[${cookieDomainDebug}] sanitized=0`,
+          };
+          await updateDegradationMeta(storeResolution, degradation, kvStorageStateRecord.meta);
+
+          if (shouldSkipDeletion({ ...(kvStorageStateRecord.meta ?? {}), __degradation: degradation })) {
+            notes.push(
+              `No usable eBay cookies after sanitization (failure #${newFailures}/${RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE}). Session preserved. Raw cookies=${kvStorageStateRecord.parsed.cookies.length} sample=[${cookieDomainDebug}].`
+            );
+            logResearchSession(
+              `SESSION DELETION SKIPPED: no_cookies failure #${newFailures}, rawCookies=${kvStorageStateRecord.parsed.cookies.length}`
+            );
+          } else {
+            logResearchSession(
+              `SESSION DELETION: no_cookies after ${newFailures} failures, rawCookies=${kvStorageStateRecord.parsed.cookies.length}, sample=[${cookieDomainDebug}]`
+            );
+            await deleteCanonicalResearchStorageStateFromStore(marketplace);
+            notes.push(
+              `Deleted canonical eBay Research storage state from ${storeResolution.selected} because no usable cookies could be restored after ${newFailures} attempts. Raw cookies=${kvStorageStateRecord.parsed.cookies.length}.`
+            );
+          }
         }
       } else {
-        notes.push(
-          `Canonical eBay Research storage state in ${storeResolution.selected} could not be parsed as Playwright storage-state JSON.`
+        // ── Path C: Storage can't be parsed as valid JSON ──
+        const existingDegradation = readDegradationState(kvStorageStateRecord.meta);
+        const newFailures = (existingDegradation?.consecutiveFailures ?? 0) + 1;
+        const rawExcerpt = kvStorageStateRecord.raw.slice(0, 200);
+        const degradation: ResearchSessionDegradationState = {
+          consecutiveFailures: newFailures,
+          lastFailureAt: new Date().toISOString(),
+          lastFailurePath: 'parse_failure',
+          lastFailureDetail: `Parse failed for ${kvStorageStateRecord.bytes}-byte value, excerpt: ${rawExcerpt}`,
+        };
+        await updateDegradationMeta(storeResolution, degradation, kvStorageStateRecord.meta);
+
+        logResearchSession(
+          `SESSION DELETION SKIPPED: parse_failure failure #${newFailures}, bytes=${kvStorageStateRecord.bytes}, rawType=${typeof kvStorageStateRecord.raw}`
         );
-        await deleteCanonicalResearchStorageStateFromStore(marketplace);
+
         notes.push(
-          `Deleted malformed canonical eBay Research storage state from ${storeResolution.selected} after parse failure.`
+          `Canonical eBay Research storage state in ${storeResolution.selected} could not be parsed as Playwright storage-state JSON (failure #${newFailures}). Raw bytes=${kvStorageStateRecord.bytes}. Excerpt: ${rawExcerpt}`
         );
+        // NOTE: We do NOT delete on parse failure — the raw data might be valid but just structured differently.
+        // Keeping it allows manual inspection and prevents data loss from transient serialization issues.
       }
     } else {
       logResearchSession(`No storage state found in ${storeResolution.selected}`);
@@ -2626,8 +2867,9 @@ export async function fetchEbayResearch(
             ...authState,
             authState: authState.cookies.length > 0 ? 'expired' : authState.authState,
           }),
+          validationDebug: buildValidationDebug(error, authState),
           notes: [...authState.notes, error.message],
-        },
+        } as any,
       };
     }
 
