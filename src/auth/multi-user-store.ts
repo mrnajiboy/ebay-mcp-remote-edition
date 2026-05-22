@@ -63,6 +63,8 @@ export interface OAuthStateRecord {
   mcpState?: string;
   mcpCodeChallenge?: string;
   mcpCodeChallengeMethod?: string;
+  /** When set, tokens from the callback are stored under this user ID instead of a random UUID. Used by the validation runner OAuth flow. */
+  targetUserId?: string;
 }
 
 /** RFC 7591 dynamically-registered client */
@@ -190,7 +192,8 @@ export class MultiUserAuthStore {
       mcpState?: string;
       mcpCodeChallenge: string;
       mcpCodeChallengeMethod: string;
-    }
+    },
+    targetUserId?: string
   ): Promise<OAuthStateRecord> {
     const state = randomUUID();
     const record: OAuthStateRecord = {
@@ -200,6 +203,7 @@ export class MultiUserAuthStore {
       expiresAt: secondsFromNow(OAUTH_STATE_TTL_S),
       returnTo,
       ...mcpContext,
+      ...(targetUserId ? { targetUserId } : {}),
     };
     await this.kv.put(this.stateKey(state), record, OAUTH_STATE_TTL_S);
     return record;

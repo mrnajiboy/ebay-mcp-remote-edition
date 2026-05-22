@@ -233,6 +233,36 @@ describe('buildValidationRecommendation()', () => {
     expect(recommendation.trackingCadence).toBe('Hourly');
   });
 
+  it('schedules daily validations at the next 5am KST boundary', () => {
+    const request = buildRequest({
+      timestamp: '2026-05-22T01:30:00.000Z', // 10:30 KST
+      validation: {
+        ...buildRequest().validation,
+        dDay: 10,
+      },
+    });
+
+    const recommendation = buildValidationRecommendation(request, buildSignals(request));
+
+    expect(recommendation.trackingCadence).toBe('Daily');
+    expect(recommendation.nextCheckAt).toBe('2026-05-22T20:00:00.000Z'); // 05:00 KST next day
+  });
+
+  it('schedules hourly validations at the next top-of-hour boundary', () => {
+    const request = buildRequest({
+      timestamp: '2026-05-22T01:30:42.123Z',
+      validation: {
+        ...buildRequest().validation,
+        dDay: 0,
+      },
+    });
+
+    const recommendation = buildValidationRecommendation(request, buildSignals(request));
+
+    expect(recommendation.trackingCadence).toBe('Hourly');
+    expect(recommendation.nextCheckAt).toBe('2026-05-22T02:00:00.000Z');
+  });
+
   it('treats authenticated research sold fallbacks as valid sold demand evidence', () => {
     const request = buildRequest();
     const signals = buildSignals(request);

@@ -29,8 +29,40 @@ interface ValidationRecommendationInput {
   momentumScore?: number | null;
 }
 
-function addHours(timestamp: string, hours: number): string {
-  return new Date(new Date(timestamp).getTime() + hours * 60 * 60 * 1000).toISOString();
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * ONE_HOUR_MS;
+
+function nextTopOfHour(timestamp: string): string {
+  const date = new Date(timestamp);
+  date.setUTCMinutes(0, 0, 0);
+  date.setTime(date.getTime() + ONE_HOUR_MS);
+  return date.toISOString();
+}
+
+function nextFiveAmKst(timestamp: string): string {
+  const now = new Date(timestamp);
+  const kstNowMs = now.getTime() + KST_OFFSET_MS;
+  const kstNow = new Date(kstNowMs);
+  let candidateKstMs = Date.UTC(
+    kstNow.getUTCFullYear(),
+    kstNow.getUTCMonth(),
+    kstNow.getUTCDate(),
+    5,
+    0,
+    0,
+    0
+  );
+
+  if (candidateKstMs <= kstNowMs) {
+    candidateKstMs += ONE_DAY_MS;
+  }
+
+  return new Date(candidateKstMs - KST_OFFSET_MS).toISOString();
+}
+
+function nextCheckAtForCadence(timestamp: string, cadence: TrackingCadence): string {
+  return cadence === 'Hourly' ? nextTopOfHour(timestamp) : nextFiveAmKst(timestamp);
 }
 
 function isRejectedResolvedQuery(value: string | null | undefined): boolean {
@@ -123,11 +155,7 @@ export function buildValidationRecommendation(
     hasUsableQuery;
 
   const trackingCadence: TrackingCadence = shouldAutoTrack ? baseCadence : 'Off';
-  const nextCheckAt = !shouldAutoTrack
-    ? null
-    : trackingCadence === 'Hourly'
-      ? addHours(request.timestamp, 1)
-      : addHours(request.timestamp, 24);
+  const nextCheckAt = !shouldAutoTrack ? null : nextCheckAtForCadence(request.timestamp, trackingCadence);
 
   const marketPrice =
     signals.terapeak.marketPriceUsd ??
