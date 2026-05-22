@@ -785,15 +785,15 @@ export function createApp(): express.Application {
   <div id="statusBox" class="status"></div>
 
   <div class="tabs">
-    <div class="tab active" data-tab="auto">Auto-Capture</div>
-    <div class="tab" data-tab="manual">Manual Export</div>
+    <div class="tab active" data-tab="auto" onclick="switchTab(this)">Auto-Capture</div>
+    <div class="tab" data-tab="manual" onclick="switchTab(this)">Manual Export</div>
   </div>
 
   <div id="tab-auto" class="tab-content active">
     <div class="step">
       <h3>Step 1: Sign in to eBay Research</h3>
       <p>Click the button below to open eBay Research in an iframe. Sign in with your eBay account.</p>
-      <button class="btn" id="btnOpenIframe">Open eBay Research</button>
+      <button class="btn" id="btnOpenIframe" onclick="openIframe()">Open eBay Research</button>
     </div>
     <div class="iframe-container" id="iframeContainer">
       <iframe id="ebayIframe" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>
@@ -804,7 +804,7 @@ export function createApp(): express.Application {
     <div class="step">
       <h3>Step 2: Confirm & Capture</h3>
       <p>After signing in in the iframe above, click "Capture Cookies" to attempt automatic cookie extraction.</p>
-      <button class="btn" id="btnCapture" disabled>Capture Cookies</button>
+      <button class="btn" id="btnCapture" onclick="captureCookies()" disabled>Capture Cookies</button>
       <p style="font-size:0.8rem;color:#888;margin-top:8px;">Note: Cross-origin cookies may not be accessible from this page. If capture fails, use the Manual Export tab.</p>
     </div>
   </div>
@@ -825,47 +825,48 @@ export function createApp(): express.Application {
         <li>Right-click any cookie → <strong>Export as JSON</strong> (or copy all cookie names/values)</li>
       </ol>
       <p style="margin-top:8px;"><strong>Alternative — use this bookmarklet:</strong></p>
-      <a class="btn btn-secondary" href="javascript:(function(){var c=document.cookie.split(/;\\s*/).map(function(x){var p=x.split('=');return{name:p[0],value:p.slice(1).join('=')}});var origins=[];try{origins=[{origin:'https://www.ebay.com',localStorage:Object.entries(localStorage).map(function(e){return{name:e[0],value:e[1]}})]}catch(e){}var payload=JSON.stringify({cookies:c,origins:origins},null,2);var ta=document.createElement('textarea');ta.value= payload;document.body.appendChild(ta);ta.select();document.execCommand('copy');alert('Cookies copied to clipboard! ('+c.length+' cookies)');document.body.removeChild(ta);})();">Copy to Clipboard Bookmarklet ↗</a>
+      <a class="btn btn-secondary" href="javascript:(function(){var c=document.cookie.split(/;\\s*/).map(function(x){var p=x.split('=');return{name:p[0],value:p.slice(1).join('=')}});var origins=[];try{origins=[{origin:'https://www.ebay.com',localStorage:Object.entries(localStorage).map(function(e){return{name:e[0],value:e[1]}})}]}catch(e){}var payload=JSON.stringify({cookies:c,origins:origins},null,2);var ta=document.createElement('textarea');ta.value=payload;document.body.appendChild(ta);ta.select();document.execCommand('copy');alert('Cookies copied to clipboard! ('+c.length+' cookies)');document.body.removeChild(ta);})();">Copy to Clipboard Bookmarklet ↗</a>
       <p style="font-size:0.8rem;color:#888;margin-top:8px;">Drag this link to your bookmarks bar, then click it while on ebay.com.</p>
     </div>
     <div class="step">
       <h3>Step 3: Paste Cookies Here</h3>
       <p>Paste the exported cookie JSON below. It should look like <code>[{"name":"...","value":"..."},...]</code> or <code>{"cookies":[...],"origins":[...]}</code></p>
       <textarea id="cookieInput" placeholder="Paste cookie JSON here..."></textarea>
-      <button class="btn" id="btnSubmit">Submit Cookies</button>
+      <button class="btn" id="btnSubmit" onclick="submitCookies()">Submit Cookies</button>
     </div>
   </div>
 
   <script>
+    // Read admin key from query param so fetch calls are authenticated
+    const urlParams = new URLSearchParams(window.location.search);
+    const adminKey = urlParams.get('key') || '';
+
     const statusBox = document.getElementById('statusBox');
     function setStatus(msg, type) {
       statusBox.className = 'status ' + type;
       statusBox.textContent = msg;
     }
 
-    // Tab switching
-    document.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-      });
-    });
+    function switchTab(tabEl) {
+      document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+      document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+      tabEl.classList.add('active');
+      var target = document.getElementById('tab-' + tabEl.getAttribute('data-tab'));
+      if (target) target.classList.add('active');
+    }
 
-    // Auto-capture: Open iframe
-    document.getElementById('btnOpenIframe').addEventListener('click', () => {
-      const container = document.getElementById('iframeContainer');
-      const iframe = document.getElementById('ebayIframe');
-      const overlay = document.getElementById('iframeOverlay');
+    function openIframe() {
+      var container = document.getElementById('iframeContainer');
+      var iframe = document.getElementById('ebayIframe');
+      var overlay = document.getElementById('iframeOverlay');
       container.style.display = 'block';
       iframe.src = 'https://www.ebay.com/sh/research?marketplace=EBAY-US';
       setStatus('Loading eBay Research in iframe...', 'info');
 
-      iframe.addEventListener('load', () => {
-        setTimeout(() => {
+      iframe.onload = function() {
+        setTimeout(function() {
           try {
-            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            var doc = iframe.contentDocument || iframe.contentWindow.document;
             if (doc && doc.body && doc.body.innerText.length > 100) {
               setStatus('eBay Research loaded in iframe. Sign in, then click "Capture Cookies".', 'success');
               document.getElementById('btnCapture').disabled = false;
@@ -878,21 +879,21 @@ export function createApp(): express.Application {
             setStatus('Cross-origin access blocked. Sign in manually and use the Manual Export tab.', 'info');
           }
         }, 2000);
-      }, { once: true });
-    });
+      };
+    }
 
-    // Auto-capture: Attempt cookie read
-    document.getElementById('btnCapture').addEventListener('click', async () => {
+    async function captureCookies() {
       try {
-        const iframe = document.getElementById('ebayIframe');
-        const cookies = iframe.contentDocument?.cookie || '';
-        const origins = [];
+        var iframe = document.getElementById('ebayIframe');
+        var cookies = '';
+        try { cookies = iframe.contentDocument.cookie; } catch(e) {}
+        var origins = [];
         try {
-          const ls = iframe.contentWindow?.localStorage;
+          var ls = iframe.contentWindow.localStorage;
           if (ls) {
-            for (let i = 0; i < ls.length; i++) {
-              const key = ls.key(i);
-              origins.push({ origin: 'https://www.ebay.com', localStorage: [{ name: key, value: ls.getItem(key) }] });
+            for (var i = 0; i < ls.length; i++) {
+              var k = ls.key(i);
+              origins.push({ origin: 'https://www.ebay.com', localStorage: [{ name: k, value: ls.getItem(k) }] });
             }
           }
         } catch(e) {}
@@ -902,18 +903,18 @@ export function createApp(): express.Application {
           return;
         }
 
-        const cookieArr = cookies.split(';').map(c => {
-          const [name, ...val] = c.trim().split('=');
-          return { name: name.trim(), value: val.join('=').trim() };
-        }).filter(c => c.name);
+        var cookieArr = cookies.split(';').map(function(c) {
+          var parts = c.trim().split('=');
+          return { name: parts[0].trim(), value: parts.slice(1).join('=').trim() };
+        }).filter(function(c) { return c.name; });
 
-        const payload = { cookies: cookieArr, origins };
-        const resp = await fetch('/admin/playwright-session', {
+        var payload = { cookies: cookieArr, origins: origins };
+        var resp = await fetch('/admin/playwright-session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-api-key': '' },
+          headers: { 'Content-Type': 'application/json', 'X-Admin-API-Key': adminKey },
           body: JSON.stringify({ storageState: payload, marketplace: 'EBAY-US' })
         });
-        const result = await resp.json();
+        var result = await resp.json();
         if (result.ok) {
           setStatus('✅ Cookies captured and stored! (' + result.bytes + ' bytes, expires: ' + result.expiresAt.slice(0,10) + ')', 'success');
         } else {
@@ -922,20 +923,18 @@ export function createApp(): express.Application {
       } catch(e) {
         setStatus('Capture failed: ' + e.message + '. Use Manual Export tab.', 'error');
       }
-    });
+    }
 
-    // Manual: Submit cookies
-    document.getElementById('btnSubmit').addEventListener('click', async () => {
-      const input = document.getElementById('cookieInput').value.trim();
+    async function submitCookies() {
+      var input = document.getElementById('cookieInput').value.trim();
       if (!input) { setStatus('Please paste cookie JSON.', 'error'); return; }
 
-      let parsed;
+      var parsed;
       try { parsed = JSON.parse(input); } catch(e) {
         setStatus('Invalid JSON: ' + e.message, 'error'); return;
       }
 
-      // Normalize: if it's an array of cookies, wrap in storageState format
-      let storageState;
+      var storageState;
       if (Array.isArray(parsed)) {
         storageState = { cookies: parsed, origins: [] };
       } else if (parsed.cookies) {
@@ -944,17 +943,17 @@ export function createApp(): express.Application {
         setStatus('Expected array of cookies or object with "cookies" key.', 'error'); return;
       }
 
-      const btn = document.getElementById('btnSubmit');
+      var btn = document.getElementById('btnSubmit');
       btn.disabled = true;
       btn.textContent = 'Submitting...';
 
       try {
-        const resp = await fetch('/admin/playwright-session', {
+        var resp = await fetch('/admin/playwright-session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-api-key': '' },
-          body: JSON.stringify({ storageState, marketplace: 'EBAY-US' })
+          headers: { 'Content-Type': 'application/json', 'X-Admin-API-Key': adminKey },
+          body: JSON.stringify({ storageState: storageState, marketplace: 'EBAY-US' })
         });
-        const result = await resp.json();
+        var result = await resp.json();
         if (result.ok) {
           setStatus('✅ Cookies stored successfully! (' + result.bytes + ' bytes, expires: ' + result.expiresAt.slice(0,10) + ')', 'success');
         } else {
@@ -965,12 +964,13 @@ export function createApp(): express.Application {
       }
       btn.disabled = false;
       btn.textContent = 'Submit Cookies';
-    });
+    }
   </script>
 </body>
 </html>`);
   });
 
+  // ── Single OAuth callback
   // ── Single OAuth callback (registered with eBay — must be one fixed URL) ─
   // The environment is recovered from the state record, not the URL path.
   app.get('/oauth/callback', async (req, res) => {
