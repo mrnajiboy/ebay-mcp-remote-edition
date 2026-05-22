@@ -771,73 +771,38 @@ export function createApp(): express.Application {
     .status.success { display: block; background: #d1fae5; color: #065f46; }
     .status.error { display: block; background: #fee2e2; color: #991b1b; }
     .status.info { display: block; background: #dbeafe; color: #1e40af; }
-    .iframe-container { position: relative; width: 100%; height: 500px; border: 1px solid #d1d5db; border-radius: 10px; overflow: hidden; margin: 12px 0; display: none; }
-    .iframe-container iframe { width: 100%; height: 100%; border: none; }
-    .iframe-overlay { position: absolute; top: 0; left: 0; right: 0; padding: 12px; background: rgba(254,243,199,0.95); font-size: 0.85rem; display: none; }
-    .code-block { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; overflow-x: auto; margin-top: 8px; }
-    .tabs { display: flex; gap: 4px; margin: 16px 0 8px; }
-    .tab { padding: 8px 16px; border: 1px solid #d1d5db; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 0.9rem; background: #f3f4f6; }
-    .tab.active { background: #fff; border-bottom-color: #fff; font-weight: 600; }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
   </style>
 </head>
 <body>
   <h1>🔑 eBay Research Cookie Capture</h1>
-  <p>This page helps capture your eBay Research session cookies so the validation pipeline can access sold listing data.</p>
+  <p>This page captures your eBay Research session cookies so the validation pipeline can access sold listing data.</p>
 
   <div id="statusBox" class="status"></div>
 
-  <div class="tabs">
-    <div class="tab active" data-tab="auto" onclick="switchTab(this)">Auto-Capture</div>
-    <div class="tab" data-tab="manual" onclick="switchTab(this)">Manual Export</div>
+  <div class="step">
+    <h3>Step 1: Sign in to eBay Research</h3>
+    <p>Open this link in your browser and sign in:</p>
+    <a class="btn" href="https://www.ebay.com/sh/research?marketplace=EBAY-US" target="_blank" rel="noopener">Open eBay Research ↗</a>
   </div>
 
-  <div id="tab-auto" class="tab-content active">
-    <div class="step">
-      <h3>Step 1: Sign in to eBay Research</h3>
-      <p>Click the button below to open eBay Research in an iframe. Sign in with your eBay account.</p>
-      <button class="btn" id="btnOpenIframe" onclick="openIframe()">Open eBay Research</button>
-    </div>
-    <div class="iframe-container" id="iframeContainer">
-      <iframe id="ebayIframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>
-      <div class="iframe-overlay" id="iframeOverlay">
-        ⚠️ If the iframe shows a blank page or can't load, eBay's security policies may be blocking it. Switch to <strong>Manual Export</strong> tab below.
-      </div>
-    </div>
-    <div class="step">
-      <h3>Step 2: Confirm & Capture</h3>
-      <p>After signing in in the iframe above, click "Capture Cookies" to attempt automatic cookie extraction.</p>
-      <button class="btn" id="btnCapture" onclick="captureCookies()" disabled>Capture Cookies</button>
-      <p style="font-size:0.8rem;color:#888;margin-top:8px;">Note: Cross-origin cookies may not be accessible from this page. If capture fails, use the Manual Export tab.</p>
-    </div>
+  <div class="step">
+    <h3>Step 2: Copy Cookies from Browser</h3>
+    <p><strong>Option A — Bookmarklet (quickest):</strong></p>
+    <a class="btn btn-secondary" href="javascript:(function(){var c=document.cookie.split(/;\\s*/).map(function(x){var p=x.split('=');return{name:p[0],value:p.slice(1).join('=')}});var origins=[];try{origins=[{origin:'https://www.ebay.com',localStorage:Object.entries(localStorage).map(function(e){return{name:e[0],value:e[1]}})}]}catch(e){}var payload=JSON.stringify({cookies:c,origins:origins},null,2);var ta=document.createElement('textarea');ta.value=payload;document.body.appendChild(ta);ta.select();document.execCommand('copy');alert('Cookies copied to clipboard! ('+c.length+' cookies)');document.body.removeChild(ta);})();">Copy to Clipboard Bookmarklet ↗</a>
+    <p style="font-size:0.8rem;color:#888;margin-top:8px;">Drag this link to your bookmarks bar, click it while on ebay.com, then return here and paste below.</p>
+    <p style="margin-top:12px;"><strong>Option B — DevTools:</strong></p>
+    <ol style="padding-left:20px;font-size:0.9rem;color:#555;">
+      <li>Press <code>F12</code> → <strong>Application</strong> tab</li>
+      <li>Left sidebar: <strong>Cookies</strong> → <code>https://www.ebay.com</code></li>
+      <li>Right-click any cookie → <strong>Export as JSON</strong></li>
+    </ol>
   </div>
 
-  <div id="tab-manual" class="tab-content">
-    <div class="step">
-      <h3>Step 1: Sign in to eBay Research</h3>
-      <p>Open this link in your browser and sign in:</p>
-      <a class="btn" href="https://www.ebay.com/sh/research?marketplace=EBAY-US" target="_blank" rel="noopener">Open eBay Research ↗</a>
-    </div>
-    <div class="step">
-      <h3>Step 2: Export Cookies from Browser</h3>
-      <p><strong>Chrome / Edge:</strong></p>
-      <ol style="padding-left:20px;font-size:0.9rem;color:#555;">
-        <li>Open eBay Research page (signed in)</li>
-        <li>Press <code>F12</code> → go to <strong>Application</strong> tab</li>
-        <li>Left sidebar: <strong>Cookies</strong> → <code>https://www.ebay.com</code></li>
-        <li>Right-click any cookie → <strong>Export as JSON</strong> (or copy all cookie names/values)</li>
-      </ol>
-      <p style="margin-top:8px;"><strong>Alternative — use this bookmarklet:</strong></p>
-      <a class="btn btn-secondary" href="javascript:(function(){var c=document.cookie.split(/;\\s*/).map(function(x){var p=x.split('=');return{name:p[0],value:p.slice(1).join('=')}});var origins=[];try{origins=[{origin:'https://www.ebay.com',localStorage:Object.entries(localStorage).map(function(e){return{name:e[0],value:e[1]}})}]}catch(e){}var payload=JSON.stringify({cookies:c,origins:origins},null,2);var ta=document.createElement('textarea');ta.value=payload;document.body.appendChild(ta);ta.select();document.execCommand('copy');alert('Cookies copied to clipboard! ('+c.length+' cookies)');document.body.removeChild(ta);})();">Copy to Clipboard Bookmarklet ↗</a>
-      <p style="font-size:0.8rem;color:#888;margin-top:8px;">Drag this link to your bookmarks bar, then click it while on ebay.com.</p>
-    </div>
-    <div class="step">
-      <h3>Step 3: Paste Cookies Here</h3>
-      <p>Paste the exported cookie JSON below. It should look like <code>[{"name":"...","value":"..."},...]</code> or <code>{"cookies":[...],"origins":[...]}</code></p>
-      <textarea id="cookieInput" placeholder="Paste cookie JSON here..."></textarea>
-      <button class="btn" id="btnSubmit" onclick="submitCookies()">Submit Cookies</button>
-    </div>
+  <div class="step">
+    <h3>Step 3: Paste Cookies Here</h3>
+    <p>Paste the exported cookie JSON below. It should look like <code>[{"name":"...","value":"..."},...]</code> or <code>{"cookies":[...],"origins":[...]}</code></p>
+    <textarea id="cookieInput" placeholder="Paste cookie JSON here..."></textarea>
+    <button class="btn" id="btnSubmit" onclick="submitCookies()">Submit Cookies</button>
   </div>
 
   <script>
@@ -849,84 +814,6 @@ export function createApp(): express.Application {
     function setStatus(msg, type) {
       statusBox.className = 'status ' + type;
       statusBox.textContent = msg;
-    }
-
-    function switchTab(tabEl) {
-      document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
-      document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
-      tabEl.classList.add('active');
-      var target = document.getElementById('tab-' + tabEl.getAttribute('data-tab'));
-      if (target) target.classList.add('active');
-    }
-
-    function openIframe() {
-      var container = document.getElementById('iframeContainer');
-      var iframe = document.getElementById('ebayIframe');
-      var overlay = document.getElementById('iframeOverlay');
-      container.style.display = 'block';
-      iframe.src = 'https://www.ebay.com/sh/research?marketplace=EBAY-US';
-      setStatus('Loading eBay Research in iframe...', 'info');
-
-      iframe.onload = function() {
-        setTimeout(function() {
-          try {
-            var doc = iframe.contentDocument || iframe.contentWindow.document;
-            if (doc && doc.body && doc.body.innerText.length > 100) {
-              setStatus('eBay Research loaded in iframe. Sign in, then click "Capture Cookies".', 'success');
-              document.getElementById('btnCapture').disabled = false;
-            } else {
-              overlay.style.display = 'block';
-              setStatus('iframe loaded but content may be restricted. Try Manual Export tab.', 'info');
-            }
-          } catch(e) {
-            overlay.style.display = 'block';
-            setStatus('Cross-origin access blocked. Sign in manually and use the Manual Export tab.', 'info');
-          }
-        }, 2000);
-      };
-    }
-
-    async function captureCookies() {
-      try {
-        var iframe = document.getElementById('ebayIframe');
-        var cookies = '';
-        try { cookies = iframe.contentDocument.cookie; } catch(e) {}
-        var origins = [];
-        try {
-          var ls = iframe.contentWindow.localStorage;
-          if (ls) {
-            for (var i = 0; i < ls.length; i++) {
-              var k = ls.key(i);
-              origins.push({ origin: 'https://www.ebay.com', localStorage: [{ name: k, value: ls.getItem(k) }] });
-            }
-          }
-        } catch(e) {}
-
-        if (!cookies && origins.length === 0) {
-          setStatus('No cookies accessible from iframe (cross-origin blocked). Use Manual Export tab.', 'error');
-          return;
-        }
-
-        var cookieArr = cookies.split(';').map(function(c) {
-          var parts = c.trim().split('=');
-          return { name: parts[0].trim(), value: parts.slice(1).join('=').trim() };
-        }).filter(function(c) { return c.name; });
-
-        var payload = { cookies: cookieArr, origins: origins };
-        var resp = await fetch('/admin/playwright-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Admin-API-Key': adminKey },
-          body: JSON.stringify({ storageState: payload, marketplace: 'EBAY-US' })
-        });
-        var result = await resp.json();
-        if (result.ok) {
-          setStatus('✅ Cookies captured and stored! (' + result.bytes + ' bytes, expires: ' + result.expiresAt.slice(0,10) + ')', 'success');
-        } else {
-          setStatus('Capture failed: ' + (result.error || 'unknown error'), 'error');
-        }
-      } catch(e) {
-        setStatus('Capture failed: ' + e.message + '. Use Manual Export tab.', 'error');
-      }
     }
 
     async function submitCookies() {
