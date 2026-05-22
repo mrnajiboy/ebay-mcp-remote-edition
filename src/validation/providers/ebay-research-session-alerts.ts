@@ -357,38 +357,53 @@ function getExpiryTimestamp(meta: EbayResearchSessionStoreMeta | null): number |
   return Number.isFinite(expiresAtMs) ? expiresAtMs : null;
 }
 
+function escapeMarkdownV2(text: string): string {
+  // eslint-disable-next-line no-useless-escape
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+}
+
 function buildTelegramMessage(options: {
   marketplace: string;
   alertType: 'warning_24h' | 'warning_6h' | 'expired' | 'missing';
 }): string {
+  const esc = escapeMarkdownV2;
+  const mp = esc(options.marketplace);
+
   switch (options.alertType) {
     case 'warning_24h':
       return [
-        '⚠️ eBay Research session warning',
+        '⚠️ *eBay Research session warning*',
         '',
-        `Marketplace: ${options.marketplace}`,
-        'Status: Expires in less than 24 hours',
-        'Action: Re-bootstrap recommended',
+        `*Marketplace:* ${mp}`,
+        `*Status:* Expires in less than 24 hours`,
+        `*Action:* Re-bootstrap recommended`,
       ].join('\n');
     case 'warning_6h':
       return [
-        '⚠️ eBay Research session urgent warning',
+        '🔴 *eBay Research session urgent warning*',
         '',
-        `Marketplace: ${options.marketplace}`,
-        'Status: Expires in less than 6 hours',
-        'Action: Refresh urgently to avoid first-party provider fallback',
+        `*Marketplace:* ${mp}`,
+        `*Status:* Expires in less than 6 hours`,
+        `*Action:* Refresh urgently to avoid first-party provider fallback`,
       ].join('\n');
     case 'expired':
-    case 'missing':
-    default:
       return [
-        '❌ eBay Research session unavailable',
+        '❌ *eBay Research session expired*',
         '',
-        `Marketplace: ${options.marketplace}`,
-        'Status: Missing or expired',
-        'Impact: Validation backend may fall back to weaker providers',
-        'Action: Run research bootstrap immediately',
+        `*Marketplace:* ${mp}`,
+        `*Status:* Session has expired`,
+        `*Action:* Re-bootstrap required`,
       ].join('\n');
+    case 'missing':
+      return [
+        '❌ *eBay Research session missing*',
+        '',
+        `*Marketplace:* ${mp}`,
+        `*Status:* Session not found in storage`,
+        `*Action:* Re-bootstrap required`,
+      ].join('\n');
+    default:
+      return ['⚠️ *eBay Research session alert*', '', `*Marketplace:* ${mp}`].join('\n');
   }
 }
 
@@ -420,6 +435,7 @@ async function sendTelegramAlert(
       {
         chat_id: config.telegramChatId,
         text: message,
+        parse_mode: 'MarkdownV2',
       },
       {
         headers: {
