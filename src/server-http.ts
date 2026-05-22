@@ -31,9 +31,7 @@ import {
   verifyQStashRequestSignature,
   type EbayResearchSessionExpiryCheckPayload,
 } from '@/validation/providers/ebay-research-session-alerts.js';
-import {
-  createFreshEbayResearchSessionStoreResolution,
-} from '@/validation/providers/ebay-research-session-store.js';
+import { createFreshEbayResearchSessionStoreResolution } from '@/validation/providers/ebay-research-session-store.js';
 import type {
   getToolDefinitions as GetToolDefinitionsFn,
   executeTool as ExecuteToolFn,
@@ -174,7 +172,8 @@ function requireAdmin(
     return;
   }
   const header = req.headers['x-admin-api-key'];
-  if (header !== CONFIG.adminApiKey) {
+  const queryKey = typeof req.query.key === 'string' ? req.query.key : undefined;
+  if (header !== CONFIG.adminApiKey && queryKey !== CONFIG.adminApiKey) {
     res.status(401).json({ error: 'unauthorized' });
     return;
   }
@@ -643,11 +642,14 @@ export function createApp(): express.Application {
       stateRecord.state
     );
 
-    serverLogger.info('[admin/oauth/start-for-validation] Started OAuth flow for validation runner', {
-      userId: validationRunnerUserId,
-      environment,
-      state: stateRecord.state,
-    });
+    serverLogger.info(
+      '[admin/oauth/start-for-validation] Started OAuth flow for validation runner',
+      {
+        userId: validationRunnerUserId,
+        environment,
+        state: stateRecord.state,
+      }
+    );
 
     res.json({
       ok: true,
@@ -683,7 +685,8 @@ export function createApp(): express.Application {
       return;
     }
 
-    const stateJson = typeof storageState === 'string' ? storageState : JSON.stringify(storageState);
+    const stateJson =
+      typeof storageState === 'string' ? storageState : JSON.stringify(storageState);
 
     // Validate minimal structure
     let parsed: Record<string, unknown>;

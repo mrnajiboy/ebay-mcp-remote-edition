@@ -155,7 +155,9 @@ export function buildValidationRecommendation(
     hasUsableQuery;
 
   const trackingCadence: TrackingCadence = shouldAutoTrack ? baseCadence : 'Off';
-  const nextCheckAt = !shouldAutoTrack ? null : nextCheckAtForCadence(request.timestamp, trackingCadence);
+  const nextCheckAt = !shouldAutoTrack
+    ? null
+    : nextCheckAtForCadence(request.timestamp, trackingCadence);
 
   const marketPrice =
     signals.terapeak.marketPriceUsd ??
