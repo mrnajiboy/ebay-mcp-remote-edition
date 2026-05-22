@@ -233,14 +233,21 @@ function isExplicitResearchAuthRejection(validation: ResearchSessionValidationRe
   return validation.responseStatus === 401 || validation.responseStatus === 403;
 }
 
-function readDegradationState(meta: EbayResearchSessionStoreMeta | null): ResearchSessionDegradationState | null {
+function readDegradationState(
+  meta: EbayResearchSessionStoreMeta | null
+): ResearchSessionDegradationState | null {
   if (!meta) return null;
-  const raw = (meta as Record<string, unknown>).__degradation as Record<string, unknown> | undefined;
+  const raw = (meta as Record<string, unknown>).__degradation as
+    | Record<string, unknown>
+    | undefined;
   if (!raw || typeof raw !== 'object') return null;
   return {
     consecutiveFailures: typeof raw.consecutiveFailures === 'number' ? raw.consecutiveFailures : 0,
     lastFailureAt: typeof raw.lastFailureAt === 'string' ? raw.lastFailureAt : '',
-    lastFailurePath: typeof raw.lastFailurePath === 'string' ? raw.lastFailurePath as ResearchSessionDegradationState['lastFailurePath'] : 'auth_rejection',
+    lastFailurePath:
+      typeof raw.lastFailurePath === 'string'
+        ? (raw.lastFailurePath as ResearchSessionDegradationState['lastFailurePath'])
+        : 'auth_rejection',
     lastFailureDetail: typeof raw.lastFailureDetail === 'string' ? raw.lastFailureDetail : '',
   };
 }
@@ -727,9 +734,7 @@ function sanitizeResearchStorageState(
   } satisfies ResearchStorageState;
 }
 
-function buildResearchAuthDebug(
-  authState: ResearchAuthState
-): Omit<
+function buildResearchAuthDebug(authState: ResearchAuthState): Omit<
   EbayResearchResponse['debug'],
   | 'query'
   | 'activeEndpointUrl'
@@ -739,23 +744,25 @@ function buildResearchAuthDebug(
   | 'pageErrors'
   | 'notes'
 > & {
-    errorCode?: string;
-    authErrorDetail?: string;
-    validationDebug?: {
-      httpStatus?: number | null;
-      validationModulesSeen?: string[];
-      validationResponseBodyExcerpt?: string;
-    };
-    cookieDebug?: {
-      cookieCount: number;
-      cookieNames: string[];
-      cookieDomains: string[];
-      sampleCookies: string[];
-    };
-  } {
+  errorCode?: string;
+  authErrorDetail?: string;
+  validationDebug?: {
+    httpStatus?: number | null;
+    validationModulesSeen?: string[];
+    validationResponseBodyExcerpt?: string;
+  };
+  cookieDebug?: {
+    cookieCount: number;
+    cookieNames: string[];
+    cookieDomains: string[];
+    sampleCookies: string[];
+  };
+} {
   const errorCode = (() => {
-    if (authState.cookies.length === 0 && authState.authState === 'missing') return 'AUTH_MISSING_NO_SOURCES';
-    if (authState.cookies.length === 0 && authState.authState === 'expired') return 'AUTH_EXPIRED_NO_RECOVERY';
+    if (authState.cookies.length === 0 && authState.authState === 'missing')
+      return 'AUTH_MISSING_NO_SOURCES';
+    if (authState.cookies.length === 0 && authState.authState === 'expired')
+      return 'AUTH_EXPIRED_NO_RECOVERY';
     if (authState.cookies.length > 0 && authState.authState === 'expired') return 'AUTH_EXPIRED';
     if (authState.authState === 'loaded' || authState.authState === 'authenticated') return 'NONE';
     return 'AUTH_UNKNOWN';
@@ -764,10 +771,18 @@ function buildResearchAuthDebug(
   const authErrorDetail = (() => {
     if (authState.authState === 'missing') {
       const sourcesAttempted = [];
-      if (authState.kvLoadAttempted) sourcesAttempted.push(`kv(${authState.kvLoadSucceeded ? 'succeeded' : 'failed'})`);
-      if (authState.envLoadAttempted) sourcesAttempted.push(`env(${authState.envLoadSucceeded ? 'succeeded' : 'failed'})`);
-      if (authState.filesystemLoadAttempted) sourcesAttempted.push(`filesystem(${authState.filesystemLoadSucceeded ? 'succeeded' : 'failed'})`);
-      if (authState.profileLoadAttempted) sourcesAttempted.push(`profile(${authState.profileLoadSucceeded ? 'succeeded' : 'failed'})`);
+      if (authState.kvLoadAttempted)
+        sourcesAttempted.push(`kv(${authState.kvLoadSucceeded ? 'succeeded' : 'failed'})`);
+      if (authState.envLoadAttempted)
+        sourcesAttempted.push(`env(${authState.envLoadSucceeded ? 'succeeded' : 'failed'})`);
+      if (authState.filesystemLoadAttempted)
+        sourcesAttempted.push(
+          `filesystem(${authState.filesystemLoadSucceeded ? 'succeeded' : 'failed'})`
+        );
+      if (authState.profileLoadAttempted)
+        sourcesAttempted.push(
+          `profile(${authState.profileLoadSucceeded ? 'succeeded' : 'failed'})`
+        );
       return `No authenticated session found. Sources attempted: ${sourcesAttempted.join(', ') || 'none'}. Store: ${authState.sessionStoreSelected}.`;
     }
     if (authState.authState === 'expired') {
@@ -776,17 +791,22 @@ function buildResearchAuthDebug(
     return undefined;
   })();
 
-  const cookieDebug = authState.cookies.length > 0 ? {
-    cookieCount: authState.cookies.length,
-    cookieNames: authState.cookies.map(c => c.name),
-    cookieDomains: [...new Set(authState.cookies.map(c => c.domain ?? ''))].filter(Boolean),
-    sampleCookies: authState.cookies.slice(0, 3).map(c => `${c.name}@${c.domain ?? 'none'}`),
-  } : {
-    cookieCount: 0,
-    cookieNames: [],
-    cookieDomains: [],
-    sampleCookies: [],
-  };
+  const cookieDebug =
+    authState.cookies.length > 0
+      ? {
+          cookieCount: authState.cookies.length,
+          cookieNames: authState.cookies.map((c) => c.name),
+          cookieDomains: [...new Set(authState.cookies.map((c) => c.domain ?? ''))].filter(Boolean),
+          sampleCookies: authState.cookies
+            .slice(0, 3)
+            .map((c) => `${c.name}@${c.domain ?? 'none'}`),
+        }
+      : {
+          cookieCount: 0,
+          cookieNames: [],
+          cookieDomains: [],
+          sampleCookies: [],
+        };
 
   return {
     authState: authState.authState,
@@ -816,7 +836,10 @@ function buildResearchAuthDebug(
   };
 }
 
-function buildValidationDebug(error: unknown, authState: ResearchAuthState): {
+function buildValidationDebug(
+  error: unknown,
+  authState: ResearchAuthState
+): {
   httpStatus: number | null;
   validationModulesSeen: string[];
   validationResponseBodyExcerpt: string | null;
@@ -825,12 +848,12 @@ function buildValidationDebug(error: unknown, authState: ResearchAuthState): {
   const msg = error instanceof Error ? error.message : String(error);
   return {
     httpStatus: (() => {
-      const match = msg.match(/HTTP (\d+)/);
+      const match = /HTTP (\d+)/.exec(msg);
       return match ? parseInt(match[1]) : null;
     })(),
-    validationModulesSeen: authState.notes.filter(n => n.includes('modulesSeen')),
+    validationModulesSeen: authState.notes.filter((n) => n.includes('modulesSeen')),
     validationResponseBodyExcerpt: (() => {
-      const match = msg.match(/responseBody="(.*?)"/);
+      const match = /responseBody="(.*?)"/.exec(msg);
       return match ? match[1].slice(0, 500) : null;
     })(),
     errorMessage: msg,
@@ -1162,8 +1185,11 @@ async function validateResearchAuthState(options: {
     const parsedPayload = parseResearchModules(response.data);
     const modulesSeen = parsedPayload.modulesSeen;
     const responseBodyExcerpt = response.data.slice(0, 300);
-    const cookieDomains = [...new Set(options.cookies.map(c => c.domain))].slice(0, 5).join(',');
-    const cookieNames = options.cookies.slice(0, 5).map(c => c.name).join(',');
+    const cookieDomains = [...new Set(options.cookies.map((c) => c.domain))].slice(0, 5).join(',');
+    const cookieNames = options.cookies
+      .slice(0, 5)
+      .map((c) => c.name)
+      .join(',');
     const ok = response.status >= 200 && response.status < 300 && modulesSeen.length > 0;
     const result: ResearchSessionValidationResult = ok
       ? {
@@ -2220,7 +2246,9 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
           if (storeResolution.selected === 'upstash-redis') {
             diagnostics.upstashLoadSucceeded = true;
           }
-          logResearchSession(`Storage state load succeeded (${kvStorageStateRecord.bytes} bytes, ${resolvedSession.cookies.length} eBay cookies after sanitization)`);
+          logResearchSession(
+            `Storage state load succeeded (${kvStorageStateRecord.bytes} bytes, ${resolvedSession.cookies.length} eBay cookies after sanitization)`
+          );
           diagnostics.authValidationAttempted = true;
           const validation = await validateResearchAuthState({
             marketplace,
@@ -2240,7 +2268,11 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
                 lastFailurePath: 'auth_rejection',
                 lastFailureDetail: 'Validation succeeded — degradation counter reset',
               };
-              await updateDegradationMeta(storeResolution, resetDegradation, kvStorageStateRecord.meta);
+              await updateDegradationMeta(
+                storeResolution,
+                resetDegradation,
+                kvStorageStateRecord.meta
+              );
             }
             const value: ResearchAuthState = {
               cookies: resolvedSession.cookies,
@@ -2277,7 +2309,12 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
             };
             await updateDegradationMeta(storeResolution, degradation, kvStorageStateRecord.meta);
 
-            if (shouldSkipDeletion({ ...(kvStorageStateRecord.meta ?? {}), __degradation: degradation })) {
+            if (
+              shouldSkipDeletion({
+                ...(kvStorageStateRecord.meta ?? {}),
+                __degradation: degradation,
+              })
+            ) {
               notes.push(
                 `Auth rejection detected (failure #${newFailures}/${RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE}). Session preserved — will delete after ${RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE} consecutive rejections. Validation: HTTP ${validation.responseStatus}.`
               );
@@ -2314,7 +2351,9 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
           };
           await updateDegradationMeta(storeResolution, degradation, kvStorageStateRecord.meta);
 
-          if (shouldSkipDeletion({ ...(kvStorageStateRecord.meta ?? {}), __degradation: degradation })) {
+          if (
+            shouldSkipDeletion({ ...(kvStorageStateRecord.meta ?? {}), __degradation: degradation })
+          ) {
             notes.push(
               `No usable eBay cookies after sanitization (failure #${newFailures}/${RESEARCH_SESSION_MAX_FAILURES_BEFORE_DELETE}). Session preserved. Raw cookies=${kvStorageStateRecord.parsed.cookies.length} sample=[${cookieDomainDebug}].`
             );
