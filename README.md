@@ -392,6 +392,31 @@ POST /admin/session/:sessionToken/revoke   # revoke session
 DELETE /admin/session/:sessionToken        # delete session
 ```
 
+### Admin endpoints
+
+All `/admin/*` routes accept authentication via either:
+- Header: `X-Admin-API-Key: <ADMIN_API_KEY>`
+- Query param: `?key=<ADMIN_API_KEY>` (useful for browser access)
+
+```
+GET  /admin/token-status              # OAuth + Playwright session health
+POST /admin/oauth/start-for-validation # Start OAuth flow for validation runner
+POST /admin/playwright-session        # Store Playwright storage state JSON
+GET  /admin/playwright-capture        # Browser UI to capture eBay Research cookies
+```
+
+**`/admin/playwright-capture`** renders a self-service page for renewing the eBay Research Playwright session. Open it in a browser with the admin key as a query parameter:
+
+```
+https://your-server.com/admin/playwright-capture?key=YOUR_ADMIN_API_KEY
+```
+
+The page has two tabs:
+1. **Auto-Capture** — loads eBay Research in an iframe (may be blocked by eBay's security policies)
+2. **Manual Export** — provides step-by-step instructions to export cookies from Chrome DevTools, a bookmarklet for one-click cookie copying, and a text area to paste and submit the JSON
+
+Submitted cookies are validated, stored in the configured session backend (Upstash Redis / Cloudflare KV / filesystem), and given a 5-month TTL.
+
 ### Validation endpoints
 
 ```
