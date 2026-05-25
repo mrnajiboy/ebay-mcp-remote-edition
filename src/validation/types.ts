@@ -420,6 +420,46 @@ export interface TerapeakValidationSignals {
     previousPobWatcherCoverageCount?: number | null;
     fallbackReasons?: string[];
     writeSources?: Record<string, string>;
+    currentActiveParse?: {
+      modulesSeen: string[];
+      moduleCount: number;
+      parseErrors: string[];
+      pageErrors: string[];
+      aggregateExtracted: boolean;
+      rowCount: number;
+      watcherCoverageCount: number;
+      usefulResponse: boolean;
+    };
+    currentSoldParse?: {
+      modulesSeen: string[];
+      moduleCount: number;
+      parseErrors: string[];
+      pageErrors: string[];
+      aggregateExtracted: boolean;
+      rowCount: number;
+      watcherCoverageCount: number;
+      usefulResponse: boolean;
+    };
+    previousPobActiveParse?: {
+      modulesSeen: string[];
+      moduleCount: number;
+      parseErrors: string[];
+      pageErrors: string[];
+      aggregateExtracted: boolean;
+      rowCount: number;
+      watcherCoverageCount: number;
+      usefulResponse: boolean;
+    };
+    previousPobSoldParse?: {
+      modulesSeen: string[];
+      moduleCount: number;
+      parseErrors: string[];
+      pageErrors: string[];
+      aggregateExtracted: boolean;
+      rowCount: number;
+      watcherCoverageCount: number;
+      usefulResponse: boolean;
+    };
   };
 }
 

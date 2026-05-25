@@ -338,6 +338,17 @@ describe('getTerapeakValidationSignals()', () => {
           soldEndpointUrl: 'https://example.test/current-sold',
           authState: 'expired',
           sessionStrategy: 'kv_store',
+          sessionSource: 'kv',
+          sessionStoreConfigured: 'upstash-redis',
+          sessionStoreSelected: 'upstash-redis',
+          kvLoadAttempted: true,
+          kvLoadSucceeded: true,
+          upstashLoadAttempted: true,
+          upstashLoadSucceeded: true,
+          kvStorageStateBytes: 1234,
+          storageStateBytes: 1234,
+          authValidationAttempted: true,
+          authValidationSucceeded: false,
           notes: ['Authenticated eBay Research session was rejected with status 403.'],
         },
       })
@@ -350,7 +361,62 @@ describe('getTerapeakValidationSignals()', () => {
     expect(result.queryDebug.sessionStrategy).toBe('kv_store');
     expect(result.queryDebug.currentActiveEndpointUrl).toBe('https://example.test/current-active');
     expect(result.queryDebug.currentSoldEndpointUrl).toBe('https://example.test/current-sold');
+    expect(result.queryDebug.sessionSource).toBe('kv');
+    expect(result.queryDebug.sessionStoreSelected).toBe('upstash-redis');
+    expect(result.queryDebug.upstashLoadSucceeded).toBe(true);
+    expect(result.queryDebug.kvStorageStateBytes).toBe(1234);
+    expect(result.queryDebug.authValidationSucceeded).toBe(false);
     expect(result.queryDebug.notes).toContain('Authenticated eBay Research session was rejected with status 403.');
+  });
+
+  it('propagates parse debug so validation output can prove Terapeak data came through', async () => {
+    const { getTerapeakValidationSignals } = await import('../../../src/validation/providers/terapeak.js');
+    const request = buildRequest();
+
+    fetchEbayResearchMock.mockResolvedValue(
+      buildResearchResponse({
+        active: {
+          avgListingPriceUsd: 26,
+          totalActiveListings: 8,
+          listingRows: [{ title: 'ATEEZ GOLDEN HOUR active', itemId: null, url: null }],
+        },
+        sold: {
+          avgSoldPriceUsd: 22,
+          totalSold: 3,
+          soldRows: [{ title: 'ATEEZ GOLDEN HOUR sold', itemId: null, url: null }],
+        },
+        debug: {
+          activeParse: {
+            modulesSeen: ['ResearchAggregateModule', 'ActiveSearchResultsModule'],
+            moduleCount: 2,
+            parseErrors: [],
+            pageErrors: [],
+            aggregateExtracted: true,
+            rowCount: 1,
+            watcherCoverageCount: 0,
+            usefulResponse: true,
+          },
+          soldParse: {
+            modulesSeen: ['ResearchAggregateModule', 'SearchResultsModule'],
+            moduleCount: 2,
+            parseErrors: [],
+            pageErrors: [],
+            aggregateExtracted: true,
+            rowCount: 1,
+            watcherCoverageCount: 0,
+            usefulResponse: true,
+          },
+        },
+      })
+    );
+
+    const result = await getTerapeakValidationSignals({} as never, request);
+
+    expect(result.provider).toBe('ebay_research_ui');
+    expect(result.queryDebug.currentActiveParse?.usefulResponse).toBe(true);
+    expect(result.queryDebug.currentActiveParse?.modulesSeen).toContain('ResearchAggregateModule');
+    expect(result.queryDebug.currentSoldParse?.modulesSeen).toContain('SearchResultsModule');
+    expect(result.queryDebug.writeSources?.soldAvgPriceUsd).toBe('research_sold');
   });
 
   it('stops evaluating additional research candidates after a terminal auth failure', async () => {

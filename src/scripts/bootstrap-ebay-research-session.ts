@@ -6,7 +6,7 @@ import {
   inspectEbayResearchAuthState,
   inspectEbayResearchSessionPersistence,
   type ResearchStorageState,
-  storeEbayResearchSessionToKv,
+  validateAndStoreEbayResearchSessionToKv,
 } from '../validation/providers/ebay-research.js';
 import {
   createEbayResearchSessionStoreResolution,
@@ -89,12 +89,19 @@ async function main(): Promise<void> {
     }
 
     const storageState = await context.storageState<ResearchStorageState>();
-    await storeEbayResearchSessionToKv(marketplace, storageState, 'storage_state');
+    const validationPersistence = await validateAndStoreEbayResearchSessionToKv(
+      marketplace,
+      storageState,
+      'storage_state'
+    );
     clearEbayResearchAuthCache();
     const persistence = await inspectEbayResearchSessionPersistence(marketplace);
 
     console.log(
       `[eBayResearchSessionBootstrap] wrote storage state to ${persistence.sessionStoreSelected} key=${persistence.canonicalStateKey ?? 'null'} bytes=${persistence.storageStateBytes}`
+    );
+    console.log(
+      `[eBayResearchSessionBootstrap] validation status=${validationPersistence.validation.responseStatus ?? 'null'} modules=${validationPersistence.validation.modulesSeen.join(',') || 'none'} cookieCount=${validationPersistence.cookieCount}`
     );
     console.log(
       `[eBayResearchSessionBootstrap] canonical storage-state key ${persistence.canonicalStateKey ?? 'null'} exists=${persistence.storageStateExists} bytes=${persistence.storageStateBytes} valid=${persistence.storageStateValid}`
@@ -174,6 +181,7 @@ async function main(): Promise<void> {
           },
           sessionMetadata: meta,
           persistence,
+          validationPersistence,
           inspectCommand: 'pnpm run research:inspect-session',
           refreshCommand: 'pnpm run research:bootstrap',
           verification,

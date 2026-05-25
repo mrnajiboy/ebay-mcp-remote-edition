@@ -31,6 +31,10 @@ import {
   verifyQStashRequestSignature,
   type EbayResearchSessionExpiryCheckPayload,
 } from '@/validation/providers/ebay-research-session-alerts.js';
+import {
+  validateAndStoreEbayResearchSessionToKv,
+  type ResearchStorageState,
+} from '@/validation/providers/ebay-research.js';
 import { createFreshEbayResearchSessionStoreResolution } from '@/validation/providers/ebay-research-session-store.js';
 import type {
   getToolDefinitions as GetToolDefinitionsFn,
@@ -669,7 +673,7 @@ export function createApp(): express.Application {
       marketplace?: string;
     };
 
-    if (!storageState || typeof storageState !== 'object') {
+    if (storageState === undefined || storageState === null) {
       res.status(400).json({ error: 'Missing or invalid storageState object' });
       return;
     }
@@ -688,13 +692,24 @@ export function createApp(): express.Application {
     const stateJson =
       typeof storageState === 'string' ? storageState : JSON.stringify(storageState);
 
-    // Validate minimal structure
+    // Validate minimal structure. Accept either a full Playwright storage-state
+    // object or a direct DevTools-exported cookie array, then normalize before
+    // the shared validation+persistence path.
     let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(stateJson);
-      if (!Array.isArray(parsed.cookies) && !Array.isArray(parsed.origins)) {
+      const parsedValue = JSON.parse(stateJson) as unknown;
+      if (Array.isArray(parsedValue)) {
+        parsed = { cookies: parsedValue, origins: [] };
+      } else if (parsedValue && typeof parsedValue === 'object') {
+        parsed = parsedValue as Record<string, unknown>;
+      } else {
+        res.status(400).json({ error: 'storageState is not valid Playwright storage-state JSON' });
+        return;
+      }
+
+      if (!Array.isArray(parsed.cookies)) {
         res.status(400).json({
-          error: 'storageState must contain "cookies" array and/or "origins" array',
+          error: 'storageState must contain a "cookies" array',
         });
         return;
       }
@@ -703,42 +718,50 @@ export function createApp(): express.Application {
       return;
     }
 
-    const now = new Date();
-    // eBay sessions typically last ~6 months; set 5 month TTL
-    const ttlSeconds = 5 * 30 * 24 * 60 * 60;
-    const expiresAt = new Date(now.getTime() + ttlSeconds * 1000).toISOString();
+    const parsedStorageState: ResearchStorageState = {
+      cookies: parsed.cookies as ResearchStorageState['cookies'],
+      origins: Array.isArray(parsed.origins)
+        ? (parsed.origins as ResearchStorageState['origins'])
+        : [],
+    };
 
-    await store.store.setStorageState(stateJson, { ttlSeconds });
-    await store.store.setMeta(
-      {
-        updatedAt: now.toISOString(),
-        expiresAt,
-        ttlSeconds,
-        storeTtlSeconds: ttlSeconds,
+    let persistence: Awaited<ReturnType<typeof validateAndStoreEbayResearchSessionToKv>>;
+    try {
+      persistence = await validateAndStoreEbayResearchSessionToKv(
+        targetMarketplace,
+        parsedStorageState,
+        'storage_state'
+      );
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : String(error),
         backend: store.selected,
-        marketplace: targetMarketplace,
-        source: 'admin_api',
-        sessionVersion: `admin_${Date.now()}`,
-      },
-      { ttlSeconds }
-    );
+        storageStateKey: store.stateKey,
+        metadataKey: store.metaKey,
+      });
+      return;
+    }
 
     serverLogger.info('[admin/playwright-session] Stored Playwright session', {
       marketplace: targetMarketplace,
-      backend: store.selected,
-      bytes: Buffer.byteLength(stateJson, 'utf8'),
-      expiresAt,
+      backend: persistence.backend,
+      bytes: persistence.bytes,
+      expiresAt: persistence.expiresAt,
+      validationStatus: persistence.validation.responseStatus,
     });
 
     res.json({
       ok: true,
       marketplace: targetMarketplace,
-      backend: store.selected,
-      storageStateKey: store.stateKey,
-      metadataKey: store.metaKey,
-      bytes: Buffer.byteLength(stateJson, 'utf8'),
-      expiresAt,
-      ttlSeconds,
+      backend: persistence.backend,
+      storageStateKey: persistence.stateKey,
+      metadataKey: persistence.metaKey,
+      bytes: persistence.bytes,
+      cookieCount: persistence.cookieCount,
+      expiresAt: persistence.expiresAt,
+      ttlSeconds: persistence.ttlSeconds,
+      storeTtlSeconds: persistence.storeTtlSeconds,
+      validation: persistence.validation,
     });
   });
 
@@ -846,7 +869,9 @@ export function createApp(): express.Application {
         });
         var result = await resp.json();
         if (result.ok) {
-          setStatus('✅ Cookies stored successfully! (' + result.bytes + ' bytes, expires: ' + result.expiresAt.slice(0,10) + ')', 'success');
+          var expiryLabel = result.expiresAt ? result.expiresAt.slice(0,10) : 'session-cookie fallback';
+          var validationLabel = result.validation && result.validation.responseStatus ? ', validation HTTP ' + result.validation.responseStatus : '';
+          setStatus('✅ Cookies stored successfully! (' + result.bytes + ' bytes, expires: ' + expiryLabel + validationLabel + ')', 'success');
         } else {
           setStatus('Failed: ' + (result.error || 'unknown error'), 'error');
         }

@@ -45,6 +45,7 @@ vi.mock('@/auth/kv-store.js', () => {
 
 vi.mock('node:fs', () => ({
   existsSync: existsSyncMock,
+  mkdirSync: vi.fn(),
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -454,6 +455,57 @@ describe('fetchEbayResearch()', () => {
     expect(axiosGetMock.mock.calls[0]?.[1]?.headers?.cookie).not.toContain('cookie-env');
   });
 
+  it('re-reads canonical KV with a fresh client instead of reusing a stale cached miss', async () => {
+    process.env.EBAY_RESEARCH_COOKIES_JSON = JSON.stringify([
+      { name: 'sid', value: 'cookie-env', domain: '.ebay.com', path: '/' },
+    ]);
+
+    const { clearEbayResearchAuthCache, fetchEbayResearch } = await import(
+      '../../../src/validation/providers/ebay-research.js'
+    );
+
+    axiosGetMock
+      .mockResolvedValueOnce({ status: 200, data: buildValidationPayload() })
+      .mockResolvedValueOnce({ status: 200, data: buildActivePayload() })
+      .mockResolvedValueOnce({ status: 200, data: buildSoldPayload() });
+
+    await fetchEbayResearch('ATEEZ GOLDEN HOUR');
+    expect(axiosGetMock.mock.calls[0]?.[1]?.headers?.cookie).toContain('cookie-env');
+    expect(kvGetMock).toHaveBeenCalledWith('ebay_research_storage_state_json');
+
+    axiosGetMock.mockClear();
+    clearEbayResearchAuthCache();
+    delete process.env.EBAY_RESEARCH_COOKIES_JSON;
+
+    kvGetMock.mockImplementation(async (key?: string) => {
+      if (key === 'ebay_research_storage_state_json') {
+        return JSON.stringify({
+          cookies: [{ name: 'sid', value: 'cookie-upstash', domain: '.ebay.com', path: '/' }],
+          origins: [],
+        });
+      }
+
+      return null;
+    });
+    browserContextCookiesMock.mockResolvedValueOnce([
+      { name: 'sid', value: 'cookie-upstash', domain: '.ebay.com', path: '/' },
+    ]);
+    browserContextStorageStateMock.mockResolvedValueOnce({
+      cookies: [{ name: 'sid', value: 'cookie-upstash', domain: '.ebay.com', path: '/' }],
+      origins: [],
+    });
+    axiosGetMock
+      .mockResolvedValueOnce({ status: 200, data: buildValidationPayload() })
+      .mockResolvedValueOnce({ status: 200, data: buildActivePayload() })
+      .mockResolvedValueOnce({ status: 200, data: buildSoldPayload() });
+
+    const response = await fetchEbayResearch('ATEEZ GOLDEN HOUR');
+
+    expect(response.debug.sessionSource).toBe('kv');
+    expect(response.debug.kvLoadSucceeded).toBe(true);
+    expect(axiosGetMock.mock.calls[0]?.[1]?.headers?.cookie).toContain('cookie-upstash');
+  });
+
   it('keeps auth cache scoped per marketplace', async () => {
     kvGetMock.mockImplementation(async (key?: string) => {
       if (typeof key !== 'string') {
@@ -559,7 +611,18 @@ describe('fetchEbayResearch()', () => {
       expect.any(Number)
     );
     expect(JSON.parse(String(kvPutMock.mock.calls[0]?.[1]))).toEqual({
-      cookies: [{ name: 'sid', value: 'cookie-ebay', domain: '.ebay.com', path: '/' }],
+      cookies: [
+        {
+          name: 'sid',
+          value: 'cookie-ebay',
+          domain: '.ebay.com',
+          path: '/',
+          expires: -1,
+          httpOnly: false,
+          secure: true,
+          sameSite: 'Lax',
+        },
+      ],
       origins: [
         {
           origin: 'https://www.ebay.com',
@@ -582,6 +645,126 @@ describe('fetchEbayResearch()', () => {
     );
   });
 
+  it('normalizes manual cookie exports to the same persisted Playwright cookie shape', async () => {
+    const { storeEbayResearchSessionToKv } = await import(
+      '../../../src/validation/providers/ebay-research.js'
+    );
+
+    await storeEbayResearchSessionToKv(
+      'EBAY-US',
+      {
+        cookies: [
+          {
+            name: 'full',
+            value: 'cookie-full',
+            domain: '.ebay.com',
+            path: '/',
+            expirationDate: 1790000000,
+            httpOnly: true,
+            secure: true,
+            sameSite: 'no_restriction',
+          } as any,
+          { name: 'minimal', value: 'cookie-minimal' },
+        ],
+        origins: [],
+      },
+      'storage_state'
+    );
+
+    expect(JSON.parse(String(kvPutMock.mock.calls[0]?.[1]))).toEqual({
+      cookies: [
+        {
+          name: 'full',
+          value: 'cookie-full',
+          domain: '.ebay.com',
+          path: '/',
+          expires: 1790000000,
+          httpOnly: true,
+          secure: true,
+          sameSite: 'None',
+        },
+        {
+          name: 'minimal',
+          value: 'cookie-minimal',
+          domain: '.ebay.com',
+          path: '/',
+          expires: -1,
+          httpOnly: false,
+          secure: true,
+          sameSite: 'Lax',
+        },
+      ],
+      origins: [],
+    });
+  });
+
+  it('stores matching cookie and storage-state key shapes for manual and Playwright captures', async () => {
+    const { storeEbayResearchSessionToKv } = await import(
+      '../../../src/validation/providers/ebay-research.js'
+    );
+    const shapeOf = (value: unknown): unknown => {
+      if (Array.isArray(value)) {
+        return value.map((entry) => shapeOf(entry));
+      }
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([key, nestedValue]) => [key, shapeOf(nestedValue)])
+        );
+      }
+      return typeof value;
+    };
+
+    await storeEbayResearchSessionToKv(
+      'EBAY-US',
+      {
+        cookies: [{ name: 'sid', value: 'manual-cookie' }],
+        origins: [],
+      },
+      'storage_state'
+    );
+    const manualState = JSON.parse(String(kvPutMock.mock.calls[0]?.[1])) as unknown;
+
+    await storeEbayResearchSessionToKv(
+      'EBAY-US',
+      {
+        cookies: [
+          {
+            name: 'sid',
+            value: 'playwright-cookie',
+            domain: '.ebay.com',
+            path: '/',
+            expires: -1,
+            httpOnly: false,
+            secure: true,
+            sameSite: 'Lax',
+          },
+        ],
+        origins: [],
+      },
+      'storage_state'
+    );
+    const playwrightState = JSON.parse(String(kvPutMock.mock.calls[2]?.[1])) as unknown;
+
+    expect(shapeOf(manualState)).toEqual(shapeOf(playwrightState));
+    expect(shapeOf(manualState)).toEqual({
+      cookies: [
+        {
+          domain: 'string',
+          expires: 'number',
+          httpOnly: 'boolean',
+          name: 'string',
+          path: 'string',
+          sameSite: 'string',
+          secure: 'boolean',
+          value: 'string',
+        },
+      ],
+      origins: [],
+    });
+  });
+
   it('rejects storage-state bootstrap payloads when no usable ebay cookies remain after sanitization', async () => {
     const { storeEbayResearchSessionToKv } = await import(
       '../../../src/validation/providers/ebay-research.js'
@@ -602,6 +785,47 @@ describe('fetchEbayResearch()', () => {
         'storage_state'
       )
     ).rejects.toThrow('Provided eBay Research storage state did not contain any usable cookies.');
+
+    expect(kvPutMock).not.toHaveBeenCalled();
+  });
+
+  it('validates storage-state before storing through hosted admin/session flows', async () => {
+    const { validateAndStoreEbayResearchSessionToKv } = await import(
+      '../../../src/validation/providers/ebay-research.js'
+    );
+
+    axiosGetMock.mockResolvedValueOnce({ status: 200, data: buildValidationPayload() });
+
+    const result = await validateAndStoreEbayResearchSessionToKv('EBAY-US', {
+      cookies: [{ name: 'sid', value: 'cookie-ebay', domain: '.ebay.com', path: '/' }],
+      origins: [],
+    });
+
+    expect(result.validation.ok).toBe(true);
+    expect(result.cookieCount).toBe(1);
+    expect(kvPutMock).toHaveBeenCalledWith(
+      'ebay_research_storage_state_json',
+      expect.any(String),
+      179 * 24 * 60 * 60
+    );
+  });
+
+  it('rejects hosted admin/session storage when ACTIVE endpoint validation fails', async () => {
+    const { validateAndStoreEbayResearchSessionToKv } = await import(
+      '../../../src/validation/providers/ebay-research.js'
+    );
+
+    axiosGetMock.mockResolvedValueOnce({
+      status: 403,
+      data: JSON.stringify({ _type: 'PageErrorModule', message: 'Forbidden' }),
+    });
+
+    await expect(
+      validateAndStoreEbayResearchSessionToKv('EBAY-US', {
+        cookies: [{ name: 'sid', value: 'cookie-ebay', domain: '.ebay.com', path: '/' }],
+        origins: [],
+      })
+    ).rejects.toThrow('failed ACTIVE endpoint validation');
 
     expect(kvPutMock).not.toHaveBeenCalled();
   });

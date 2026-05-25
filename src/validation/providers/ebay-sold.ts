@@ -8,6 +8,7 @@ import type {
   ValidationSignalConfidence,
   ValidationSoldVelocity,
 } from '../types.js';
+import { getValidationEffectiveContext } from '../effective-context.js';
 import {
   buildResolvedSoldQueryPlan,
   extractSemanticTokens,
@@ -259,7 +260,11 @@ function bucketSoldVelocity(
 }
 
 function getPrimaryArtist(request: ValidationRunRequest): string {
-  return sanitizeQueryCandidate(request.item.canonicalArtists[0] ?? '');
+  return sanitizeQueryCandidate(
+    getValidationEffectiveContext(request).searchArtist ??
+      request.item.canonicalArtists[0]?.trim() ??
+      ''
+  );
 }
 
 function getSubtypeToken(request: ValidationRunRequest): string | null {

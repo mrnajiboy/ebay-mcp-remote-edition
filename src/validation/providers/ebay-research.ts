@@ -3,9 +3,9 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { createLogger } from '@/utils/logger.js';
 import {
   createFreshEbayResearchSessionStoreResolution,
-  createEbayResearchSessionStoreResolution,
   getEbayResearchSessionStoreScopeSummary,
   getEbayResearchSessionStoreTargetSummary,
   isKvEbayResearchSessionStoreBackend,
@@ -132,7 +132,9 @@ interface ResearchCookie {
   domain?: string;
   path?: string;
   expires?: number;
+  httpOnly?: boolean;
   secure?: boolean;
+  sameSite?: 'Strict' | 'Lax' | 'None';
 }
 
 interface ParsedResearchModule {
@@ -332,6 +334,7 @@ const EBAY_HOSTNAME_PATTERN = /(^|\.)ebay\.[a-z.]+$/i;
 const RESEARCH_SESSION_ALLOW_FILESYSTEM_FALLBACK =
   process.env.EBAY_RESEARCH_SESSION_ALLOW_FILESYSTEM_FALLBACK?.trim().toLowerCase() === 'true';
 const RESEARCH_SESSION_LOG_PREFIX = '[eBayResearchSession]';
+const researchSessionLogger = createLogger('eBayResearchSession');
 
 type ResearchAuthCache = Record<
   string,
@@ -384,7 +387,7 @@ function uniqueStrings(values: string[]): string[] {
 }
 
 function logResearchSession(message: string): void {
-  console.log(`${RESEARCH_SESSION_LOG_PREFIX} ${message}`);
+  researchSessionLogger.info(`${RESEARCH_SESSION_LOG_PREFIX} ${message}`);
 }
 
 function describeStoredValueType(value: unknown): string {
@@ -428,7 +431,11 @@ function getStoredStorageStateValidityFromUnknown(value: unknown): boolean | nul
 }
 
 function resolveResearchSessionStore(marketplace: string): EbayResearchSessionStoreResolution {
-  return createEbayResearchSessionStoreResolution(marketplace);
+  // Research sessions are commonly refreshed out-of-band by the bootstrap CLI or
+  // hosted admin endpoint while the HTTP worker is already running. Use a fresh
+  // KV client for canonical reads/writes so a stale process-local read-through
+  // cache (especially cached Upstash misses) cannot hide newly written cookies.
+  return createFreshEbayResearchSessionStoreResolution(marketplace);
 }
 
 export interface EbayResearchFreshStoreValueInspection {
@@ -614,14 +621,42 @@ function getResearchAuthFingerprint(authState: ResearchAuthState): string {
     .digest('hex');
 }
 
+function normalizeResearchCookieSameSite(value: unknown): ResearchCookie['sameSite'] {
+  if (typeof value !== 'string') {
+    return 'Lax';
+  }
+
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[-_\s]/g, '');
+  if (normalized === 'strict') {
+    return 'Strict';
+  }
+  if (normalized === 'none' || normalized === 'norestriction' || normalized === 'no_restriction') {
+    return 'None';
+  }
+  return 'Lax';
+}
+
+function normalizeResearchCookieExpires(entry: Record<string, unknown>): number {
+  const rawExpires = entry.expires ?? entry.expirationDate ?? entry.expiration;
+  return typeof rawExpires === 'number' && Number.isFinite(rawExpires) ? rawExpires : -1;
+}
+
 function normalizeResearchCookie(entry: Record<string, unknown>): ResearchCookie {
   return {
     name: typeof entry.name === 'string' ? entry.name : '',
     value: typeof entry.value === 'string' ? entry.value : '',
-    domain: typeof entry.domain === 'string' ? entry.domain : undefined,
-    path: typeof entry.path === 'string' ? entry.path : undefined,
-    expires: typeof entry.expires === 'number' ? entry.expires : undefined,
-    secure: typeof entry.secure === 'boolean' ? entry.secure : undefined,
+    domain:
+      typeof entry.domain === 'string' && entry.domain.trim().length > 0
+        ? entry.domain
+        : '.ebay.com',
+    path: typeof entry.path === 'string' && entry.path.trim().length > 0 ? entry.path : '/',
+    expires: normalizeResearchCookieExpires(entry),
+    httpOnly: typeof entry.httpOnly === 'boolean' ? entry.httpOnly : false,
+    secure: typeof entry.secure === 'boolean' ? entry.secure : true,
+    sameSite: normalizeResearchCookieSameSite(entry.sameSite),
   };
 }
 
@@ -713,9 +748,9 @@ function sanitizeResearchStorageState(
   notes?: string[]
 ): ResearchStorageState {
   const cookies = normalizeResearchCookies(storageState.cookies).filter((cookie) => {
-    // Preserve cookies without an explicit domain (first-party cookies from the
-    // signed-in eBay Research session captured by Playwright storageState()).
-    // Only filter out cookies with an explicitly non-eBay domain.
+    // normalizeResearchCookie fills missing manual-export domain/path metadata
+    // with safe ebay.com defaults, then this filter removes explicitly
+    // non-eBay cookies before persistence/use.
     if (typeof cookie.domain !== 'string' || cookie.domain.length === 0) {
       return true;
     }
@@ -991,6 +1026,10 @@ async function persistResearchSessionToStore(options: {
   stateKey: string | null;
   metaKey: string | null;
   bytes: number;
+  updatedAt: string;
+  expiresAt: string | null;
+  ttlSeconds: number;
+  storeTtlSeconds: number;
 } | null> {
   const resolution = resolveResearchSessionStore(options.marketplace);
   const persistedStorageState = options.storageState
@@ -1077,6 +1116,10 @@ async function persistResearchSessionToStore(options: {
     stateKey: resolution.stateKey,
     metaKey: resolution.metaKey,
     bytes: storageStateBytes,
+    updatedAt,
+    expiresAt,
+    ttlSeconds,
+    storeTtlSeconds,
   };
 }
 
@@ -2974,6 +3017,74 @@ export async function storeEbayResearchSessionToKv(
     ),
     required: true,
   });
+  clearEbayResearchAuthCache();
+}
+
+export interface EbayResearchSessionStoreValidationResult {
+  backend: EbayResearchSessionStoreBackend;
+  stateKey: string | null;
+  metaKey: string | null;
+  bytes: number;
+  updatedAt: string;
+  expiresAt: string | null;
+  ttlSeconds: number;
+  storeTtlSeconds: number;
+  validation: {
+    ok: boolean;
+    responseStatus: number | null;
+    modulesSeen: string[];
+    note: string;
+  };
+  cookieCount: number;
+}
+
+export async function validateAndStoreEbayResearchSessionToKv(
+  marketplace: string,
+  storageState: ResearchStorageState,
+  source: ResearchSessionStrategy = 'storage_state'
+): Promise<EbayResearchSessionStoreValidationResult> {
+  const sanitizedStorageState = sanitizeResearchStorageState(
+    storageState,
+    'provided eBay Research storage state'
+  );
+  const cookies = normalizeResearchCookies(sanitizedStorageState.cookies);
+  if (cookies.length === 0) {
+    throw new EbayResearchAuthError(
+      'Provided eBay Research storage state did not contain any usable cookies.'
+    );
+  }
+
+  const validation = await validateResearchAuthState({
+    marketplace,
+    cookies,
+    sourceLabel: 'provided eBay Research storage state',
+  });
+  if (!validation.ok) {
+    throw new EbayResearchAuthError(
+      `Provided eBay Research storage state failed ACTIVE endpoint validation: ${validation.note}`
+    );
+  }
+
+  const persistence = await persistResearchSessionToStore({
+    marketplace,
+    cookies,
+    storageState: sanitizedStorageState,
+    source,
+    sessionSource: getSessionSourceForStoreBackend(
+      resolveResearchSessionStore(marketplace).selected
+    ),
+    required: true,
+  });
+  if (!persistence) {
+    throw new EbayResearchAuthError('Provided eBay Research storage state could not be persisted.');
+  }
+
+  clearEbayResearchAuthCache();
+  return {
+    ...persistence,
+    validation,
+    cookieCount: cookies.length,
+  };
 }
 
 export interface EbayResearchSessionPersistenceInspection {

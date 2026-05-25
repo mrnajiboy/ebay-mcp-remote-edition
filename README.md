@@ -278,9 +278,16 @@ QSTASH_CURRENT_SIGNING_KEY=
 QSTASH_NEXT_SIGNING_KEY=
 EBAY_RESEARCH_SESSION_ALERTS_ENABLED=true
 EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL=
+
+# eBay Research/Terapeak first-party session source.
+# Set this explicitly in hosted deployments. If unset, research sessions default
+# to Cloudflare KV even when EBAY_TOKEN_STORE_BACKEND=upstash-redis.
+EBAY_RESEARCH_SESSION_STORE=upstash-redis # cloudflare_kv | upstash-redis | filesystem | none
+EBAY_RESEARCH_SESSION_ALLOW_FILESYSTEM_FALLBACK=false
 ```
 
 > `EBAY_TOKEN_STORE_BACKEND` defaults to Cloudflare KV when unset or unrecognized. Use `memory` only for tests or throwaway local development because hosted sessions and tokens are lost on restart.
+> `EBAY_RESEARCH_SESSION_STORE` is separate from OAuth token storage. Set it to `upstash-redis` when Terapeak/eBay Research cookies are stored in Upstash.
 
 ### Secret file
 
@@ -415,7 +422,7 @@ The page has two tabs:
 1. **Auto-Capture** — loads eBay Research in an iframe (may be blocked by eBay's security policies)
 2. **Manual Export** — provides step-by-step instructions to export cookies from Chrome DevTools, a bookmarklet for one-click cookie copying, and a text area to paste and submit the JSON
 
-Submitted cookies are validated, stored in the configured session backend (Upstash Redis / Cloudflare KV / filesystem), and given a 5-month TTL.
+Submitted cookies are validated against the authenticated eBay Research ACTIVE endpoint before persistence, stored in the configured session backend (Upstash Redis / Cloudflare KV / filesystem), and written with a long KV TTL. Cookie expiry is tracked in metadata so the runtime can report missing/expired Terapeak auth separately from provider parsing failures.
 
 ### Validation endpoints
 
