@@ -50,16 +50,18 @@ describe('Captcha Module', () => {
       ).rejects.toThrow('No captcha solver configured');
     });
 
-    it('solves via 2Captcha when configured', async () => {
+    it('solves via 2Captcha when configured (JSON response)', async () => {
       process.env.TWOCAPTCHA_API_KEY = 'test-key';
 
-      // Mock 2Captcha: create task → get result
+      // Mock 2Captcha: create task → get result (JSON format)
       mockFetch
         .mockResolvedValueOnce({
-          json: () => Promise.resolve({ status: 1, request: 'task-123' }),
+          text: () =>
+            Promise.resolve(JSON.stringify({ status: 1, request: 'task-123' })),
         })
         .mockResolvedValueOnce({
-          json: () => Promise.resolve({ status: 1, request: 'solution-token' }),
+          text: () =>
+            Promise.resolve(JSON.stringify({ status: 1, request: 'solution-token' })),
         });
 
       const result = await solveCaptcha(
@@ -74,6 +76,31 @@ describe('Captcha Module', () => {
       expect(result.token).toBe('solution-token');
       expect(result.provider).toBe('twocaptcha');
       expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('solves via 2Captcha when configured (plaintext OK|taskId)', async () => {
+      process.env.TWOCAPTCHA_API_KEY = 'test-key';
+
+      // Mock 2Captcha: create task → get result (plaintext format)
+      mockFetch
+        .mockResolvedValueOnce({
+          text: () => Promise.resolve('OK|54321'),
+        })
+        .mockResolvedValueOnce({
+          text: () => Promise.resolve('OK|plaintext-solution'),
+        });
+
+      const result = await solveCaptcha(
+        {
+          type: 'hcaptcha',
+          siteKey: 'test-site-key',
+          pageUrl: 'http://test.com',
+        },
+        { pollIntervalMs: 100, maxWaitMs: 5000 }
+      );
+
+      expect(result.token).toBe('plaintext-solution');
+      expect(result.provider).toBe('twocaptcha');
     });
 
     it('solves via Capsolver when configured', async () => {
@@ -112,13 +139,13 @@ describe('Captcha Module', () => {
       // 2Captcha: create task succeeds, but keep returning CAPCHA_NOT_READY → timeout
       mockFetch
         .mockResolvedValueOnce({
-          json: async () => ({ status: 1, request: 'task-123' }),
+          text: async () => JSON.stringify({ status: 1, request: 'task-123' }),
         })
         .mockResolvedValueOnce({
-          json: async () => ({ status: 0, request: null }), // Still processing
+          text: async () => JSON.stringify({ status: 0, request: null }), // Still processing
         })
         .mockResolvedValueOnce({
-          json: async () => ({ status: 0, request: null }), // Still processing
+          text: async () => JSON.stringify({ status: 0, request: null }), // Still processing
         });
 
       await expect(
@@ -134,11 +161,11 @@ describe('Captcha Module', () => {
     });
 
     it('throws aggregated error when all providers fail', async () => {
-      process.env.TWOCAPTCHA_API_KEY = 'test-key';
+      process.env.TWOCAPTCHA_API_KEY='***';
 
-      // 2Captcha: API error
+      // 2Captcha: API error (plaintext format)
       mockFetch.mockResolvedValueOnce({
-        json: () => Promise.resolve({ status: 0, error_text: 'ERROR_CAPTCHA_UNSOLVABLE' }),
+        text: () => Promise.resolve('ERROR_CAPTCHA_UNSOLVABLE'),
       });
 
       await expect(
@@ -293,13 +320,13 @@ describe('Captcha Module', () => {
           .mockResolvedValueOnce(undefined), // injectCaptchaToken
       };
 
-      // 2Captcha: create task → get result
+      // 2Captcha: create task → get result (plaintext format)
       mockFetch
         .mockResolvedValueOnce({
-          json: () => Promise.resolve({ status: 1, request: 'task-123' }),
+          text: () => Promise.resolve('OK|task-123'),
         })
         .mockResolvedValueOnce({
-          json: () => Promise.resolve({ status: 1, request: 'solution-token' }),
+          text: () => Promise.resolve('OK|solution-token'),
         });
 
       const result = await waitForAndSolveCaptcha(mockPage, {
@@ -346,15 +373,15 @@ describe('Captcha Module', () => {
     });
 
     it('2Captcha returns CAPCHA_NOT_READY when processing', async () => {
-      process.env.TWOCAPTCHA_API_KEY = 'test-key';
+      process.env.TWOCAPTCHA_API_KEY = '***';
 
-      // 2Captcha: create task → CAPCHA_NOT_READY (status 0, no error)
+      // 2Captcha: create task → CAPCHA_NOT_READY (plaintext format)
       mockFetch
         .mockResolvedValueOnce({
-          json: () => Promise.resolve({ status: 1, request: 'task-123' }),
+          text: () => Promise.resolve('OK|task-123'),
         })
         .mockResolvedValueOnce({
-          json: () => Promise.resolve({ status: 0, request: null, error_id: 1 }), // CAPCHA_NOT_READY
+          text: () => Promise.resolve('CAPCHA_NOT_READY'),
         });
 
       await expect(

@@ -94,20 +94,20 @@ class CapsolverClient implements CaptchaProviderClient {
     this.apiKey = apiKey;
   }
 
-  private captchaTypeToTaskType(type: CaptchaType): string {
+  private captchaTypeToTaskType(type: CaptchaType, hasProxy: boolean): string {
     switch (type) {
       case 'hcaptcha':
-        return 'HCaptchaTask';
+        return hasProxy ? 'HCaptchaTask' : 'HCaptchaTaskProxyLess';
       case 'recaptcha_v2':
-        return 'ReCaptchaV2Task';
+        return hasProxy ? 'ReCaptchaV2Task' : 'ReCaptchaV2TaskProxyLess';
       case 'recaptcha_v3':
-        return 'ReCaptchaV3Task';
+        return hasProxy ? 'ReCaptchaV3Task' : 'ReCaptchaV3TaskProxyLess';
     }
   }
 
   async createTask(config: CaptchaConfig): Promise<{ taskId: string }> {
     const task: CapsolverTask = {
-      type: this.captchaTypeToTaskType(config.type),
+      type: this.captchaTypeToTaskType(config.type, !!config.proxy),
       websiteURL: config.pageUrl,
       websiteKey: config.siteKey,
     };
@@ -235,6 +235,7 @@ class TwoCaptchaClient implements CaptchaProviderClient {
       pageurl: config.pageUrl,
       proxy: config.proxy,
       proxytype: config.proxy ? 'http' : undefined,
+      json: '1', // Force JSON response format
     };
 
     const formData = this.buildFormData(payload);
@@ -245,7 +246,20 @@ class TwoCaptchaClient implements CaptchaProviderClient {
       body: formData,
     });
 
-    const data = (await response.json()) as TwoCaptchaInResponse;
+    // 2Captcha may return either JSON or plaintext OK|taskId format
+    const text = await response.text();
+    let data: TwoCaptchaInResponse;
+
+    if (text.startsWith('{')) {
+      data = JSON.parse(text) as TwoCaptchaInResponse;
+    } else {
+      // Parse plaintext OK|taskId or ERROR|message
+      const parts = text.split('|');
+      if (parts[0] === 'OK' && parts[1]) {
+        return { taskId: parts[1] };
+      }
+      data = { error_text: parts[1] ?? text, error_id: -1 };
+    }
 
     if (data.status !== 1 || !data.request) {
       const errorMessage = data.error_text ?? `2Captcha error_id: ${data.error_id}`;
@@ -263,6 +277,7 @@ class TwoCaptchaClient implements CaptchaProviderClient {
     const payload: Record<string, string> = {
       key: this.apiKey,
       action: 'get',
+      json: '1', // Force JSON response format
       id: taskId,
     };
 
@@ -274,7 +289,21 @@ class TwoCaptchaClient implements CaptchaProviderClient {
       body: formData,
     });
 
-    const data = (await response.json()) as TwoCaptchaResResponse;
+    // Handle both JSON and plaintext formats
+    const text = await response.text();
+    let data: TwoCaptchaResResponse;
+
+    if (text.startsWith('{')) {
+      data = JSON.parse(text) as TwoCaptchaResResponse;
+    } else {
+      // Parse plaintext OK|solution or CAPCHA_NOT_READY
+      const parts = text.split('|');
+      if (parts[0] === 'OK' && parts[1]) {
+        return { token: parts[1], provider: this.name };
+      }
+      // CAPCHA_NOT_READY or other error
+      data = { error_text: parts[0] ?? text, error_id: 1 };
+    }
 
     if (data.error_text && data.error_id !== 0) {
       throw new Error(`2Captcha getResult error: ${data.error_text}`);
