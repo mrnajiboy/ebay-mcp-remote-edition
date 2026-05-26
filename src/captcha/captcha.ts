@@ -7,7 +7,7 @@ const logger = createLogger('captcha');
 // ---------------------------------------------------------------------------
 
 export type CaptchaType = 'hcaptcha' | 'recaptcha_v2' | 'recaptcha_v3';
-export type CaptchaProvider = 'capsolver' | 'twocaptcha';
+export type CaptchaProvider = 'twocaptcha';
 
 export interface CaptchaConfig {
   type: CaptchaType;
@@ -43,137 +43,6 @@ interface CaptchaProviderClient {
   name: CaptchaProvider;
   createTask(config: CaptchaConfig): Promise<{ taskId: string }>;
   getResult(taskId: string): Promise<CaptchaSolution | null>;
-}
-
-// ---------------------------------------------------------------------------
-// CapSolver client
-// ---------------------------------------------------------------------------
-
-const CAPSOLVER_API_URL = 'https://api.capsolver.com';
-
-interface CapsolverTask {
-  type: string;
-  websiteURL: string;
-  websiteKey: string;
-  proxy?: string;
-}
-
-interface CapsolverCreateTaskPayload {
-  clientKey: string;
-  task: CapsolverTask;
-}
-
-interface CapsolverCreateTaskResponse {
-  errorId: number;
-  errorCode?: string;
-  errorDescription?: string;
-  taskId?: string;
-}
-
-interface CapsolverGetTaskResultPayload {
-  clientKey: string;
-  taskId: string;
-}
-
-interface CapsolverGetTaskResultResponse {
-  errorId: number;
-  errorCode?: string;
-  errorDescription?: string;
-  status?: string;
-  solution?: {
-    gRecaptchaResponse?: string;
-    token?: string;
-  };
-}
-
-class CapsolverClient implements CaptchaProviderClient {
-  public readonly name: CaptchaProvider = 'capsolver';
-  private apiKey: string;
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
-
-  private captchaTypeToTaskType(type: CaptchaType, hasProxy: boolean): string {
-    switch (type) {
-      case 'hcaptcha':
-        return hasProxy ? 'HCaptchaTask' : 'HCaptchaTaskProxyLess';
-      case 'recaptcha_v2':
-        return hasProxy ? 'ReCaptchaV2Task' : 'ReCaptchaV2TaskProxyLess';
-      case 'recaptcha_v3':
-        return hasProxy ? 'ReCaptchaV3Task' : 'ReCaptchaV3TaskProxyLess';
-    }
-  }
-
-  async createTask(config: CaptchaConfig): Promise<{ taskId: string }> {
-    const task: CapsolverTask = {
-      type: this.captchaTypeToTaskType(config.type, !!config.proxy),
-      websiteURL: config.pageUrl,
-      websiteKey: config.siteKey,
-    };
-
-    if (config.proxy) {
-      task.proxy = config.proxy;
-    }
-
-    const payload: CapsolverCreateTaskPayload = {
-      clientKey: this.apiKey,
-      task,
-    };
-
-    const response = await fetch(`${CAPSOLVER_API_URL}/createTask`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    const data = (await response.json()) as CapsolverCreateTaskResponse;
-
-    if (data.errorId !== 0 || !data.taskId) {
-      const errorMessage = data.errorDescription ?? data.errorCode ?? 'Unknown Capsolver error';
-      throw makeCaptchaError(
-        this.name,
-        `Capsolver createTask failed: ${errorMessage}`,
-        data.errorCode
-      );
-    }
-
-    return { taskId: data.taskId };
-  }
-
-  async getResult(taskId: string): Promise<CaptchaSolution | null> {
-    const payload: CapsolverGetTaskResultPayload = {
-      clientKey: this.apiKey,
-      taskId,
-    };
-
-    const response = await fetch(`${CAPSOLVER_API_URL}/getTaskResult`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    const data = (await response.json()) as CapsolverGetTaskResultResponse;
-
-    if (data.errorId !== 0) {
-      throw new Error(`Capsolver getTaskResult error: ${data.errorDescription ?? data.errorCode}`);
-    }
-
-    if (data.status === 'ready' && data.solution) {
-      // Both hCaptcha and reCAPTCHA return token in gRecaptchaResponse
-      const token = data.solution.gRecaptchaResponse ?? data.solution.token;
-      if (token) {
-        return { token, provider: this.name };
-      }
-    }
-
-    if (data.status === 'failed') {
-      throw new Error(`Capsolver task failed: ${data.errorDescription ?? 'No details'}`);
-    }
-
-    // Still processing
-    return null;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -322,24 +191,14 @@ class TwoCaptchaClient implements CaptchaProviderClient {
 // Solver factory
 // ---------------------------------------------------------------------------
 
-function resolveProviders(): CaptchaProviderClient[] {
-  const providers: CaptchaProviderClient[] = [];
-
-  // 2Captcha is primary — more reliable hCaptcha support
+function resolveProvider(): CaptchaProviderClient | null {
   const twoCaptchaKey = process.env.TWOCAPTCHA_API_KEY;
   if (twoCaptchaKey) {
-    providers.push(new TwoCaptchaClient(twoCaptchaKey));
-    logger.info('2Captcha client initialized (primary)');
+    logger.info('2Captcha client initialized');
+    return new TwoCaptchaClient(twoCaptchaKey);
   }
 
-  // CapSolver is fallback
-  const capsolverKey = process.env.CAPSOLVER_API_KEY;
-  if (capsolverKey) {
-    providers.push(new CapsolverClient(capsolverKey));
-    logger.info('Capsolver client initialized (fallback)');
-  }
-
-  return providers;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,67 +215,53 @@ export async function solveCaptcha(
     maxWaitMs?: number;
   } = {}
 ): Promise<CaptchaSolution> {
-  const providers = resolveProviders();
+  const provider = resolveProvider();
 
-  if (providers.length === 0) {
-    throw new Error(
-      'No captcha solver configured. Set CAPSOLVER_API_KEY and/or TWOCAPTCHA_API_KEY environment variables.'
-    );
+  if (!provider) {
+    throw new Error('No captcha solver configured. Set TWOCAPTCHA_API_KEY environment variable.');
   }
 
   const pollInterval = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const maxWait = options.maxWaitMs ?? DEFAULT_MAX_POLL_MS;
 
-  const errors: CaptchaError[] = [];
+  logger.info(`Attempting captcha solve via ${provider.name} (type=${config.type})`);
 
-  for (const provider of providers) {
-    logger.info(`Attempting captcha solve via ${provider.name} (type=${config.type})`);
+  try {
+    const { taskId } = await provider.createTask(config);
+    logger.debug(`Task created: ${taskId} on ${provider.name}`);
 
-    try {
-      const { taskId } = await provider.createTask(config);
-      logger.debug(`Task created: ${taskId} on ${provider.name}`);
+    const deadline = Date.now() + maxWait;
 
-      const deadline = Date.now() + maxWait;
+    while (Date.now() < deadline) {
+      await new Promise<void>((resolve) => {
+        setTimeout(() => resolve(), pollInterval);
+      });
 
-      while (Date.now() < deadline) {
-        await new Promise<void>((resolve) => {
-          setTimeout(() => resolve(), pollInterval);
-        });
-
-        const solution = await provider.getResult(taskId);
-        if (solution) {
-          logger.info(`Captcha solved via ${provider.name}`);
-          return solution;
-        }
+      const solution = await provider.getResult(taskId);
+      if (solution) {
+        logger.info(`Captcha solved via ${provider.name}`);
+        return solution;
       }
-
-      const timeoutError = makeCaptchaError(
-        provider.name,
-        `${provider.name} timed out after ${maxWait}ms`
-      );
-      errors.push(timeoutError);
-      logger.warn(`${provider.name} timed out, trying next provider...`);
-    } catch (err) {
-      let providerError: CaptchaError;
-      if (err instanceof Error && 'provider' in err) {
-        providerError = err as CaptchaError;
-      } else {
-        providerError = makeCaptchaError(
-          provider.name,
-          err instanceof Error ? err.message : String(err)
-        );
-      }
-      errors.push(providerError);
-      logger.warn(`${provider.name} failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
 
-  const lastError = errors[errors.length - 1];
-  const aggregatedError = new Error(
-    `All captcha providers failed. Errors: ${errors.map((e) => `[${e.provider}] ${e.message}`).join(' | ')}`
-  ) as CaptchaError;
-  aggregatedError.provider = lastError?.provider ?? ('unknown' as CaptchaProvider);
-  throw aggregatedError;
+    const timeoutError = makeCaptchaError(
+      provider.name,
+      `${provider.name} timed out after ${maxWait}ms`
+    );
+    throw timeoutError;
+  } catch (err) {
+    let providerError: CaptchaError;
+    if (err instanceof Error && 'provider' in err) {
+      providerError = err as CaptchaError;
+    } else {
+      providerError = makeCaptchaError(
+        provider.name,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+    logger.warn(`${provider.name} failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw providerError;
+  }
 }
 
 /**
