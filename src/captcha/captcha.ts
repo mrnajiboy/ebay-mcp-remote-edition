@@ -131,7 +131,11 @@ class CapsolverClient implements CaptchaProviderClient {
 
     if (data.errorId !== 0 || !data.taskId) {
       const errorMessage = data.errorDescription ?? data.errorCode ?? 'Unknown Capsolver error';
-      throw makeCaptchaError(this.name, `Capsolver createTask failed: ${errorMessage}`, data.errorCode);
+      throw makeCaptchaError(
+        this.name,
+        `Capsolver createTask failed: ${errorMessage}`,
+        data.errorCode
+      );
     }
 
     return { taskId: data.taskId };
@@ -245,7 +249,11 @@ class TwoCaptchaClient implements CaptchaProviderClient {
 
     if (data.status !== 1 || !data.request) {
       const errorMessage = data.error_text ?? `2Captcha error_id: ${data.error_id}`;
-      throw makeCaptchaError(this.name, `2Captcha createTask failed: ${errorMessage}`, String(data.error_id));
+      throw makeCaptchaError(
+        this.name,
+        `2Captcha createTask failed: ${errorMessage}`,
+        String(data.error_id)
+      );
     }
 
     return { taskId: data.request };
@@ -342,7 +350,9 @@ export async function solveCaptcha(
       const deadline = Date.now() + maxWait;
 
       while (Date.now() < deadline) {
-        await new Promise<void>(resolve => { setTimeout(() => resolve(), pollInterval); });
+        await new Promise<void>((resolve) => {
+          setTimeout(() => resolve(), pollInterval);
+        });
 
         const solution = await provider.getResult(taskId);
         if (solution) {
@@ -357,13 +367,15 @@ export async function solveCaptcha(
       );
       errors.push(timeoutError);
       logger.warn(`${provider.name} timed out, trying next provider...`);
-
     } catch (err) {
       let providerError: CaptchaError;
       if (err instanceof Error && 'provider' in err) {
         providerError = err as CaptchaError;
       } else {
-        providerError = makeCaptchaError(provider.name, err instanceof Error ? err.message : String(err));
+        providerError = makeCaptchaError(
+          provider.name,
+          err instanceof Error ? err.message : String(err)
+        );
       }
       errors.push(providerError);
       logger.warn(`${provider.name} failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -372,7 +384,7 @@ export async function solveCaptcha(
 
   const lastError = errors[errors.length - 1];
   const aggregatedError = new Error(
-    `All captcha providers failed. Errors: ${errors.map(e => `[${e.provider}] ${e.message}`).join(' | ')}`
+    `All captcha providers failed. Errors: ${errors.map((e) => `[${e.provider}] ${e.message}`).join(' | ')}`
   ) as CaptchaError;
   aggregatedError.provider = lastError?.provider ?? ('unknown' as CaptchaProvider);
   throw aggregatedError;
@@ -397,42 +409,34 @@ export async function injectCaptchaToken(
   token: string
 ): Promise<void> {
   if (type === 'hcaptcha') {
-    await page.evaluate(
-      (t: string) => {
-        const textarea = document.querySelector('textarea[name="h-captcha-response"]');
-        if (textarea) {
-          (textarea as HTMLTextAreaElement).value = t;
-          textarea.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-      },
-      token
-    );
+    await page.evaluate((t: string) => {
+      const textarea = document.querySelector('textarea[name="h-captcha-response"]');
+      if (textarea) {
+        (textarea as HTMLTextAreaElement).value = t;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, token);
   } else {
-    await page.evaluate(
-      (t: string) => {
-        const iframe = document.querySelector('iframe[title="reCAPTCHA"], iframe[src*="recaptcha"]');
-        if (iframe) {
-          const iframeDoc = (iframe as HTMLIFrameElement).contentDocument;
-          if (iframeDoc) {
-            const textarea = iframeDoc.querySelector('textarea[name="g-recaptcha-response"]');
-            if (textarea) {
-              (textarea as HTMLTextAreaElement).value = t;
-              textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            }
+    await page.evaluate((t: string) => {
+      const iframe = document.querySelector('iframe[title="reCAPTCHA"], iframe[src*="recaptcha"]');
+      if (iframe) {
+        const iframeDoc = (iframe as HTMLIFrameElement).contentDocument;
+        if (iframeDoc) {
+          const textarea = iframeDoc.querySelector('textarea[name="g-recaptcha-response"]');
+          if (textarea) {
+            (textarea as HTMLTextAreaElement).value = t;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }
-      },
-      token
-    );
+      }
+    }, token);
   }
 }
 
 /**
  * Check if a captcha challenge is present on a Playwright page.
  */
-export async function detectCaptcha(
-  page: CaptchaPage
-): Promise<CaptchaType | null> {
+export async function detectCaptcha(page: CaptchaPage): Promise<CaptchaType | null> {
   return await page.evaluate((): CaptchaType | null => {
     const hcaptchaIframe = document.querySelector('iframe[src*="hcaptcha.com"]');
     if (hcaptchaIframe) return 'hcaptcha';
@@ -440,7 +444,9 @@ export async function detectCaptcha(
     const hcaptchaWidget = document.querySelector('.hcaptcha');
     if (hcaptchaWidget) return 'hcaptcha';
 
-    const recaptchaIframe = document.querySelector('iframe[src*="recaptcha.net"], iframe[src*="recaptcha"]');
+    const recaptchaIframe = document.querySelector(
+      'iframe[src*="recaptcha.net"], iframe[src*="recaptcha"]'
+    );
     if (recaptchaIframe) {
       const src = (recaptchaIframe as HTMLIFrameElement).src || '';
       if (src.includes('render=explicit')) return 'recaptcha_v3';
@@ -457,10 +463,7 @@ export async function detectCaptcha(
 /**
  * Extract the captcha site key from the page.
  */
-export async function extractSiteKey(
-  page: CaptchaPage,
-  type: CaptchaType
-): Promise<string | null> {
+export async function extractSiteKey(page: CaptchaPage, type: CaptchaType): Promise<string | null> {
   return await page.evaluate((ct: string): string | null => {
     const captchaType = ct as CaptchaType;
     if (captchaType === 'hcaptcha') {
@@ -490,7 +493,9 @@ export async function extractSiteKey(
         return (recaptchaEl as HTMLElement).getAttribute('data-sitekey');
       }
 
-      const recaptchaIframe = document.querySelector('iframe[src*="recaptcha"], iframe[src*="recaptcha.net"]');
+      const recaptchaIframe = document.querySelector(
+        'iframe[src*="recaptcha"], iframe[src*="recaptcha.net"]'
+      );
       if (recaptchaIframe) {
         const src = (recaptchaIframe as HTMLIFrameElement).src || '';
         const match = /k=([^&]+)/.exec(src);
@@ -551,7 +556,9 @@ export async function waitForAndSolveCaptcha(
       return solution;
     }
 
-    await new Promise<void>(resolve => { setTimeout(() => resolve(), checkInterval); });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), checkInterval);
+    });
   }
 
   logger.debug('No captcha detected within timeout');
