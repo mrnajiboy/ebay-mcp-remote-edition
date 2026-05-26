@@ -14,6 +14,13 @@ import {
 } from '../validation/providers/ebay-research-session-store.js';
 import { scheduleEbayResearchSessionAlerts } from '../validation/providers/ebay-research-session-alerts.js';
 import { loadChromium } from './playwright-runtime.js';
+import type { CaptchaPage } from '../captcha/captcha.js';
+import {
+  detectCaptcha,
+  extractSiteKey,
+  solveCaptcha,
+  injectCaptchaToken,
+} from '../captcha/captcha.js';
 
 const configuredMarketplace = process.env.EBAY_RESEARCH_BOOTSTRAP_MARKETPLACE?.trim();
 const marketplace =
@@ -62,6 +69,48 @@ async function waitForEnter(promptText: string): Promise<void> {
   });
 }
 
+/**
+ * Detect and solve captcha challenges during bootstrap.
+ * Called after page navigation — if captcha is found, solves it automatically.
+ */
+async function handleCaptchaChallenge(
+  page: Parameters<typeof detectCaptcha>[0] & { url(): string }
+): Promise<void> {
+  const captchaType = await detectCaptcha(page);
+  if (!captchaType) {
+    return;
+  }
+
+  console.log(`[Bootstrap] Detected ${captchaType} challenge — attempting to solve...`);
+
+  const siteKey = await extractSiteKey(page, captchaType);
+  if (!siteKey) {
+    console.warn(`[Bootstrap] Could not extract site key for ${captchaType} — skipping auto-solve`);
+    return;
+  }
+
+  const apiKey = process.env.TWOCAPTCHA_API_KEY?.trim();
+  if (!apiKey || apiKey.length < 1) {
+    console.warn('[Bootstrap] TWOCAPTCHA_API_KEY not set — captcha requires manual solving');
+    return;
+  }
+
+  try {
+    const solution = await solveCaptcha({
+      type: captchaType,
+      siteKey,
+      pageUrl: page.url(),
+    });
+    console.log(`[Bootstrap] Captcha solved — injecting token (${solution.token.length} chars)`);
+    await injectCaptchaToken(page, captchaType, solution.token);
+    console.log('[Bootstrap] Token injected successfully');
+  } catch (error) {
+    console.error(
+      `[Bootstrap] Captcha solve failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const chromium = await loadChromium();
   const browser = await chromium.launch({
@@ -76,11 +125,17 @@ async function main(): Promise<void> {
     console.log(`Opening eBay Research bootstrap flow for marketplace ${marketplace}...`);
     await page.goto(researchUrl, { waitUntil: 'domcontentloaded' });
 
+    // Auto-solve captcha if encountered
+    await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
+
     await waitForEnter(
       'Sign in to eBay Research in the opened browser window, confirm the research UI is accessible, then press Enter to persist storage state to KV. '
     );
 
     await page.goto(researchUrl, { waitUntil: 'domcontentloaded' });
+
+    // Auto-solve captcha on second navigation as well
+    await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
     const currentUrl = page.url();
     if (!currentUrl.includes('/sh/research')) {
       throw new Error(

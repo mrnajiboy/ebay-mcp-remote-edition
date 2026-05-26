@@ -267,7 +267,7 @@ export async function solveCaptcha(
 /**
  * Minimal page interface compatible with Playwright Page.
  */
-interface CaptchaPage {
+export interface CaptchaPage {
   evaluate: {
     <T>(pageFunction: string | (() => T)): Promise<T>;
     <T, A>(pageFunction: string | ((arg: A) => T), arg: A): Promise<T>;
