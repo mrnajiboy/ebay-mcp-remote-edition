@@ -2,6 +2,14 @@ export type TrackingCadence = 'Daily' | 'Hourly' | 'Off';
 
 export type ValidationSignalConfidence = 'High' | 'Medium' | 'Low';
 
+export interface ResearchAntiBotDetectionDebug {
+  detected: boolean;
+  kind: 'ebay_pardon_interruption' | 'captcha_challenge' | 'html_interstitial' | null;
+  title: string | null;
+  contentType: string | null;
+  matchedSignals: string[];
+}
+
 export type YouTubeCandidateClass = 'official_release' | 'branded_media' | 'fallback_adjacent';
 
 export interface ValidationSoldVelocity {
@@ -389,6 +397,7 @@ export interface TerapeakValidationSignals {
     previousPobModulesSeen?: string[];
     currentPageErrors?: string[];
     previousPobPageErrors?: string[];
+    antiBotDetection?: ResearchAntiBotDetectionDebug;
     currentActiveEndpointUrl?: string | null;
     currentSoldEndpointUrl?: string | null;
     previousPobActiveEndpointUrl?: string | null;
@@ -425,6 +434,7 @@ export interface TerapeakValidationSignals {
       moduleCount: number;
       parseErrors: string[];
       pageErrors: string[];
+      antiBotDetection?: ResearchAntiBotDetectionDebug;
       aggregateExtracted: boolean;
       rowCount: number;
       watcherCoverageCount: number;
@@ -435,6 +445,7 @@ export interface TerapeakValidationSignals {
       moduleCount: number;
       parseErrors: string[];
       pageErrors: string[];
+      antiBotDetection?: ResearchAntiBotDetectionDebug;
       aggregateExtracted: boolean;
       rowCount: number;
       watcherCoverageCount: number;
@@ -445,6 +456,7 @@ export interface TerapeakValidationSignals {
       moduleCount: number;
       parseErrors: string[];
       pageErrors: string[];
+      antiBotDetection?: ResearchAntiBotDetectionDebug;
       aggregateExtracted: boolean;
       rowCount: number;
       watcherCoverageCount: number;
@@ -455,6 +467,7 @@ export interface TerapeakValidationSignals {
       moduleCount: number;
       parseErrors: string[];
       pageErrors: string[];
+      antiBotDetection?: ResearchAntiBotDetectionDebug;
       aggregateExtracted: boolean;
       rowCount: number;
       watcherCoverageCount: number;

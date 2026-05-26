@@ -59,13 +59,13 @@ vi.mock('playwright-core', () => ({
   },
 }));
 
-function buildActivePayload(): string {
+function buildActivePayload(title = 'ATEEZ GOLDEN HOUR active'): string {
   return JSON.stringify({
     _type: 'ActiveSearchResultsModule',
     results: [
       {
         listing: {
-          title: 'ATEEZ GOLDEN HOUR active',
+          title,
           itemId: { value: 'active-1' },
         },
         listingPrice: {
@@ -105,6 +105,10 @@ function buildSoldPayload(): string {
 
 function buildValidationPayload(): string {
   return buildActivePayload();
+}
+
+function buildEbayPardonHtml(): string {
+  return `<!DOCTYPE html><html><head><title>Pardon Our Interruption</title></head><body>As you were browsing eBay, something about your browser made us think you were a bot. Please verify you are a human with this CAPTCHA challenge.</body></html>`;
 }
 
 async function readFixture(relativePath: string): Promise<string> {
@@ -220,6 +224,86 @@ describe('fetchEbayResearch()', () => {
 
     await fetchEbayResearch('ATEEZ GOLDEN HOUR');
     expect(axiosGetMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('marks eBay Pardon/CAPTCHA HTML as an anti-bot research challenge instead of a generic no-module parse miss', async () => {
+    process.env.EBAY_RESEARCH_COOKIES_JSON = JSON.stringify([
+      { name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' },
+    ]);
+
+    const { fetchEbayResearch } = await import('../../../src/validation/providers/ebay-research.js');
+    const pardonHtml = buildEbayPardonHtml();
+
+    axiosGetMock
+      .mockResolvedValueOnce({ status: 200, data: buildValidationPayload() })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: pardonHtml,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: pardonHtml,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+
+    const response = await fetchEbayResearch('ATEEZ GOLDEN HOUR');
+
+    expect(response.debug.usefulResponse).toBe(false);
+    expect(response.debug.authState).toBe('unavailable');
+    expect(response.debug.antiBotDetection).toEqual(
+      expect.objectContaining({
+        detected: true,
+        kind: 'ebay_pardon_interruption',
+        title: 'Pardon Our Interruption',
+        contentType: 'text/html; charset=utf-8',
+      })
+    );
+    expect(response.debug.pageErrors).toEqual(
+      expect.arrayContaining([expect.stringContaining('anti-bot challenge detected')])
+    );
+    expect(response.debug.activeParse?.antiBotDetection?.matchedSignals).toEqual(
+      expect.arrayContaining(['pardon_our_interruption', 'captcha_or_challenge_marker'])
+    );
+
+    axiosGetMock.mockClear();
+    axiosGetMock
+      .mockResolvedValueOnce({ status: 200, data: buildActivePayload() })
+      .mockResolvedValueOnce({ status: 200, data: buildSoldPayload() });
+
+    const recoveryResponse = await fetchEbayResearch('ATEEZ GOLDEN HOUR');
+    expect(axiosGetMock).toHaveBeenCalledTimes(2);
+    expect(recoveryResponse.active.listingRows).toHaveLength(1);
+    expect(recoveryResponse.sold.soldRows).toHaveLength(1);
+  });
+
+  it('does not classify normal research JSON containing challenge text as anti-bot HTML', async () => {
+    process.env.EBAY_RESEARCH_COOKIES_JSON = JSON.stringify([
+      { name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' },
+    ]);
+
+    const { fetchEbayResearch } = await import('../../../src/validation/providers/ebay-research.js');
+
+    axiosGetMock
+      .mockResolvedValueOnce({ status: 200, data: buildValidationPayload() })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: buildActivePayload('ATEEZ GOLDEN HOUR challenge edition'),
+        headers: { 'content-type': 'application/json' },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: buildSoldPayload(),
+        headers: { 'content-type': 'application/json' },
+      });
+
+    const response = await fetchEbayResearch('ATEEZ GOLDEN HOUR');
+
+    expect(response.debug.usefulResponse).toBe(true);
+    expect(response.debug.authState).not.toBe('unavailable');
+    expect(response.debug.antiBotDetection).toBeUndefined();
+    expect(response.debug.activeParse?.antiBotDetection).toBeUndefined();
+    expect(response.active.listingRows[0]?.title).toBe('ATEEZ GOLDEN HOUR challenge edition');
   });
 
   it('does not cache transient non-2xx research responses', async () => {

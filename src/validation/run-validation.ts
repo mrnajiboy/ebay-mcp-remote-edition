@@ -350,6 +350,7 @@ function buildProviderDebug(
       previousPobModulesSeen: terapeak.queryDebug.previousPobModulesSeen,
       currentPageErrors: terapeak.queryDebug.currentPageErrors,
       previousPobPageErrors: terapeak.queryDebug.previousPobPageErrors,
+      antiBotDetection: terapeak.queryDebug.antiBotDetection,
       currentActiveParse: terapeak.queryDebug.currentActiveParse,
       currentSoldParse: terapeak.queryDebug.currentSoldParse,
       previousPobActiveParse: terapeak.queryDebug.previousPobActiveParse,

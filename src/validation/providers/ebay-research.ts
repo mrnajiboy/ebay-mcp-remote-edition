@@ -33,6 +33,18 @@ type ResearchSessionStrategy =
   | 'playwright_profile'
   | 'none';
 type ResearchSessionSource = 'kv' | 'env' | 'filesystem' | 'playwright_profile' | null;
+type ResearchAntiBotChallengeKind =
+  | 'ebay_pardon_interruption'
+  | 'captcha_challenge'
+  | 'html_interstitial';
+
+export interface ResearchAntiBotDetection {
+  detected: boolean;
+  kind: ResearchAntiBotChallengeKind | null;
+  title: string | null;
+  contentType: string | null;
+  matchedSignals: string[];
+}
 
 export interface EbayResearchListingRow {
   title: string;
@@ -88,6 +100,7 @@ export interface EbayResearchResponse {
     fetchedAt: string;
     modulesSeen: string[];
     pageErrors: string[];
+    antiBotDetection?: ResearchAntiBotDetection;
     activeParse?: ResearchTabParseDebug;
     soldParse?: ResearchTabParseDebug;
     usefulResponse?: boolean;
@@ -154,6 +167,7 @@ interface ResearchTabParseDebug {
   moduleCount: number;
   parseErrors: string[];
   pageErrors: string[];
+  antiBotDetection?: ResearchAntiBotDetection;
   aggregateExtracted: boolean;
   rowCount: number;
   watcherCoverageCount: number;
@@ -166,7 +180,9 @@ interface ResearchTabFetchResult {
   moduleCount: number;
   parseErrors: string[];
   pageErrors: string[];
+  antiBotDetection: ResearchAntiBotDetection;
   responseStatus: number;
+  contentType: string | null;
   cacheKey: string;
   cacheEligible: boolean;
 }
@@ -216,6 +232,7 @@ interface ResearchSessionValidationResult {
   ok: boolean;
   responseStatus: number | null;
   modulesSeen: string[];
+  antiBotDetection?: ResearchAntiBotDetection;
   note: string;
 }
 
@@ -227,7 +244,7 @@ const RESEARCH_SESSION_DELETION_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 interface ResearchSessionDegradationState {
   consecutiveFailures: number;
   lastFailureAt: string;
-  lastFailurePath: 'auth_rejection' | 'no_cookies' | 'parse_failure';
+  lastFailurePath: 'auth_rejection' | 'no_cookies' | 'parse_failure' | 'anti_bot_challenge';
   lastFailureDetail: string;
 }
 
@@ -369,6 +386,27 @@ function round(value: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getResponseHeader(headers: unknown, name: string): string | null {
+  if (!headers || typeof headers !== 'object') {
+    return null;
+  }
+
+  const accessor = (headers as { get?: (key: string) => unknown }).get;
+  if (typeof accessor === 'function') {
+    const value = accessor.call(headers, name);
+    return typeof value === 'string' ? value : null;
+  }
+
+  const normalizedName = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (key.toLowerCase() === normalizedName) {
+      return typeof value === 'string' ? value : Array.isArray(value) ? value.join(',') : null;
+    }
+  }
+
+  return null;
 }
 
 function normalizeComparableText(value: string): string {
@@ -1233,6 +1271,8 @@ async function validateResearchAuthState(options: {
     });
     const parsedPayload = parseResearchModules(response.data);
     const modulesSeen = parsedPayload.modulesSeen;
+    const contentType = getResponseHeader(response.headers, 'content-type');
+    const antiBotDetection = detectEbayResearchAntiBotResponse(response.data, contentType);
     const responseBodyExcerpt = response.data.slice(0, 300);
     const cookieDomains = [...new Set(options.cookies.map((c) => c.domain))].slice(0, 5).join(',');
     const cookieNames = options.cookies
@@ -1245,14 +1285,17 @@ async function validateResearchAuthState(options: {
           ok: true,
           responseStatus: response.status,
           modulesSeen,
+          antiBotDetection: antiBotDetection.detected ? antiBotDetection : undefined,
           note: `${options.sourceLabel} passed ACTIVE endpoint validation with ${modulesSeen.length} research modules.`,
         }
       : {
           ok: false,
           responseStatus: response.status,
           modulesSeen,
-          note:
-            response.status === 401 || response.status === 403
+          antiBotDetection: antiBotDetection.detected ? antiBotDetection : undefined,
+          note: antiBotDetection.detected
+            ? `${options.sourceLabel} reached eBay Research but ${buildAntiBotNote(antiBotDetection)} modulesSeen=[${modulesSeen.join(',')}] cookieDomains=[${cookieDomains}] cookieNames=[${cookieNames}] responseBody="${responseBodyExcerpt}"`
+            : response.status === 401 || response.status === 403
               ? `${options.sourceLabel} rejected HTTP ${response.status} modulesSeen=[${modulesSeen.join(',')}] cookieDomains=[${cookieDomains}] cookieNames=[${cookieNames}] responseBody="${responseBodyExcerpt}"`
               : `${options.sourceLabel} reached endpoint HTTP ${response.status} but no usable modules modulesSeen=[${modulesSeen.join(',')}] cookieDomains=[${cookieDomains}] cookieNames=[${cookieNames}] responseBody="${responseBodyExcerpt}"`,
         };
@@ -1967,6 +2010,91 @@ function parseResearchModules(payload: string): ParsedResearchPayload {
   };
 }
 
+function detectEbayResearchAntiBotResponse(
+  payload: string,
+  contentType: string | null
+): ResearchAntiBotDetection {
+  const normalizedPayload = payload.toLowerCase();
+  const matchedSignals: string[] = [];
+  const title = /<title[^>]*>([^<]+)<\/title>/iu.exec(payload)?.[1]?.trim() ?? null;
+  const normalizedContentType = contentType?.toLowerCase() ?? '';
+  const looksLikeHtml =
+    normalizedContentType.includes('text/html') ||
+    /^\s*<!doctype\s+html|^\s*<html[\s>]/iu.test(payload);
+
+  if (/pardon\s+our\s+interruption/iu.test(payload)) {
+    matchedSignals.push('pardon_our_interruption');
+  }
+  if (
+    /something\s+about\s+your\s+browser\s+made\s+us\s+think\s+you\s+were\s+a\s+bot/iu.test(payload)
+  ) {
+    matchedSignals.push('browser_made_us_think_bot');
+  }
+  if (looksLikeHtml && /captcha|g-recaptcha|hcaptcha|arkose|funcaptcha|challenge/iu.test(payload)) {
+    matchedSignals.push('captcha_or_challenge_marker');
+  }
+  if (looksLikeHtml && /akamai|_abck|bm_sz|bm-verify|bot-manager|sensor_data/iu.test(payload)) {
+    matchedSignals.push('bot_manager_marker');
+  }
+  if (looksLikeHtml && matchedSignals.length === 0) {
+    matchedSignals.push('html_instead_of_research_json');
+  }
+
+  const kind: ResearchAntiBotChallengeKind | null = matchedSignals.includes(
+    'pardon_our_interruption'
+  )
+    ? 'ebay_pardon_interruption'
+    : matchedSignals.includes('captcha_or_challenge_marker')
+      ? 'captcha_challenge'
+      : looksLikeHtml
+        ? 'html_interstitial'
+        : null;
+
+  return {
+    detected:
+      kind !== null ||
+      (looksLikeHtml && /bot|captcha|challenge|interruption/iu.test(normalizedPayload)),
+    kind,
+    title,
+    contentType,
+    matchedSignals: uniqueStrings(matchedSignals),
+  };
+}
+
+function mergeAntiBotDetections(
+  ...detections: (ResearchAntiBotDetection | undefined)[]
+): ResearchAntiBotDetection | undefined {
+  const detected = detections.filter(
+    (entry): entry is ResearchAntiBotDetection => entry !== undefined && entry.detected
+  );
+  if (detected.length === 0) {
+    return undefined;
+  }
+
+  const preferredKind =
+    detected.find((entry) => entry.kind === 'ebay_pardon_interruption')?.kind ??
+    detected.find((entry) => entry.kind === 'captcha_challenge')?.kind ??
+    detected[0]?.kind ??
+    null;
+
+  return {
+    detected: true,
+    kind: preferredKind,
+    title: detected.find((entry) => entry.title !== null)?.title ?? null,
+    contentType: detected.find((entry) => entry.contentType !== null)?.contentType ?? null,
+    matchedSignals: uniqueStrings(detected.flatMap((entry) => entry.matchedSignals)),
+  };
+}
+
+function buildAntiBotNote(detection: ResearchAntiBotDetection): string {
+  const title = detection.title ? ` title="${detection.title}"` : '';
+  const contentType = detection.contentType ? ` contentType="${detection.contentType}"` : '';
+  const signals = detection.matchedSignals.length
+    ? ` signals=[${detection.matchedSignals.join(',')}]`
+    : '';
+  return `eBay Research anti-bot challenge detected (${detection.kind ?? 'unknown'}).${title}${contentType}${signals}`;
+}
+
 function extractPageErrors(modules: ParsedResearchModule[]): string[] {
   const pageErrorModules = modules.filter((module) => /PageErrorModule/i.test(module.moduleName));
   if (pageErrorModules.length === 0) {
@@ -2034,6 +2162,9 @@ function buildResearchTabParseDebug(options: {
     moduleCount: options.fetchResult.moduleCount,
     parseErrors: options.fetchResult.parseErrors,
     pageErrors: options.fetchResult.pageErrors,
+    antiBotDetection: options.fetchResult.antiBotDetection.detected
+      ? options.fetchResult.antiBotDetection
+      : undefined,
     aggregateExtracted: options.aggregateExtracted,
     rowCount: options.rowCount,
     watcherCoverageCount: options.watcherCoverageCount ?? 0,
@@ -2746,16 +2877,25 @@ async function fetchResearchTab(
     );
   }
 
+  const contentType = getResponseHeader(response.headers, 'content-type');
+  const antiBotDetection = detectEbayResearchAntiBotResponse(response.data, contentType);
   const parsedPayload = parseResearchModules(response.data);
+  const pageErrors = extractPageErrors(parsedPayload.modules);
+  if (antiBotDetection.detected) {
+    pageErrors.unshift(buildAntiBotNote(antiBotDetection));
+    invalidateResearchAuthValidationCache(options.marketplace, authState.cookies);
+  }
   const result: ResearchTabFetchResult = {
     modules: parsedPayload.modules,
     modulesSeen: parsedPayload.modulesSeen,
     moduleCount: parsedPayload.moduleCount,
     parseErrors: parsedPayload.parseErrors,
-    pageErrors: extractPageErrors(parsedPayload.modules),
+    pageErrors: uniqueStrings(pageErrors),
+    antiBotDetection,
     responseStatus: response.status,
+    contentType,
     cacheKey,
-    cacheEligible: response.status >= 200 && response.status < 300,
+    cacheEligible: response.status >= 200 && response.status < 300 && !antiBotDetection.detected,
   };
 
   return result;
@@ -2836,6 +2976,10 @@ export async function fetchEbayResearch(
     });
     const activeUsefulResponse = isUsefulActiveResearchPayload(activeAggregate, activeRows.length);
     const soldUsefulResponse = isUsefulSoldResearchPayload(soldAggregate, soldRows.length);
+    const antiBotDetection = mergeAntiBotDetections(
+      activeResult.antiBotDetection,
+      soldResult.antiBotDetection
+    );
     const activeParse = buildResearchTabParseDebug({
       fetchResult: activeResult,
       aggregateExtracted: activeAggregateExtracted,
@@ -2867,15 +3011,30 @@ export async function fetchEbayResearch(
         fetchedAt,
         modulesSeen: uniqueStrings([...activeResult.modulesSeen, ...soldResult.modulesSeen]),
         pageErrors: uniqueStrings([...activeResult.pageErrors, ...soldResult.pageErrors]),
+        antiBotDetection,
         activeParse,
         soldParse,
         usefulResponse: activeUsefulResponse || soldUsefulResponse,
-        ...buildResearchAuthDebug(authState),
-        notes: [...authState.notes],
+        ...buildResearchAuthDebug(
+          antiBotDetection
+            ? {
+                ...authState,
+                authState: 'unavailable',
+                notes: [...authState.notes, buildAntiBotNote(antiBotDetection)],
+              }
+            : authState
+        ),
+        notes: antiBotDetection
+          ? [...authState.notes, buildAntiBotNote(antiBotDetection)]
+          : [...authState.notes],
       },
     };
 
     if (!hasUsefulResearchPayload(response)) {
+      if (antiBotDetection) {
+        return response;
+      }
+
       throw new Error(
         'eBay Research response did not include useful ACTIVE or SOLD modules after parsing.'
       );

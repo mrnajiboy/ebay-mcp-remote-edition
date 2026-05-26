@@ -874,6 +874,9 @@ export async function getTerapeakValidationSignals(
           previousPobModulesSeen: previousPobResearch?.debug.modulesSeen,
           currentPageErrors: currentAttemptedResearch?.debug.pageErrors,
           previousPobPageErrors: previousPobResearch?.debug.pageErrors,
+          antiBotDetection:
+            currentAttemptedResearch?.debug.antiBotDetection ??
+            previousPobResearch?.debug.antiBotDetection,
           currentActiveParse: currentAttemptedResearch?.debug.activeParse,
           currentSoldParse: currentAttemptedResearch?.debug.soldParse,
           previousPobActiveParse: previousPobResearch?.debug.activeParse,
@@ -1058,6 +1061,8 @@ export async function getTerapeakValidationSignals(
         previousPobModulesSeen: previousPobResearch?.debug.modulesSeen,
         currentPageErrors: currentResearch.debug.pageErrors,
         previousPobPageErrors: previousPobResearch?.debug.pageErrors,
+        antiBotDetection:
+          currentResearch.debug.antiBotDetection ?? previousPobResearch?.debug.antiBotDetection,
         currentActiveParse: currentResearch.debug.activeParse,
         currentSoldParse: currentResearch.debug.soldParse,
         previousPobActiveParse: previousPobResearch?.debug.activeParse,
