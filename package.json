@@ -30,7 +30,7 @@
     "fix": "eslint . --fix && prettier --write \"src/**/*.{ts,js,json,md}\"",
     "env:encrypt": "npx -y @dotenvx/dotenvx encrypt",
     "env:decrypt": "npx -y @dotenvx/dotenvx decrypt",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "keywords": [
     "mcp",
