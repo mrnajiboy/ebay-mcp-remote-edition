@@ -599,10 +599,11 @@ function bucketResearchSoldVelocity(
       const extrapolated = recencyWeights.map((w) => Math.max(0, Math.round(dailyRate * 5 * w)));
       const extrapolatedRecent7d = Math.max(0, Math.round(dailyRate * 7));
 
-      // Floor: if all day values rounded to 0 but aggregate data exists,
-      // set Day 1 to at least 1 to signal traceable activity.
+      // Floor: if all day values rounded to 0 but enough aggregate data exists
+      // to suggest some daily activity, set Day 1 to at least 1 (threshold: totalSold >= 7
+      // gives dailyRate ~0.23 → weighted Day 1 ~0.5 → rounds to 1).
       const appliedDay1: number =
-        extrapolated.every((v) => v === 0) && aggregateTotalSold > 0 ? 1 : extrapolated[0];
+        extrapolated.every((v) => v === 0) && aggregateTotalSold >= 7 ? 1 : extrapolated[0];
 
       notes.push(
         `row-level sold dates unavailable (${soldRows.length} rows, ${missingSoldAt} missing, ${dateParseFailures} parse failures) — extrapolated day values from aggregate totalSold=${aggregateTotalSold} over ${RESEARCH_WINDOW_DAYS}d window`
@@ -663,10 +664,11 @@ function bucketResearchSoldVelocity(
     const extrapolated = recencyWeights.map((w) => Math.max(0, Math.round(dailyRate * 5 * w)));
     const extrapolatedRecent7d = Math.max(0, Math.round(dailyRate * 7));
 
-    // Floor: if all day values rounded to 0 but aggregate data exists,
-    // set Day 1 to at least 1 to signal traceable activity.
+    // Floor: if all day values rounded to 0 but enough aggregate data exists
+    // to suggest some daily activity, set Day 1 to at least 1 (threshold: totalSold >= 7
+    // gives dailyRate ~0.23 → weighted Day 1 ~0.5 → rounds to 1).
     const appliedDay1: number =
-      extrapolated.every((v) => v === 0) && aggregateTotalSold > 0 ? 1 : extrapolated[0];
+      extrapolated.every((v) => v === 0) && aggregateTotalSold >= 7 ? 1 : extrapolated[0];
 
     notes.push(
       `all ${withSoldAt} with-dates sold rows were >5 days old (${missingSoldAt} missing, ${dateParseFailures} parse failures) — extrapolated day values from aggregate totalSold=${aggregateTotalSold} over ${RESEARCH_WINDOW_DAYS}d window`
@@ -674,7 +676,7 @@ function bucketResearchSoldVelocity(
 
     return {
       soldVelocity: {
-        day1Sold: extrapolated[0],
+        day1Sold: appliedDay1,
         day2Sold: extrapolated[1],
         day3Sold: extrapolated[2],
         day4Sold: extrapolated[3],
