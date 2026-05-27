@@ -22,7 +22,7 @@ export interface ValidationSoldVelocity {
 }
 
 export interface SoldBucketDebug {
-  status: 'ok' | 'partial' | 'skipped';
+  status: 'ok' | 'partial' | 'skipped' | 'extrapolated';
   notes: string[];
   totalItemsExamined: number;
   withSoldAt: number;

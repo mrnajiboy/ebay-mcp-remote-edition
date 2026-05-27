@@ -499,7 +499,8 @@ function calendarDayDiffKST(soldDate: Date, requestDate: Date): number {
 
 function bucketResearchSoldVelocity(
   soldRows: EbayResearchSoldRow[],
-  requestTimestamp: string
+  requestTimestamp: string,
+  aggregateTotalSold: number | null
 ): {
   soldVelocity: ValidationSoldVelocity;
   recentSoldCount7d: number | null;
@@ -586,6 +587,51 @@ function bucketResearchSoldVelocity(
     if (missingSoldAt > 0 || dateParseFailures > 0 || soldRows.length > 0) {
       notes.push('no parseable sold dates — returning null to distinguish from actual zero sales');
     }
+
+    // PHASE 3: Extrapolate from aggregate totalSold when we have aggregate data
+    // but no row-level dates to bucket. This compensates for TeraPeak not providing
+    // individual sold date rows, using aggregate totals as the best available evidence.
+    if (
+      aggregateTotalSold !== null &&
+      aggregateTotalSold > 0 &&
+      soldRows.length > 0
+    ) {
+      const RESEARCH_WINDOW_DAYS = 30;
+      const dailyRate = aggregateTotalSold / RESEARCH_WINDOW_DAYS;
+      // Recency-weighted distribution: Day 1 gets the most, tapering to Day 5
+      const recencyWeights = [0.43, 0.26, 0.16, 0.10, 0.05];
+      const extrapolated = recencyWeights.map((w) =>
+        Math.max(0, Math.round(dailyRate * 5 * w))
+      );
+      const extrapolatedRecent7d = Math.max(0, Math.round(dailyRate * 7));
+
+      notes.push(
+        `row-level sold dates unavailable (${soldRows.length} rows, ${missingSoldAt} missing, ${dateParseFailures} parse failures) — extrapolated day values from aggregate totalSold=${aggregateTotalSold} over ${RESEARCH_WINDOW_DAYS}d window`
+      );
+
+      return {
+        soldVelocity: {
+          day1Sold: extrapolated[0],
+          day2Sold: extrapolated[1],
+          day3Sold: extrapolated[2],
+          day4Sold: extrapolated[3],
+          day5Sold: extrapolated[4],
+          daysTracked: 5,
+        },
+        recentSoldCount7d: extrapolatedRecent7d,
+        soldBucketDebug: {
+          status: 'extrapolated',
+          notes,
+          totalItemsExamined: soldRows.length,
+          withSoldAt,
+          missingSoldAt,
+          dateParseFailures,
+          futureDated,
+          bucketedItems: 0,
+        },
+      };
+    }
+
     return {
       soldVelocity: {
         day1Sold: null,
@@ -598,6 +644,44 @@ function bucketResearchSoldVelocity(
       recentSoldCount7d: null,
       soldBucketDebug: {
         status: 'skipped',
+        notes,
+        totalItemsExamined: soldRows.length,
+        withSoldAt,
+        missingSoldAt,
+        dateParseFailures,
+        futureDated,
+        bucketedItems: 0,
+      },
+    };
+  }
+
+  // After bucketing: if nothing fell into the 5-day window but aggregate data exists,
+  // extrapolate (catches case where all sales are >5 days old but we know total volume).
+  if (bucketedItems === 0 && aggregateTotalSold !== null && aggregateTotalSold > 0) {
+    const RESEARCH_WINDOW_DAYS = 30;
+    const dailyRate = aggregateTotalSold / RESEARCH_WINDOW_DAYS;
+    const recencyWeights = [0.43, 0.26, 0.16, 0.10, 0.05];
+    const extrapolated = recencyWeights.map((w) =>
+      Math.max(0, Math.round(dailyRate * 5 * w))
+    );
+    const extrapolatedRecent7d = Math.max(0, Math.round(dailyRate * 7));
+
+    notes.push(
+      `all ${withSoldAt} with-dates sold rows were >5 days old (${missingSoldAt} missing, ${dateParseFailures} parse failures) — extrapolated day values from aggregate totalSold=${aggregateTotalSold} over ${RESEARCH_WINDOW_DAYS}d window`
+    );
+
+    return {
+      soldVelocity: {
+        day1Sold: extrapolated[0],
+        day2Sold: extrapolated[1],
+        day3Sold: extrapolated[2],
+        day4Sold: extrapolated[3],
+        day5Sold: extrapolated[4],
+        daysTracked: 5,
+      },
+      recentSoldCount7d: extrapolatedRecent7d,
+      soldBucketDebug: {
+        status: 'extrapolated',
         notes,
         totalItemsExamined: soldRows.length,
         withSoldAt,
@@ -989,7 +1073,8 @@ export async function getTerapeakValidationSignals(
     const currentResearch = currentSelected.response;
     const researchVelocity = bucketResearchSoldVelocity(
       currentResearch.sold.soldRows,
-      request.timestamp
+      request.timestamp,
+      currentResearch.sold.totalSold
     );
 
     const currentHasActive =
