@@ -890,7 +890,7 @@ export function createApp(): express.Application {
 
   app.post('/admin/research-session/auto-renew', requireAdmin, async (req, res) => {
     const marketplace = (req.body?.marketplace ?? 'EBAY-US').toUpperCase();
-    const timeoutMs = typeof req.body?.timeout === 'number' ? req.body.timeout : 120_000;
+    const timeoutMs = typeof req.body?.timeout === 'number' ? req.body.timeout : 300_000;
 
     serverLogger.info('[admin/research-session/auto-renew] Starting auto-renewal', {
       marketplace,

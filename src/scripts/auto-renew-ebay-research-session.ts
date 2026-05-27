@@ -13,7 +13,14 @@ import {
 import { scheduleEbayResearchSessionAlerts } from '../validation/providers/ebay-research-session-alerts.js';
 import { loadChromium } from './playwright-runtime.js';
 import type { CaptchaPage } from '../captcha/captcha.js';
-import { detectCaptcha, type CaptchaType } from '../captcha/captcha.js';
+import {
+  detectCaptcha,
+  extractSiteKey,
+  injectCaptchaToken,
+  solveCaptcha,
+  triggerCaptchaVerification,
+  type CaptchaType,
+} from '../captcha/captcha.js';
 
 const configuredMarketplace = process.env.EBAY_RESEARCH_BOOTSTRAP_MARKETPLACE?.trim();
 const marketplace =
@@ -22,6 +29,8 @@ const marketplace =
 const _researchUrl = `https://www.ebay.com/sh/research?marketplace=${encodeURIComponent(marketplace)}`;
 
 const EBAY_SIGNIN_URL = 'https://signin.ebay.com/ws/eBayISAPI.dll?SignIn&UsingSSL=1';
+const DEFAULT_CAPTCHA_SOLVE_MAX_WAIT_MS = 300_000;
+const DEFAULT_CAPTCHA_POLL_INTERVAL_MS = 3_000;
 
 function getExpectedVerificationSessionSource(
   selectedStore: EbayResearchSessionStoreBackend
@@ -85,6 +94,34 @@ function sanitizeChallengeUrl(rawUrl: string): string {
   }
 }
 
+function getPositiveIntegerEnv(name: string, fallback: number): number {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) {
+    return fallback;
+  }
+
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    console.warn(`[AutoRenew] Ignoring invalid ${name}=${rawValue}; using ${fallback}ms.`);
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function getCaptchaSolveOptions(): { maxWaitMs: number; pollIntervalMs: number } {
+  return {
+    maxWaitMs: getPositiveIntegerEnv(
+      'EBAY_RESEARCH_CAPTCHA_MAX_WAIT_MS',
+      DEFAULT_CAPTCHA_SOLVE_MAX_WAIT_MS
+    ),
+    pollIntervalMs: getPositiveIntegerEnv(
+      'EBAY_RESEARCH_CAPTCHA_POLL_INTERVAL_MS',
+      DEFAULT_CAPTCHA_POLL_INTERVAL_MS
+    ),
+  };
+}
+
 class ManualResearchSessionRequiredError extends Error {
   public readonly errorCode = 'MANUAL_RESEARCH_SESSION_REQUIRED';
   public readonly manualAction = 'playwright_capture';
@@ -104,9 +141,9 @@ class ManualResearchSessionRequiredError extends Error {
 }
 
 /**
- * Detect anti-bot challenges during auto-renewal and hand off to the supported
- * manual capture flow. eBay's hCaptcha is an account-security gate; the server
- * should not keep entering credentials or spinning until timeout once it appears.
+ * Detect anti-bot challenges during auto-renewal, solve them when a captcha
+ * provider is configured, and fall back to the supported manual capture flow
+ * when the challenge cannot be completed automatically.
  */
 async function handleCaptchaChallenge(
   page: Parameters<typeof detectCaptcha>[0] & { url(): string }
@@ -116,10 +153,54 @@ async function handleCaptchaChallenge(
     return;
   }
 
-  console.warn(
-    `[AutoRenew] Detected ${captchaType} challenge — stopping auto-renewal and requiring manual capture.`
-  );
-  throw new ManualResearchSessionRequiredError(captchaType, page.url());
+  console.warn(`[AutoRenew] Detected ${captchaType} challenge — attempting automatic solve...`);
+
+  const apiKey = process.env.TWOCAPTCHA_API_KEY?.trim();
+  if (!apiKey) {
+    console.warn('[AutoRenew] TWOCAPTCHA_API_KEY not set — falling back to manual capture.');
+    throw new ManualResearchSessionRequiredError(captchaType, page.url());
+  }
+
+  const siteKey = await extractSiteKey(page, captchaType);
+  if (!siteKey) {
+    console.warn(`[AutoRenew] Could not extract site key for ${captchaType}.`);
+    throw new ManualResearchSessionRequiredError(captchaType, page.url());
+  }
+
+  try {
+    const solveOptions = getCaptchaSolveOptions();
+    const solution = await solveCaptcha(
+      {
+        type: captchaType,
+        siteKey,
+        pageUrl: page.url(),
+      },
+      solveOptions
+    );
+    console.log(`[AutoRenew] Captcha solved — injecting token (${solution.token.length} chars)`);
+    await injectCaptchaToken(page, captchaType, solution.token);
+    console.log('[AutoRenew] Token injected successfully');
+
+    const verificationTriggered = await triggerCaptchaVerification(page, captchaType);
+    if (!verificationTriggered) {
+      throw new Error('Could not trigger captcha verification control after token injection.');
+    }
+
+    console.log('[AutoRenew] Captcha verification control triggered');
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 2_000);
+    });
+
+    const challengeCleared = await waitForCaptchaChallengeToClear(page);
+    if (!challengeCleared) {
+      throw new Error('Captcha challenge did not clear after verification trigger.');
+    }
+  } catch (error) {
+    console.warn(
+      `[AutoRenew] Automatic ${captchaType} solve failed — falling back to manual capture: ${error instanceof Error ? error.message : String(error)}`
+    );
+    throw new ManualResearchSessionRequiredError(captchaType, page.url());
+  }
 }
 
 function getRequiredEnvVar(name: string): string {
@@ -136,6 +217,88 @@ function getRequiredEnvVar(name: string): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyPage = any;
 
+function parseHasTextSelector(selector: string): { cssSelector: string; text: string } | null {
+  const match = /^(.*):has-text\(["'](.+)["']\)$/.exec(selector);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    cssSelector: match[1]?.trim() || '*',
+    text: match[2]?.trim().toLowerCase() ?? '',
+  };
+}
+
+async function elementExists(page: AnyPage, selector: string): Promise<boolean> {
+  const hasTextSelector = parseHasTextSelector(selector);
+  if (hasTextSelector) {
+    return await (page as unknown as CaptchaPage).evaluate(
+      ({ cssSelector, text }: { cssSelector: string; text: string }) => {
+        const elements = document.querySelectorAll<HTMLElement>(cssSelector);
+        return Array.from(elements).some((element) => {
+          const elementText =
+            `${element.innerText ?? ''} ${(element as HTMLInputElement).value ?? ''}`
+              .trim()
+              .toLowerCase();
+          return element.offsetParent !== null && elementText.includes(text);
+        });
+      },
+      hasTextSelector
+    );
+  }
+
+  try {
+    return await (page as unknown as CaptchaPage).evaluate(
+      (sel: string) => document.querySelector(sel) !== null,
+      selector
+    );
+  } catch (error) {
+    console.warn(
+      `[AutoRenew] Ignoring invalid selector ${selector}: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return false;
+  }
+}
+
+async function clickSelector(page: AnyPage, selector: string): Promise<boolean> {
+  const hasTextSelector = parseHasTextSelector(selector);
+  if (hasTextSelector) {
+    return await (page as unknown as CaptchaPage).evaluate(
+      ({ cssSelector, text }: { cssSelector: string; text: string }) => {
+        const elements = document.querySelectorAll<HTMLElement>(cssSelector);
+        for (const element of Array.from(elements)) {
+          const elementText =
+            `${element.innerText ?? ''} ${(element as HTMLInputElement).value ?? ''}`
+              .trim()
+              .toLowerCase();
+          if (element.offsetParent !== null && elementText.includes(text)) {
+            element.click();
+            return true;
+          }
+        }
+        return false;
+      },
+      hasTextSelector
+    );
+  }
+
+  try {
+    return await (page as unknown as CaptchaPage).evaluate((s: string) => {
+      const el = document.querySelector<HTMLElement>(s);
+      if (!el) {
+        return false;
+      }
+      el.click();
+      return true;
+    }, selector);
+  } catch (error) {
+    console.warn(
+      `[AutoRenew] Ignoring invalid selector ${selector}: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return false;
+  }
+}
+
 /**
  * Wait for an element to appear on the page with a timeout.
  */
@@ -146,10 +309,7 @@ async function waitForSelector(
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const found: boolean = await (page as unknown as CaptchaPage).evaluate(
-      (sel: string) => document.querySelector(sel) !== null,
-      selector
-    );
+    const found = await elementExists(page, selector);
     if (found) return true;
 
     await new Promise<void>((resolve) => {
@@ -174,6 +334,28 @@ async function waitForUrlContains(
       setTimeout(() => resolve(), 500);
     });
   }
+  return false;
+}
+
+async function waitForCaptchaChallengeToClear(
+  page: Parameters<typeof detectCaptcha>[0] & { url(): string },
+  timeoutMs = 30_000
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const currentUrl = page.url();
+    const captchaType = await detectCaptcha(page);
+    const stillOnChallengeUrl = /captcha|challenge|pardon/iu.test(currentUrl);
+
+    if (!captchaType && !stillOnChallengeUrl) {
+      return true;
+    }
+
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 1_000);
+    });
+  }
+
   return false;
 }
 
@@ -262,6 +444,8 @@ async function main(): Promise<void> {
     // ── Step 3: Click Continue / Sign-in button ──────────────────────────────
     console.log('[AutoRenew] Clicking continue/sign-in button...');
     const continueSelectors = [
+      '#signin-continue-btn',
+      'button#signin-continue-btn',
       'button#sgnBt',
       'button[data-testid="sgnBt"]',
       'button[type="submit"]',
@@ -275,13 +459,12 @@ async function main(): Promise<void> {
     for (const sel of continueSelectors) {
       const found = await waitForSelector(page, sel, 2000);
       if (found) {
-        await (page as unknown as CaptchaPage).evaluate((s: string) => {
-          const el = document.querySelector<HTMLElement>(s);
-          if (el) el.click();
-        }, sel);
-        console.log(`[AutoRenew] Clicked: ${sel}`);
-        clickedSignIn = true;
-        break;
+        const clicked = await clickSelector(page, sel);
+        if (clicked) {
+          console.log(`[AutoRenew] Clicked: ${sel}`);
+          clickedSignIn = true;
+          break;
+        }
       }
     }
 
@@ -362,13 +545,12 @@ async function main(): Promise<void> {
       for (const sel of signInSelectors) {
         const found = await waitForSelector(page, sel, 2000);
         if (found) {
-          await (page as unknown as CaptchaPage).evaluate((s: string) => {
-            const el = document.querySelector<HTMLElement>(s);
-            if (el) el.click();
-          }, sel);
-          console.log(`[AutoRenew] Clicked sign-in: ${sel}`);
-          clickedSubmit = true;
-          break;
+          const clicked = await clickSelector(page, sel);
+          if (clicked) {
+            console.log(`[AutoRenew] Clicked sign-in: ${sel}`);
+            clickedSubmit = true;
+            break;
+          }
         }
       }
 

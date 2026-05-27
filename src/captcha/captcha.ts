@@ -274,6 +274,55 @@ export interface CaptchaPage {
   };
 }
 
+interface CaptchaLocatorClickOptions {
+  timeout?: number;
+  force?: boolean;
+}
+
+interface CaptchaLocator {
+  click(options?: CaptchaLocatorClickOptions): Promise<void>;
+}
+
+interface CaptchaFrameLocator {
+  first(): CaptchaFrameLocator;
+  locator(selector: string): CaptchaLocator;
+}
+
+interface CaptchaFramePage extends CaptchaPage {
+  frameLocator(selector: string): CaptchaFrameLocator;
+}
+
+function hasFrameLocator(page: CaptchaPage): page is CaptchaFramePage {
+  return typeof (page as { frameLocator?: unknown }).frameLocator === 'function';
+}
+
+async function clickInCaptchaFrame(
+  page: CaptchaPage,
+  frameSelectors: readonly string[],
+  targetSelectors: readonly string[]
+): Promise<boolean> {
+  if (!hasFrameLocator(page)) {
+    return false;
+  }
+
+  for (const frameSelector of frameSelectors) {
+    for (const targetSelector of targetSelectors) {
+      try {
+        await page
+          .frameLocator(frameSelector)
+          .first()
+          .locator(targetSelector)
+          .click({ timeout: 3_000 });
+        return true;
+      } catch (_error) {
+        // Try the next known hCaptcha/reCAPTCHA selector variant.
+      }
+    }
+  }
+
+  return false;
+}
+
 /**
  * Inject the captcha solution token into a Playwright page.
  */
@@ -284,27 +333,240 @@ export async function injectCaptchaToken(
 ): Promise<void> {
   if (type === 'hcaptcha') {
     await page.evaluate((t: string) => {
-      const textarea = document.querySelector('textarea[name="h-captcha-response"]');
-      if (textarea) {
-        (textarea as HTMLTextAreaElement).value = t;
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      const responseSelectors = [
+        'textarea[name="h-captcha-response"]',
+        'textarea[name="g-recaptcha-response"]',
+        'input[name="h-captcha-response"]',
+        'input[name="g-recaptcha-response"]',
+      ];
+      const updated = new Set<Element>();
+
+      for (const selector of responseSelectors) {
+        const fields = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(selector);
+        for (const field of fields) {
+          if (updated.has(field)) {
+            continue;
+          }
+          updated.add(field);
+          field.value = t;
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+          field.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+
+      const callbackNames = new Set<string>();
+      const callbackElements = document.querySelectorAll<HTMLElement>(
+        '.h-captcha[data-callback], .hcaptcha[data-callback], [data-callback]'
+      );
+      for (const element of callbackElements) {
+        const callbackName = element.getAttribute('data-callback');
+        if (callbackName) {
+          callbackNames.add(callbackName);
+        }
+      }
+
+      const getCallback = (name: string): unknown => {
+        return name.split('.').reduce<unknown>((target, key) => {
+          if (target && typeof target === 'object') {
+            return (target as Record<string, unknown>)[key];
+          }
+          return undefined;
+        }, window as unknown);
+      };
+
+      for (const callbackName of callbackNames) {
+        const callback = getCallback(callbackName);
+        if (typeof callback === 'function') {
+          try {
+            (callback as (captchaToken: string) => void)(t);
+          } catch (_error) {
+            // A page callback should not prevent token injection fallback handling.
+          }
+        }
       }
     }, token);
   } else {
     await page.evaluate((t: string) => {
+      const responseSelectors = [
+        'textarea[name="g-recaptcha-response"]',
+        'textarea#g-recaptcha-response',
+        'input[name="g-recaptcha-response"]',
+      ];
+      const updated = new Set<Element>();
+
+      for (const selector of responseSelectors) {
+        const fields = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(selector);
+        for (const field of fields) {
+          if (updated.has(field)) {
+            continue;
+          }
+          updated.add(field);
+          field.value = t;
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+          field.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+
       const iframe = document.querySelector('iframe[title="reCAPTCHA"], iframe[src*="recaptcha"]');
       if (iframe) {
-        const iframeDoc = (iframe as HTMLIFrameElement).contentDocument;
-        if (iframeDoc) {
-          const textarea = iframeDoc.querySelector('textarea[name="g-recaptcha-response"]');
-          if (textarea) {
-            (textarea as HTMLTextAreaElement).value = t;
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          const iframeDoc = (iframe as HTMLIFrameElement).contentDocument;
+          if (iframeDoc) {
+            const iframeFields = iframeDoc.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+              'textarea[name="g-recaptcha-response"], input[name="g-recaptcha-response"]'
+            );
+            for (const field of iframeFields) {
+              field.value = t;
+              field.dispatchEvent(new Event('input', { bubbles: true }));
+              field.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }
+        } catch (_error) {
+          // Cross-origin reCAPTCHA iframes are expected; main document fields are the fallback.
+        }
+      }
+
+      const callbackElements = document.querySelectorAll<HTMLElement>(
+        '.g-recaptcha[data-callback], [data-callback]'
+      );
+      const callbackNames = new Set<string>();
+      for (const element of callbackElements) {
+        const callbackName = element.getAttribute('data-callback');
+        if (callbackName) {
+          callbackNames.add(callbackName);
+        }
+      }
+
+      const getCallback = (name: string): unknown => {
+        return name.split('.').reduce<unknown>((target, key) => {
+          if (target && typeof target === 'object') {
+            return (target as Record<string, unknown>)[key];
+          }
+          return undefined;
+        }, window as unknown);
+      };
+
+      for (const callbackName of callbackNames) {
+        const callback = getCallback(callbackName);
+        if (typeof callback === 'function') {
+          try {
+            (callback as (captchaToken: string) => void)(t);
+          } catch (_error) {
+            // A page callback should not prevent token injection fallback handling.
           }
         }
       }
     }, token);
   }
+}
+
+/**
+ * Trigger the captcha widget after token injection. Playwright's frameLocator
+ * can interact with the cross-origin captcha iframe even though page.evaluate()
+ * cannot traverse into it directly.
+ */
+export async function triggerCaptchaVerification(
+  page: CaptchaPage,
+  type: CaptchaType
+): Promise<boolean> {
+  let widgetTriggered = false;
+
+  if (type === 'hcaptcha') {
+    const clickedCheckbox = await clickInCaptchaFrame(
+      page,
+      [
+        'iframe[src*="hcaptcha.com"][title*="checkbox" i]',
+        'iframe[src*="hcaptcha.com"][title*="widget" i]',
+        'iframe[src*="hcaptcha.com"]',
+      ],
+      ['#checkbox', '[role="checkbox"]', '.checkbox']
+    );
+    if (clickedCheckbox) {
+      widgetTriggered = true;
+    }
+
+    if (!widgetTriggered) {
+      const clickedChallengeButton = await clickInCaptchaFrame(
+        page,
+        ['iframe[src*="hcaptcha.com"][title*="challenge" i]', 'iframe[src*="hcaptcha.com"]'],
+        [
+          'button:has-text("Verify")',
+          'button:has-text("Submit")',
+          'button[type="submit"]',
+          '[role="button"]:has-text("Verify")',
+        ]
+      );
+      if (clickedChallengeButton) {
+        widgetTriggered = true;
+      }
+    }
+  } else {
+    const clickedRecaptchaCheckbox = await clickInCaptchaFrame(
+      page,
+      [
+        'iframe[title="reCAPTCHA"]',
+        'iframe[title*="recaptcha" i]',
+        'iframe[src*="recaptcha.net"]',
+        'iframe[src*="recaptcha"]',
+      ],
+      ['#recaptcha-anchor', '.recaptcha-checkbox-border', '[role="checkbox"]']
+    );
+    if (clickedRecaptchaCheckbox) {
+      widgetTriggered = true;
+    }
+  }
+
+  const pageSubmitTriggered = await page.evaluate((captchaType: CaptchaType): boolean => {
+    const pageText = document.body?.innerText ?? '';
+    const isCaptchaChallengePage =
+      /captcha|challenge|pardon/iu.test(window.location.href) ||
+      /captcha|challenge|pardon/iu.test(document.title) ||
+      /pardon our interruption|captcha challenge/iu.test(pageText);
+    const hasCredentialInput =
+      document.querySelector(
+        'input[name="userid"], input#userid, input[name="pass"], input#pass, input[type="password"]'
+      ) !== null;
+
+    if (!isCaptchaChallengePage || hasCredentialInput) {
+      return false;
+    }
+
+    const labels = captchaType === 'hcaptcha' ? ['verify', 'continue', 'submit'] : ['submit'];
+    const candidates = document.querySelectorAll<HTMLElement>(
+      'button, input[type="submit"], input[type="button"], a[role="button"]'
+    );
+
+    for (const candidate of candidates) {
+      const inputCandidate = candidate as HTMLInputElement;
+      const text = `${candidate.innerText ?? ''} ${inputCandidate.value ?? ''}`
+        .trim()
+        .toLowerCase();
+      const isSubmitControl =
+        inputCandidate.type?.toLowerCase() === 'submit' ||
+        candidate.getAttribute('type')?.toLowerCase() === 'submit';
+      const isDisabled =
+        inputCandidate.disabled === true || candidate.getAttribute('aria-disabled') === 'true';
+      if (!isDisabled && (labels.some((label) => text.includes(label)) || isSubmitControl)) {
+        candidate.click();
+        return true;
+      }
+    }
+
+    const responseField = document.querySelector(
+      captchaType === 'hcaptcha'
+        ? 'textarea[name="h-captcha-response"], input[name="h-captcha-response"]'
+        : 'textarea[name="g-recaptcha-response"], input[name="g-recaptcha-response"]'
+    );
+    const form = responseField?.closest('form') ?? document.querySelector('form');
+    if (form instanceof HTMLFormElement) {
+      form.requestSubmit();
+      return true;
+    }
+
+    return false;
+  }, type);
+
+  return widgetTriggered || pageSubmitTriggered;
 }
 
 /**

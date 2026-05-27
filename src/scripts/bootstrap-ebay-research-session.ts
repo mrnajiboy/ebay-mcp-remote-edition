@@ -20,12 +20,15 @@ import {
   extractSiteKey,
   solveCaptcha,
   injectCaptchaToken,
+  triggerCaptchaVerification,
 } from '../captcha/captcha.js';
 
 const configuredMarketplace = process.env.EBAY_RESEARCH_BOOTSTRAP_MARKETPLACE?.trim();
 const marketplace =
   configuredMarketplace && configuredMarketplace.length > 0 ? configuredMarketplace : 'EBAY-US';
 const researchUrl = `https://www.ebay.com/sh/research?marketplace=${encodeURIComponent(marketplace)}`;
+const DEFAULT_CAPTCHA_SOLVE_MAX_WAIT_MS = 300_000;
+const DEFAULT_CAPTCHA_POLL_INTERVAL_MS = 3_000;
 
 function getExpectedVerificationSessionSource(
   selectedStore: EbayResearchSessionStoreBackend
@@ -57,6 +60,34 @@ function alertingLooksConfigured(): boolean {
     process.env.EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL,
     process.env.PUBLIC_BASE_URL,
   ].some((value) => typeof value === 'string' && value.trim().length > 0);
+}
+
+function getPositiveIntegerEnv(name: string, fallback: number): number {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) {
+    return fallback;
+  }
+
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    console.warn(`[Bootstrap] Ignoring invalid ${name}=${rawValue}; using ${fallback}ms.`);
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function getCaptchaSolveOptions(): { maxWaitMs: number; pollIntervalMs: number } {
+  return {
+    maxWaitMs: getPositiveIntegerEnv(
+      'EBAY_RESEARCH_CAPTCHA_MAX_WAIT_MS',
+      DEFAULT_CAPTCHA_SOLVE_MAX_WAIT_MS
+    ),
+    pollIntervalMs: getPositiveIntegerEnv(
+      'EBAY_RESEARCH_CAPTCHA_POLL_INTERVAL_MS',
+      DEFAULT_CAPTCHA_POLL_INTERVAL_MS
+    ),
+  };
 }
 
 async function waitForEnter(promptText: string): Promise<void> {
@@ -96,14 +127,29 @@ async function handleCaptchaChallenge(
   }
 
   try {
-    const solution = await solveCaptcha({
-      type: captchaType,
-      siteKey,
-      pageUrl: page.url(),
-    });
+    const solution = await solveCaptcha(
+      {
+        type: captchaType,
+        siteKey,
+        pageUrl: page.url(),
+      },
+      getCaptchaSolveOptions()
+    );
     console.log(`[Bootstrap] Captcha solved — injecting token (${solution.token.length} chars)`);
     await injectCaptchaToken(page, captchaType, solution.token);
     console.log('[Bootstrap] Token injected successfully');
+
+    const verificationTriggered = await triggerCaptchaVerification(page, captchaType);
+    if (verificationTriggered) {
+      console.log('[Bootstrap] Captcha verification control triggered');
+      await new Promise<void>((resolve) => {
+        setTimeout(() => resolve(), 2_000);
+      });
+    } else {
+      console.warn(
+        '[Bootstrap] Could not trigger captcha verification automatically — continue manually in the browser window.'
+      );
+    }
   } catch (error) {
     console.error(
       `[Bootstrap] Captcha solve failed: ${error instanceof Error ? error.message : String(error)}`

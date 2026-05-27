@@ -4,6 +4,7 @@ import {
   detectCaptcha,
   extractSiteKey,
   injectCaptchaToken,
+  triggerCaptchaVerification,
   waitForAndSolveCaptcha,
 } from '@/captcha/captcha.js';
 import type { CaptchaPage } from '@/captcha/captcha.js';
@@ -37,12 +38,10 @@ describe('Captcha Module', () => {
       // Mock 2Captcha: create task → get result (JSON format)
       mockFetch
         .mockResolvedValueOnce({
-          text: () =>
-            Promise.resolve(JSON.stringify({ status: 1, request: 'task-123' })),
+          text: () => Promise.resolve(JSON.stringify({ status: 1, request: 'task-123' })),
         })
         .mockResolvedValueOnce({
-          text: () =>
-            Promise.resolve(JSON.stringify({ status: 1, request: 'solution-token' })),
+          text: () => Promise.resolve(JSON.stringify({ status: 1, request: 'solution-token' })),
         });
 
       const result = await solveCaptcha(
@@ -85,12 +84,14 @@ describe('Captcha Module', () => {
     });
 
     it('throws on timeout when captcha not solved', async () => {
-      process.env.TWOCAPTCHA_API_KEY='***';
+      process.env.TWOCAPTCHA_API_KEY = '***';
 
       // 2Captcha: create task succeeds, then keep returning CAPCHA_NOT_READY until timeout
       mockFetch.mockImplementation(async () => {
         if (mockFetch.mock.calls.length === 1) {
-          return { text: () => Promise.resolve(JSON.stringify({ status: 1, request: 'task-123' })) };
+          return {
+            text: () => Promise.resolve(JSON.stringify({ status: 1, request: 'task-123' })),
+          };
         }
         // Poll: always return still processing
         return { text: () => Promise.resolve(JSON.stringify({ status: 0, request: null })) };
@@ -224,6 +225,49 @@ describe('Captcha Module', () => {
     });
   });
 
+  describe('triggerCaptchaVerification', () => {
+    it('clicks hCaptcha checkbox inside the widget iframe', async () => {
+      interface MockCaptchaLocator {
+        click(options?: { timeout?: number; force?: boolean }): Promise<void>;
+      }
+
+      interface MockCaptchaFrameLocator {
+        first(): MockCaptchaFrameLocator;
+        locator(selector: string): MockCaptchaLocator;
+      }
+
+      const click = vi.fn<MockCaptchaLocator['click']>().mockResolvedValue(undefined);
+      const locator = vi.fn<MockCaptchaFrameLocator['locator']>(() => ({ click }));
+      const frame: MockCaptchaFrameLocator = {
+        first: vi.fn<() => MockCaptchaFrameLocator>(() => frame),
+        locator,
+      };
+      const frameLocator = vi.fn(() => frame);
+      const mockPage = {
+        evaluate: vi.fn().mockResolvedValue(false),
+        frameLocator,
+      } as unknown as CaptchaPage;
+
+      const result = await triggerCaptchaVerification(mockPage, 'hcaptcha');
+
+      expect(result).toBe(true);
+      expect(frameLocator).toHaveBeenCalledWith('iframe[src*="hcaptcha.com"][title*="checkbox" i]');
+      expect(locator).toHaveBeenCalledWith('#checkbox');
+      expect(click).toHaveBeenCalledWith({ timeout: 3_000 });
+    });
+
+    it('falls back to main-page verification button evaluation without frameLocator support', async () => {
+      const mockPage: CaptchaPage = {
+        evaluate: vi.fn().mockResolvedValue(true),
+      };
+
+      const result = await triggerCaptchaVerification(mockPage, 'hcaptcha');
+
+      expect(result).toBe(true);
+      expect(mockPage.evaluate).toHaveBeenCalledWith(expect.any(Function), 'hcaptcha');
+    });
+  });
+
   describe('waitForAndSolveCaptcha', () => {
     it('returns null when no captcha detected within timeout', async () => {
       const mockPage: CaptchaPage = {
@@ -242,7 +286,8 @@ describe('Captcha Module', () => {
 
     it('throws when captcha detected but site key not found', async () => {
       const mockPage: CaptchaPage = {
-        evaluate: vi.fn()
+        evaluate: vi
+          .fn()
           .mockResolvedValueOnce('hcaptcha') // detectCaptcha
           .mockResolvedValueOnce(null), // extractSiteKey - not found
       };
@@ -260,7 +305,8 @@ describe('Captcha Module', () => {
       process.env.TWOCAPTCHA_API_KEY = '***';
 
       const mockPage: CaptchaPage = {
-        evaluate: vi.fn()
+        evaluate: vi
+          .fn()
           .mockResolvedValueOnce('hcaptcha') // detectCaptcha
           .mockResolvedValueOnce('test-site-key') // extractSiteKey
           .mockResolvedValueOnce(undefined), // injectCaptchaToken
