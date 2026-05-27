@@ -20,6 +20,7 @@
     "research:bootstrap": "node build/scripts/env-check.js node build/scripts/bootstrap-ebay-research-session.js",
     "research:inspect-session": "node build/scripts/env-check.js node build/scripts/inspect-ebay-research-session.js",
     "research:check-browser": "node build/scripts/env-check.js node build/scripts/check-playwright.js",
+    "research:auto-renew": "node build/scripts/env-check.js node build/scripts/auto-renew-ebay-research-session.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "setup": "tsx src/scripts/env-check.ts tsx src/scripts/setup.ts",

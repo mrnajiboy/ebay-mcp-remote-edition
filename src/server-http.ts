@@ -886,6 +886,111 @@ export function createApp(): express.Application {
 </html>`);
   });
 
+  // ── Admin: Auto-Renew eBay Research Session ──────────────────────────────
+
+  app.post('/admin/research-session/auto-renew', requireAdmin, async (req, res) => {
+    const marketplace = (req.body?.marketplace ?? 'EBAY-US').toUpperCase();
+    const timeoutMs = typeof req.body?.timeout === 'number' ? req.body.timeout : 120_000;
+
+    serverLogger.info('[admin/research-session/auto-renew] Starting auto-renewal', {
+      marketplace,
+      timeoutMs,
+    });
+
+    // Import the auto-renew script — it runs the full flow in a spawned process
+    const { spawn } = await import('child_process');
+    const { resolve, dirname } = await import('path');
+    const { fileURLToPath } = await import('url');
+
+    const currentDir = dirname(fileURLToPath(import.meta.url));
+    const scriptPath = resolve(currentDir, '..', 'build', 'scripts', 'auto-renew-ebay-research-session.js');
+
+    const child = spawn('node', [scriptPath], {
+      env: {
+        ...process.env,
+        EBAY_RESEARCH_BOOTSTRAP_MARKETPLACE: marketplace,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('close', (exitCode: number | null) => {
+      clearTimeout(timer);
+
+      if (timedOut) {
+        serverLogger.error('[admin/research-session/auto-renew] Timed out', {
+          marketplace,
+          timeoutMs,
+          partialStdout: stdout.slice(-2000),
+        });
+        res.status(504).json({
+          ok: false,
+          marketplace,
+          error: `Auto-renewal timed out after ${timeoutMs}ms`,
+          partialOutput: stdout.slice(-2000),
+        });
+        return;
+      }
+
+      // Try to parse JSON output from the script
+      let parsedResult: Record<string, unknown> | null = null;
+      // Look for the JSON blob at the end of stdout
+      const jsonMatch = /\n(\{[\s\S]*\})\s*$/.exec(stdout);
+      if (jsonMatch) {
+        try {
+          parsedResult = JSON.parse(jsonMatch[1]) as Record<string, unknown>;
+        } catch {
+          // Not JSON — fall through
+        }
+      }
+
+      if (exitCode === 0 && parsedResult?.ok === true) {
+        const r = parsedResult;
+        serverLogger.info('[admin/research-session/auto-renew] Success', {
+          marketplace,
+          bytes: (r.validationPersistence as Record<string, unknown> | undefined)?.bytes,
+          cookieCount: (r.validationPersistence as Record<string, unknown> | undefined)?.cookieCount,
+        });
+        res.json({
+          ok: true,
+          marketplace,
+          ...(parsedResult),
+        });
+      } else {
+        const errorMsg = parsedResult?.error ?? stderr.slice(-1000) ?? `Exit code ${exitCode}`;
+        serverLogger.error('[admin/research-session/auto-renew] Failed', {
+          marketplace,
+          exitCode,
+          error: errorMsg,
+        });
+        res.status(500).json({
+          ok: false,
+          marketplace,
+          exitCode,
+          error: errorMsg,
+          stdout: stdout.slice(-2000),
+          stderr: stderr.slice(-1000),
+        });
+      }
+    });
+  });
+
   // ── Single OAuth callback
   // ── Single OAuth callback (registered with eBay — must be one fixed URL) ─
   // The environment is recovered from the state record, not the URL path.
