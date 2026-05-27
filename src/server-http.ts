@@ -954,17 +954,20 @@ export function createApp(): express.Application {
         return;
       }
 
-      // Try to parse JSON output from the script
-      let parsedResult: Record<string, unknown> | null = null;
-      // Look for the JSON blob at the end of stdout
-      const jsonMatch = /\n(\{[\s\S]*\})\s*$/.exec(stdout);
-      if (jsonMatch) {
-        try {
-          parsedResult = JSON.parse(jsonMatch[1]) as Record<string, unknown>;
-        } catch {
-          // Not JSON — fall through
+      // Try to parse JSON output from the script. Success JSON is written to
+      // stdout; structured failure JSON is written to stderr.
+      const parseTrailingJson = (text: string): Record<string, unknown> | null => {
+        const jsonMatch = /\n(\{[\s\S]*\})\s*$/.exec(`\n${text.trim()}`);
+        if (!jsonMatch) {
+          return null;
         }
-      }
+        try {
+          return JSON.parse(jsonMatch[1]) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      };
+      const parsedResult = parseTrailingJson(stdout) ?? parseTrailingJson(stderr);
 
       if (exitCode === 0 && parsedResult?.ok === true) {
         const r = parsedResult;
@@ -976,6 +979,18 @@ export function createApp(): express.Application {
         });
         res.json({
           ok: true,
+          marketplace,
+          ...parsedResult,
+        });
+      } else if (parsedResult?.errorCode === 'MANUAL_RESEARCH_SESSION_REQUIRED') {
+        serverLogger.warn('[admin/research-session/auto-renew] Manual capture required', {
+          marketplace,
+          exitCode,
+          challengeType: parsedResult.challengeType,
+          challengeUrl: parsedResult.challengeUrl,
+        });
+        res.status(409).json({
+          ok: false,
           marketplace,
           ...parsedResult,
         });

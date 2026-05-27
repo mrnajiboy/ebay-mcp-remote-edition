@@ -13,12 +13,7 @@ import {
 import { scheduleEbayResearchSessionAlerts } from '../validation/providers/ebay-research-session-alerts.js';
 import { loadChromium } from './playwright-runtime.js';
 import type { CaptchaPage } from '../captcha/captcha.js';
-import {
-  detectCaptcha,
-  extractSiteKey,
-  solveCaptcha,
-  injectCaptchaToken,
-} from '../captcha/captcha.js';
+import { detectCaptcha, type CaptchaType } from '../captcha/captcha.js';
 
 const configuredMarketplace = process.env.EBAY_RESEARCH_BOOTSTRAP_MARKETPLACE?.trim();
 const marketplace =
@@ -60,8 +55,58 @@ function alertingLooksConfigured(): boolean {
   ].some((value) => typeof value === 'string' && value.trim().length > 0);
 }
 
+function normalizePublicBaseUrl(): string {
+  const explicitBaseUrl = process.env.PUBLIC_BASE_URL?.trim().replace(/\/$/, '');
+  if (explicitBaseUrl) {
+    return explicitBaseUrl;
+  }
+
+  const configuredBaseUrl = process.env.EBAY_MCP_BASE_URL?.trim().replace(/\/$/, '');
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+
+  const host = (process.env.MCP_HOST ?? 'localhost').trim() || 'localhost';
+  const normalizedHost = host === '0.0.0.0' ? 'localhost' : host;
+  const port = Number(process.env.PORT ?? 3000);
+  return `http://${normalizedHost}:${port}`;
+}
+
+function getManualCaptureUrl(): string {
+  return `${normalizePublicBaseUrl()}/admin/playwright-capture`;
+}
+
+function sanitizeChallengeUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return 'unknown';
+  }
+}
+
+class ManualResearchSessionRequiredError extends Error {
+  public readonly errorCode = 'MANUAL_RESEARCH_SESSION_REQUIRED';
+  public readonly manualAction = 'playwright_capture';
+  public readonly manualCaptureUrl = getManualCaptureUrl();
+  public readonly challengeType: CaptchaType;
+  public readonly challengeUrl: string;
+
+  constructor(challengeType: CaptchaType, challengeUrl: string) {
+    super(
+      `eBay presented a ${challengeType} challenge during Research session auto-renewal. ` +
+        'Manual browser capture is required to refresh the session.'
+    );
+    this.name = 'ManualResearchSessionRequiredError';
+    this.challengeType = challengeType;
+    this.challengeUrl = sanitizeChallengeUrl(challengeUrl);
+  }
+}
+
 /**
- * Detect and solve captcha challenges during auto-renewal.
+ * Detect anti-bot challenges during auto-renewal and hand off to the supported
+ * manual capture flow. eBay's hCaptcha is an account-security gate; the server
+ * should not keep entering credentials or spinning until timeout once it appears.
  */
 async function handleCaptchaChallenge(
   page: Parameters<typeof detectCaptcha>[0] & { url(): string }
@@ -71,38 +116,10 @@ async function handleCaptchaChallenge(
     return;
   }
 
-  console.log(`[AutoRenew] Detected ${captchaType} challenge — attempting to solve...`);
-
-  const siteKey = await extractSiteKey(page, captchaType);
-  if (!siteKey) {
-    console.warn(`[AutoRenew] Could not extract site key for ${captchaType} — skipping auto-solve`);
-    return;
-  }
-
-  const apiKey = process.env.TWOCAPTCHA_API_KEY?.trim();
-  if (!apiKey || apiKey.length < 1) {
-    console.warn('[AutoRenew] TWOCAPTCHA_API_KEY not set — captcha requires manual solving');
-    return;
-  }
-
-  try {
-    const solution = await solveCaptcha({
-      type: captchaType,
-      siteKey,
-      pageUrl: page.url(),
-    });
-    console.log(`[AutoRenew] Captcha solved — injecting token (${solution.token.length} chars)`);
-    await injectCaptchaToken(page, captchaType, solution.token);
-    console.log('[AutoRenew] Token injected successfully');
-    // Give the page a moment to process the captcha token
-    await new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), 500);
-    });
-  } catch (error) {
-    console.error(
-      `[AutoRenew] Captcha solve failed: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
+  console.warn(
+    `[AutoRenew] Detected ${captchaType} challenge — stopping auto-renewal and requiring manual capture.`
+  );
+  throw new ManualResearchSessionRequiredError(captchaType, page.url());
 }
 
 function getRequiredEnvVar(name: string): string {
@@ -510,12 +527,24 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
+  const manualError =
+    error instanceof ManualResearchSessionRequiredError
+      ? {
+          errorCode: error.errorCode,
+          manualAction: error.manualAction,
+          manualCaptureUrl: error.manualCaptureUrl,
+          challengeType: error.challengeType,
+          challengeUrl: error.challengeUrl,
+        }
+      : {};
+
   console.error(
     JSON.stringify(
       {
         ok: false,
         marketplace,
         autoRenewed: false,
+        ...manualError,
         error: error instanceof Error ? error.message : String(error),
       },
       null,
