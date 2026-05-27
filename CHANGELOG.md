@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.7.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.6.0...ebay-mcp-remote-edition-v4.7.0) (2026-05-27)
+
+
+### Features
+
+* add admin endpoints for token management and Playwright session capture ([41dc2d6](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/41dc2d690f94ddec3efc87bbdbec528b71b9cdcd))
+* add captcha solving module (2Captcha primary, Capsolver fallback) ([2c4cefd](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/2c4cefdb4707797ef40e31a73b9e6ec7fa5dd3e6))
+* add per-request hosted server auth ([3b023cf](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/3b023cfccb2c42b41fb2bb2dd54405ef5a784ba0))
+* **admin:** allow admin key via query param for browser access to playwright-capture ([1e6fd35](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/1e6fd35ba0fd52490ac08ffc5ead96c6950c0b62))
+* integrate captcha auto-solve into eBay research bootstrap ([e3ee4e3](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/e3ee4e33cd6f47a269f4ba89ba67935a9ac37f95))
+
+
+### Bug Fixes
+
+* add backups/ to ESLint ignores and fix prettier formatting ([2182d4b](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/2182d4b6abfe843459a8e2efc052e9890a89fc86))
+* **admin:** add CSP header to playwright-capture to allow inline scripts and event handlers ([6718781](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6718781b5c0fce5defd0cf44938bbc7940a65e28))
+* **admin:** fix playwright-capture page click handlers and pass admin key from query param ([eef5965](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/eef5965d755a97695b83e60366bc460b484d5b02))
+* **alerts:** add MarkdownV2 formatting with proper escaping to research session Telegram alerts ([d1d748f](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/d1d748fbe485f0521aa1f377d58273bf284e5ec4))
+* applyDay1 floor threshold totalSold&gt;=7 (avoids false 1 for low-volume test data) ([1424e07](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/1424e07a1fa69439b48119142c9728535b979205))
+* bump playwright docker image to v1.60.0 to match playwright-core v1.60.0 ([e90fef1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/e90fef13783f019afb6de8f83b0ea0f0cec9cdd2))
+* cookie misshape ([7012a32](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/7012a328a26ed7f000fb1284e3b4b64ad9d05a45))
+* eBay provider soldVelocity returns null when no evidence (was passing through currentMetrics 0 values) ([b8065f1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b8065f1a0a6810776f4e9e0a3a5a44611fb0e58b))
+* hand off research hcaptcha to manual capture ([5478dbf](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/5478dbf33a36e734a2f3426c318d1338a631fa28))
+* handle 2Captcha plaintext OK|taskId response + CapSolver ProxyLess task types ([82b204e](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/82b204e9eb9764a2de3829b1a82d686564598d06))
+* linting ([48248c3](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/48248c34c5ab018c64a1fa24ffc9fa439e475ee3))
+* linting for oauth files ([ccf6000](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/ccf6000ae235b81578640e32d5479a4222a9c208))
+* make husky prepare script resilient in Coolify deploy ([8d6803c](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/8d6803cd06722ee82bec57f9998925c04f8f60ba))
+* move playwright-core from devDeps to deps (needed at runtime for auto-renew) ([73b2ba4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/73b2ba498f8bee6fdb6a7e3e99185430846b1589))
+* prettier format for auto-renew script and server-http ([972742b](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/972742b25c8e33d3e1ec93e90c8cb539a38f19a7))
+* restore @types/express to devDeps, update lockfile, playwright-core in deps ([1af6fc9](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/1af6fc9f69605cf5da53c8721dbeb0ef4a6f6786))
+* sandbox oauth issue ([56ccc43](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/56ccc43c06cadbff19e4d8afbd48aa30f807213d))
+* use RegExp.exec() per eslint prefer-regexp-exec rule ([b7f0736](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/b7f07364f3237bef4910a06504cd4441d361a0fe))
+* use resolved validation context for research queries ([582c6a7](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/582c6a7f023a0d23ba5ebc3034f719570fae8fc8))
+* **validation:** return null instead of false zeros when no row-level sold dates ([19ba131](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/19ba131e003a448b5e19b5a0224e4840e2f721ef))
+
+
+### Performance Improvements
+
+* **docker:** use pre-built playwright image to eliminate 20min chromium download bottleneck ([164c45e](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/164c45e4120da387dc552692f5f8cd6de6eb977a))
+
+
+### Documentation
+
+* clarify server bearer token source ([cbb1362](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/cbb1362a7be2f824ff3fc67e40b566da7f6a0bed))
+* document admin endpoints including playwright-capture query param auth ([3207a12](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/3207a1273b6e000a6d930c2b47de73fbff97e716))
+* update API status snapshot [skip ci] ([fc220e3](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/fc220e3f30d3a87a802fefa6dfc4bb8150de83bd))
+* update API status snapshot [skip ci] ([6d505e4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6d505e4cbbd9c5477385918cbddb7dde2e135d67))
+
 ## [4.6.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.5.1...ebay-mcp-remote-edition-v4.6.0) (2026-05-14)
 
 
