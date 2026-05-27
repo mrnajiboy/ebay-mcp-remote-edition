@@ -591,18 +591,12 @@ function bucketResearchSoldVelocity(
     // PHASE 3: Extrapolate from aggregate totalSold when we have aggregate data
     // but no row-level dates to bucket. This compensates for TeraPeak not providing
     // individual sold date rows, using aggregate totals as the best available evidence.
-    if (
-      aggregateTotalSold !== null &&
-      aggregateTotalSold > 0 &&
-      soldRows.length > 0
-    ) {
+    if (aggregateTotalSold !== null && aggregateTotalSold > 0 && soldRows.length > 0) {
       const RESEARCH_WINDOW_DAYS = 30;
       const dailyRate = aggregateTotalSold / RESEARCH_WINDOW_DAYS;
       // Recency-weighted distribution: Day 1 gets the most, tapering to Day 5
-      const recencyWeights = [0.43, 0.26, 0.16, 0.10, 0.05];
-      const extrapolated = recencyWeights.map((w) =>
-        Math.max(0, Math.round(dailyRate * 5 * w))
-      );
+      const recencyWeights = [0.43, 0.26, 0.16, 0.1, 0.05];
+      const extrapolated = recencyWeights.map((w) => Math.max(0, Math.round(dailyRate * 5 * w)));
       const extrapolatedRecent7d = Math.max(0, Math.round(dailyRate * 7));
 
       notes.push(
@@ -660,10 +654,8 @@ function bucketResearchSoldVelocity(
   if (bucketedItems === 0 && aggregateTotalSold !== null && aggregateTotalSold > 0) {
     const RESEARCH_WINDOW_DAYS = 30;
     const dailyRate = aggregateTotalSold / RESEARCH_WINDOW_DAYS;
-    const recencyWeights = [0.43, 0.26, 0.16, 0.10, 0.05];
-    const extrapolated = recencyWeights.map((w) =>
-      Math.max(0, Math.round(dailyRate * 5 * w))
-    );
+    const recencyWeights = [0.43, 0.26, 0.16, 0.1, 0.05];
+    const extrapolated = recencyWeights.map((w) => Math.max(0, Math.round(dailyRate * 5 * w)));
     const extrapolatedRecent7d = Math.max(0, Math.round(dailyRate * 7));
 
     notes.push(
