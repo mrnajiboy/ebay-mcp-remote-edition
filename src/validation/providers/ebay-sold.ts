@@ -150,6 +150,21 @@ function normalizeProducts(products: SoldProviderProduct[] | undefined): Normali
   };
 }
 
+// PHASE 3: Calendar-day difference in KST (Asia/Seoul) timezone.
+function calendarDayDiffKST(soldDate: Date, requestDate: Date): number {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const soldLocal = fmt.format(soldDate);
+  const reqLocal = fmt.format(requestDate);
+  const soldMidnight = Date.parse(`${soldLocal}T00:00:00+09:00`);
+  const reqMidnight = Date.parse(`${reqLocal}T00:00:00+09:00`);
+  return Math.round((reqMidnight - soldMidnight) / (24 * 60 * 60 * 1000));
+}
+
 function bucketSoldVelocity(
   soldItems: SoldItemSample[],
   normalizedProducts: NormalizedSoldProducts,
@@ -199,9 +214,7 @@ function bucketSoldVelocity(
       continue;
     }
 
-    const diffDays = Math.floor(
-      (requestDate.getTime() - soldDate.getTime()) / (24 * 60 * 60 * 1000)
-    );
+    const diffDays = calendarDayDiffKST(soldDate, requestDate);
     if (diffDays >= 0 && diffDays < 7) {
       recentSoldCount7d += 1;
     }
@@ -222,19 +235,44 @@ function bucketSoldVelocity(
   if (futureDated > 0) {
     notes.push(`ignored ${futureDated} future-dated sold timestamps`);
   }
+
+  // PHASE 2: When no parseable sold dates exist, return null (not 0) so Airtable
+  // distinguishes "no sales in the last 5 days" from "we have no row-level evidence".
+  if (normalizedProducts.withSoldAt === 0) {
+    if (normalizedProducts.missingSoldAt > 0 || normalizedProducts.dateParseFailures > 0 || soldItems.length > 0) {
+      notes.push('no parseable sold dates — returning null to distinguish from actual zero sales');
+    }
+    return {
+      soldVelocity: {
+        day1Sold: null,
+        day2Sold: null,
+        day3Sold: null,
+        day4Sold: null,
+        day5Sold: null,
+        daysTracked: null,
+      },
+      recentSoldCount7d: 0,
+      soldBucketDebug: {
+        status: 'skipped',
+        notes,
+        totalItemsExamined: normalizedProducts.totalItemsExamined,
+        withSoldAt: normalizedProducts.withSoldAt,
+        missingSoldAt: normalizedProducts.missingSoldAt,
+        dateParseFailures: normalizedProducts.dateParseFailures,
+        futureDated: 0,
+        bucketedItems: 0,
+      },
+    };
+  }
+
   if (
-    normalizedProducts.withSoldAt === 0 &&
-    (normalizedProducts.missingSoldAt > 0 || normalizedProducts.dateParseFailures > 0)
+    normalizedProducts.missingSoldAt > 0 || normalizedProducts.dateParseFailures > 0
   ) {
-    notes.push('bucketing skipped due to provider timestamp quality');
+    notes.push('some sold records lacked parseable dates; bucketing uses available data only');
   }
 
   const status: SoldBucketDebug['status'] =
-    normalizedProducts.withSoldAt === 0 && notes.length > 0
-      ? 'skipped'
-      : notes.length > 0
-        ? 'partial'
-        : 'ok';
+    notes.length > 0 ? 'partial' : 'ok';
 
   return {
     soldVelocity: {
@@ -243,7 +281,7 @@ function bucketSoldVelocity(
       day3Sold: buckets[2],
       day4Sold: buckets[3],
       day5Sold: buckets[4],
-      daysTracked: maxTrackedDay > 0 ? maxTrackedDay : normalizedProducts.withSoldAt > 0 ? 5 : null,
+      daysTracked: maxTrackedDay > 0 ? maxTrackedDay : 5,
     },
     recentSoldCount7d,
     soldBucketDebug: {

@@ -480,6 +480,23 @@ function parseResearchSoldDate(value: string | null | undefined): string | null 
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
 }
 
+// PHASE 3: Calendar-day difference in KST (Asia/Seoul) timezone.
+// Prevents Day 1/Day 2 shifts around midnight caused by UTC millisecond math.
+function calendarDayDiffKST(soldDate: Date, requestDate: Date): number {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const soldLocal = fmt.format(soldDate);
+  const reqLocal = fmt.format(requestDate);
+  // Parse "MM/DD/YYYY" back into UTC midnight dates for clean subtraction
+  const soldMidnight = Date.parse(`${soldLocal}T00:00:00+09:00`);
+  const reqMidnight = Date.parse(`${reqLocal}T00:00:00+09:00`);
+  return Math.round((reqMidnight - soldMidnight) / (24 * 60 * 60 * 1000));
+}
+
 function bucketResearchSoldVelocity(
   soldRows: EbayResearchSoldRow[],
   requestTimestamp: string
@@ -541,9 +558,7 @@ function bucketResearchSoldVelocity(
       continue;
     }
 
-    const diffDays = Math.floor(
-      (requestDate.getTime() - soldDate.getTime()) / (24 * 60 * 60 * 1000)
-    );
+    const diffDays = calendarDayDiffKST(soldDate, requestDate);
     if (diffDays >= 0 && diffDays < 7) {
       recentSoldCount7d += 1;
     }
@@ -565,6 +580,35 @@ function bucketResearchSoldVelocity(
     notes.push(`ignored ${futureDated} future-dated research sold timestamps`);
   }
 
+  // PHASE 2: When no parseable sold dates exist, return null (not 0) so Airtable
+  // distinguishes "no sales in the last 5 days" from "we have no row-level evidence".
+  if (withSoldAt === 0) {
+    if (missingSoldAt > 0 || dateParseFailures > 0 || soldRows.length > 0) {
+      notes.push('no parseable sold dates — returning null to distinguish from actual zero sales');
+    }
+    return {
+      soldVelocity: {
+        day1Sold: null,
+        day2Sold: null,
+        day3Sold: null,
+        day4Sold: null,
+        day5Sold: null,
+        daysTracked: null,
+      },
+      recentSoldCount7d: null,
+      soldBucketDebug: {
+        status: 'skipped',
+        notes,
+        totalItemsExamined: soldRows.length,
+        withSoldAt,
+        missingSoldAt,
+        dateParseFailures,
+        futureDated,
+        bucketedItems: 0,
+      },
+    };
+  }
+
   return {
     soldVelocity: {
       day1Sold: buckets[0],
@@ -572,11 +616,11 @@ function bucketResearchSoldVelocity(
       day3Sold: buckets[2],
       day4Sold: buckets[3],
       day5Sold: buckets[4],
-      daysTracked: maxTrackedDay > 0 ? maxTrackedDay : withSoldAt > 0 ? 5 : null,
+      daysTracked: maxTrackedDay > 0 ? maxTrackedDay : 5,
     },
     recentSoldCount7d,
     soldBucketDebug: {
-      status: withSoldAt === 0 ? 'skipped' : notes.length > 0 ? 'partial' : 'ok',
+      status: notes.length > 0 ? 'partial' : 'ok',
       notes,
       totalItemsExamined: soldRows.length,
       withSoldAt,
