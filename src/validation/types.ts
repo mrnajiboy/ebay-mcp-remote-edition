@@ -155,6 +155,9 @@ export interface ValidationRunRequest {
   cadence: TrackingCadence;
   timestamp: string;
   sourceContext?: ValidationSourceContext;
+  providerOptions?: {
+    skipTwitter?: boolean;
+  };
   effectiveContext?: ValidationEffectiveContext;
   item: ValidationItem;
   validation: {

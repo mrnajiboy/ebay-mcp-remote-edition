@@ -699,8 +699,16 @@ export async function getSocialValidationSignals(
   const twitterToken = process.env.TWITTER_BEARER_TOKEN?.trim();
   const youtubeApiKey = process.env.YOUTUBE_API_KEY?.trim();
   const redditUserAgent = process.env.REDDIT_USER_AGENT?.trim() ?? DEFAULT_REDDIT_USER_AGENT;
+  const skipTwitter = request.providerOptions?.skipTwitter === true;
 
-  if (twitterToken) {
+  if (skipTwitter) {
+    result.twitterTrending = false;
+    debug.twitter = {
+      checked: false,
+      ...socialDebugFields,
+      note: 'X/Twitter recent-count lookup skipped by providerOptions.skipTwitter.',
+    };
+  } else if (twitterToken) {
     const twitterQueryPlanResolution = normalizeResolvedQueryPlan(
       buildResolvedTwitterQueryPlanSafe(request)
     );

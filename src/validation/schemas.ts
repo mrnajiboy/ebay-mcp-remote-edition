@@ -40,6 +40,10 @@ export const validationSourceContextSchema = z.object({
   eventRecordId: z.string().nullable().optional(),
 });
 
+export const validationProviderOptionsSchema = z.object({
+  skipTwitter: z.boolean().optional(),
+});
+
 const validationItemSchema = z.object({
   recordId: z.string().min(1).nullable(),
   name: z.string(),
@@ -62,6 +66,7 @@ export const validationRunRequestSchema = z
     cadence: trackingCadenceSchema,
     timestamp: z.string().datetime({ offset: true }),
     sourceContext: validationSourceContextSchema.optional(),
+    providerOptions: validationProviderOptionsSchema.optional(),
     item: validationItemSchema,
     validation: z.object({
       validationType: z.string(),
