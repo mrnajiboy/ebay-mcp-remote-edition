@@ -13,7 +13,7 @@ RUN corepack enable
 # 20+ min Chromium download on every uncached build.
 # Chromium + all system deps already included.
 # ──────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/playwright:v1.59.1-noble AS playwright
+FROM mcr.microsoft.com/playwright:v1.60.0-noble AS playwright
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
