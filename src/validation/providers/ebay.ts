@@ -99,12 +99,12 @@ export async function getEbayValidationSignals(
       : 'No valid browse query candidates were generated after sanitization and semantic filtering.',
     sampleSize: 0,
     soldVelocity: {
-      day1Sold: request.validation.currentMetrics.day1Sold,
-      day2Sold: request.validation.currentMetrics.day2Sold,
-      day3Sold: request.validation.currentMetrics.day3Sold,
-      day4Sold: request.validation.currentMetrics.day4Sold,
-      day5Sold: request.validation.currentMetrics.day5Sold,
-      daysTracked: request.validation.currentMetrics.daysTracked,
+      day1Sold: null,
+      day2Sold: null,
+      day3Sold: null,
+      day4Sold: null,
+      day5Sold: null,
+      daysTracked: null,
     },
     queryResolution,
   };
