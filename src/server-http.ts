@@ -903,7 +903,13 @@ export function createApp(): express.Application {
     const { fileURLToPath } = await import('url');
 
     const currentDir = dirname(fileURLToPath(import.meta.url));
-    const scriptPath = resolve(currentDir, '..', 'build', 'scripts', 'auto-renew-ebay-research-session.js');
+    const scriptPath = resolve(
+      currentDir,
+      '..',
+      'build',
+      'scripts',
+      'auto-renew-ebay-research-session.js'
+    );
 
     const child = spawn('node', [scriptPath], {
       env: {
@@ -965,12 +971,13 @@ export function createApp(): express.Application {
         serverLogger.info('[admin/research-session/auto-renew] Success', {
           marketplace,
           bytes: (r.validationPersistence as Record<string, unknown> | undefined)?.bytes,
-          cookieCount: (r.validationPersistence as Record<string, unknown> | undefined)?.cookieCount,
+          cookieCount: (r.validationPersistence as Record<string, unknown> | undefined)
+            ?.cookieCount,
         });
         res.json({
           ok: true,
           marketplace,
-          ...(parsedResult),
+          ...parsedResult,
         });
       } else {
         const errorMsg = parsedResult?.error ?? stderr.slice(-1000) ?? `Exit code ${exitCode}`;

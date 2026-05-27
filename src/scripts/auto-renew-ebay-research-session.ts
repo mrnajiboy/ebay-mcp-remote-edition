@@ -95,7 +95,9 @@ async function handleCaptchaChallenge(
     await injectCaptchaToken(page, captchaType, solution.token);
     console.log('[AutoRenew] Token injected successfully');
     // Give the page a moment to process the captcha token
-    await new Promise<void>((resolve) => { setTimeout(() => resolve(), 500) });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 500);
+    });
   } catch (error) {
     console.error(
       `[AutoRenew] Captcha solve failed: ${error instanceof Error ? error.message : String(error)}`
@@ -133,7 +135,9 @@ async function waitForSelector(
     );
     if (found) return true;
 
-    await new Promise<void>((resolve) => { setTimeout(() => resolve(), 500) });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 500);
+    });
   }
   return false;
 }
@@ -149,7 +153,9 @@ async function waitForUrlContains(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (page.url().includes(substring)) return true;
-    await new Promise<void>((resolve) => { setTimeout(() => resolve(), 500) });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 500);
+    });
   }
   return false;
 }
@@ -158,7 +164,9 @@ async function main(): Promise<void> {
   const username = getRequiredEnvVar('EBAY_USERNAME');
   const password = getRequiredEnvVar('EBAY_PASSWORD');
 
-  console.log(`[AutoRenew] Starting headless eBay Research session auto-renewal for marketplace ${marketplace}...`);
+  console.log(
+    `[AutoRenew] Starting headless eBay Research session auto-renewal for marketplace ${marketplace}...`
+  );
 
   const chromium = await loadChromium();
   const browser = await chromium.launch({
@@ -173,7 +181,9 @@ async function main(): Promise<void> {
     // ── Step 1: Navigate to sign-in page ────────────────────────────────────
     console.log('[AutoRenew] Navigating to eBay sign-in page...');
     await page.goto(EBAY_SIGNIN_URL, { waitUntil: 'domcontentloaded' });
-    await new Promise<void>((resolve) => { setTimeout(() => resolve(), 500) });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 500);
+    });
 
     // Auto-solve captcha if encountered on the sign-in page
     await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
@@ -196,13 +206,16 @@ async function main(): Promise<void> {
     for (const sel of userIdSelectors) {
       userIdField = await waitForSelector(page, sel, 2000);
       if (userIdField) {
-        await (page as unknown as CaptchaPage).evaluate(({ selector, value }: { selector: string; value: string }) => {
-          const el = document.querySelector<HTMLInputElement>(selector);
-          if (el) {
-            el.value = value;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        }, { selector: sel, value: username });
+        await (page as unknown as CaptchaPage).evaluate(
+          ({ selector, value }: { selector: string; value: string }) => {
+            const el = document.querySelector<HTMLInputElement>(selector);
+            if (el) {
+              el.value = value;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          },
+          { selector: sel, value: username }
+        );
         console.log(`[AutoRenew] Filled username using selector: ${sel}`);
         break;
       }
@@ -225,7 +238,9 @@ async function main(): Promise<void> {
       }, username);
     }
 
-    await new Promise<void>((resolve) => { setTimeout(() => resolve(), 500) });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 500);
+    });
 
     // ── Step 3: Click Continue / Sign-in button ──────────────────────────────
     console.log('[AutoRenew] Clicking continue/sign-in button...');
@@ -264,7 +279,9 @@ async function main(): Promise<void> {
     console.log('[AutoRenew] Waiting for password page or redirect...');
 
     // Wait a moment for the password page to load
-    await new Promise<void>((resolve) => { setTimeout(() => resolve(), 500) });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 500);
+    });
 
     // Check if we've been redirected to the research page already
     const currentUrl = page.url();
@@ -288,13 +305,16 @@ async function main(): Promise<void> {
       for (const sel of passwordSelectors) {
         passwordField = await waitForSelector(page, sel, 2000);
         if (passwordField) {
-          await (page as unknown as CaptchaPage).evaluate(({ selector, value }: { selector: string; value: string }) => {
-            const el = document.querySelector<HTMLInputElement>(selector);
-            if (el) {
-              el.value = value;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-          }, { selector: sel, value: password });
+          await (page as unknown as CaptchaPage).evaluate(
+            ({ selector, value }: { selector: string; value: string }) => {
+              const el = document.querySelector<HTMLInputElement>(selector);
+              if (el) {
+                el.value = value;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            },
+            { selector: sel, value: password }
+          );
           console.log(`[AutoRenew] Filled password using selector: ${sel}`);
           break;
         }
@@ -307,7 +327,9 @@ async function main(): Promise<void> {
         );
       }
 
-      await new Promise<void>((resolve) => { setTimeout(() => resolve(), 500) });
+      await new Promise<void>((resolve) => {
+        setTimeout(() => resolve(), 500);
+      });
 
       // Click sign-in submit
       console.log('[AutoRenew] Clicking sign-in submit...');
@@ -334,9 +356,7 @@ async function main(): Promise<void> {
       }
 
       if (!clickedSubmit) {
-        throw new Error(
-          'Could not find sign-in submit button on eBay password page.'
-        );
+        throw new Error('Could not find sign-in submit button on eBay password page.');
       }
     }
 
@@ -387,9 +407,7 @@ async function main(): Promise<void> {
 
     // Confirm we can access the research UI
     if (!confirmedUrl.includes('/sh/research')) {
-      throw new Error(
-        `Research UI access could not be confirmed (currentUrl=${confirmedUrl}).`
-      );
+      throw new Error(`Research UI access could not be confirmed (currentUrl=${confirmedUrl}).`);
     }
 
     // ── Step 7: Persist storage state ────────────────────────────────────────
