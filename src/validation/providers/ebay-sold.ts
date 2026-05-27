@@ -239,7 +239,11 @@ function bucketSoldVelocity(
   // PHASE 2: When no parseable sold dates exist, return null (not 0) so Airtable
   // distinguishes "no sales in the last 5 days" from "we have no row-level evidence".
   if (normalizedProducts.withSoldAt === 0) {
-    if (normalizedProducts.missingSoldAt > 0 || normalizedProducts.dateParseFailures > 0 || soldItems.length > 0) {
+    if (
+      normalizedProducts.missingSoldAt > 0 ||
+      normalizedProducts.dateParseFailures > 0 ||
+      soldItems.length > 0
+    ) {
       notes.push('no parseable sold dates — returning null to distinguish from actual zero sales');
     }
     return {
@@ -265,14 +269,11 @@ function bucketSoldVelocity(
     };
   }
 
-  if (
-    normalizedProducts.missingSoldAt > 0 || normalizedProducts.dateParseFailures > 0
-  ) {
+  if (normalizedProducts.missingSoldAt > 0 || normalizedProducts.dateParseFailures > 0) {
     notes.push('some sold records lacked parseable dates; bucketing uses available data only');
   }
 
-  const status: SoldBucketDebug['status'] =
-    notes.length > 0 ? 'partial' : 'ok';
+  const status: SoldBucketDebug['status'] = notes.length > 0 ? 'partial' : 'ok';
 
   return {
     soldVelocity: {

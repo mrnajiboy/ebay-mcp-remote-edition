@@ -22,6 +22,7 @@ export default tseslint.config(
       '.airtable/**',
       '**/*.mjs',
       'scripts/**',
+      'backups/**',
       // Generated OpenAPI types — do not lint auto-generated files
       'src/types/*.d.ts',
       'src/types/sell-apps/**',

@@ -213,3 +213,6 @@ bun.lock
 # External tool configs
 context7.json
 Taskfile.ymlpackage-lock.json
+
+# Backup directories
+backups/
