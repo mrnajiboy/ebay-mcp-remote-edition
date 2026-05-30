@@ -266,6 +266,7 @@ avgWatchersPerListing: null,
     }
 
     expect(getEbaySoldValidationSignalsMock).not.toHaveBeenCalled();
+    expect(result.writes?.soldListingsCount).toBe(2);
     expect(result.writes?.day1Sold).toBe(0);
     expect(result.writes?.day2Sold).toBe(0);
     expect(result.writes?.day3Sold).toBe(0);

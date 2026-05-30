@@ -240,6 +240,105 @@ describe('getTerapeakValidationSignals()', () => {
     expect(result.soldVelocity.daysTracked).toBe(5);
   });
 
+  it('maps row-level itemssold totals to soldListingsCount when aggregate Total sold is absent', async () => {
+    const { getTerapeakValidationSignals } = await import('../../../src/validation/providers/terapeak.js');
+    const request = buildRequest();
+
+    fetchEbayResearchMock.mockResolvedValue(
+      buildResearchResponse({
+        sold: {
+          totalSold: null,
+          soldRows: [
+            {
+              title: 'ATEEZ GOLDEN HOUR listing 1',
+              itemId: null,
+              url: null,
+              totalSold: 2,
+              lastSoldDate: '2026-04-10T00:00:00.000Z',
+            },
+          ],
+        },
+      })
+    );
+
+    const result = await getTerapeakValidationSignals({} as never, request);
+
+    expect(result.soldListingsCount).toBe(2);
+    expect(result.queryDebug.writeSources?.soldListingsCount).toBe('research_sold');
+  });
+
+  it('preserves fixture-backed Research aggregate fields and derives sold median from sold rows', async () => {
+    const { getTerapeakValidationSignals } = await import('../../../src/validation/providers/terapeak.js');
+    const request = buildRequest();
+
+    fetchEbayResearchMock.mockResolvedValue(
+      buildResearchResponse({
+        active: {
+          avgListingPriceUsd: 50.32,
+          listingPriceMinUsd: 14.32,
+          listingPriceMaxUsd: 92.9,
+          avgShippingUsd: 15.29,
+          freeShippingPct: 10,
+          totalActiveListings: 10,
+          promotedListingsPct: 60,
+          avgWatchersPerListing: 2.5,
+          watcherCoverageCount: 4,
+        },
+        sold: {
+          avgSoldPriceUsd: 71.51,
+          soldPriceMinUsd: 14.32,
+          soldPriceMaxUsd: 88.3,
+          avgShippingUsd: 8.45,
+          freeShippingPct: 71,
+          totalSold: 7,
+          sellThroughPct: 33.33,
+          totalSellers: 3,
+          totalItemSalesUsd: 500.57,
+          soldRows: [
+            {
+              title: 'BABYMONSTER CHOOM POB listing 1',
+              itemId: null,
+              url: null,
+              avgSoldPriceUsd: 14.32,
+              totalSold: 1,
+              lastSoldDate: '2026-04-10T00:00:00.000Z',
+            },
+            {
+              title: 'BABYMONSTER CHOOM POB listing 2',
+              itemId: null,
+              url: null,
+              avgSoldPriceUsd: 71.51,
+              totalSold: 5,
+              lastSoldDate: '2026-04-11T00:00:00.000Z',
+            },
+            {
+              title: 'BABYMONSTER CHOOM POB listing 3',
+              itemId: null,
+              url: null,
+              avgSoldPriceUsd: 88.3,
+              totalSold: 1,
+              lastSoldDate: '2026-04-12T00:00:00.000Z',
+            },
+          ],
+        },
+      })
+    );
+
+    const result = await getTerapeakValidationSignals({} as never, request);
+
+    expect(result.activeListingPriceMinUsd).toBe(14.32);
+    expect(result.activeListingPriceMaxUsd).toBe(92.9);
+    expect(result.activeFreeShippingPct).toBe(10);
+    expect(result.activePromotedListingsPct).toBe(60);
+    expect(result.activeWatcherCoverageCount).toBe(4);
+    expect(result.soldMedianPriceUsd).toBe(71.51);
+    expect(result.soldPriceMinUsd).toBe(14.32);
+    expect(result.soldPriceMaxUsd).toBe(88.3);
+    expect(result.soldFreeShippingPct).toBe(71);
+    expect(result.soldTotalSellers).toBe(3);
+    expect(result.queryDebug.writeSources?.soldMedianPriceUsd).toBe('research_sold_rows');
+  });
+
   it('retains previous POB research metrics when current-market selection fails', async () => {
     const { getTerapeakValidationSignals } = await import('../../../src/validation/providers/terapeak.js');
     const baseRequest = buildRequest();

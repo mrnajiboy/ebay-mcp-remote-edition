@@ -521,14 +521,23 @@ export async function runValidation(
     const mergedPreorderListings =
       normalizedTerapeakActiveListingsCount ?? ebay.preOrderListingsCount;
     const activeAvgPriceUsd = normalizedTerapeakActiveAvgPriceUsd ?? ebay.marketPriceUsd;
+    const activeListingPriceMinUsd = terapeak.activeListingPriceMinUsd;
+    const activeListingPriceMaxUsd = terapeak.activeListingPriceMaxUsd;
     const activeAvgShippingUsd = normalizedTerapeakActiveAvgShippingUsd ?? ebay.avgShippingCostUsd;
+    const activeFreeShippingPct = terapeak.activeFreeShippingPct;
+    const activePromotedListingsPct = terapeak.activePromotedListingsPct;
     const activeListingsCount = mergedPreorderListings;
     const activeAvgWatchersPerListing = mergedAvgWatchers;
+    const activeWatcherCoverageCount = terapeak.activeWatcherCoverageCount;
     const soldAvgPriceUsd = normalizedTerapeakSoldAvgPriceUsd ?? sold.soldAveragePriceUsd;
     const soldMedianPriceUsd = terapeak.soldMedianPriceUsd ?? sold.soldMedianPriceUsd;
+    const soldPriceMinUsd = terapeak.soldPriceMinUsd ?? sold.soldMinPriceUsd;
+    const soldPriceMaxUsd = terapeak.soldPriceMaxUsd ?? sold.soldMaxPriceUsd;
     const soldAvgShippingUsd = normalizedTerapeakSoldAvgShippingUsd;
+    const soldFreeShippingPct = terapeak.soldFreeShippingPct;
     const soldListingsCount = terapeak.soldListingsCount ?? sold.soldResultsCount;
     const soldSellThroughPct = terapeak.soldSellThroughPct;
+    const soldTotalSellers = terapeak.soldTotalSellers;
     const soldTotalRevenueUsd = terapeak.soldTotalRevenueUsd;
     const normalizedTerapeakMarketPriceUsd =
       terapeak.marketPriceUsd ?? normalizedTerapeakActiveAvgPriceUsd;
@@ -620,7 +629,12 @@ export async function runValidation(
       isPresent(normalizedTerapeakActiveAvgWatchersPerListing) ||
       isPresent(normalizedTerapeakActiveListingsCount) ||
       isPresent(normalizedTerapeakActiveAvgPriceUsd) ||
-      isPresent(normalizedTerapeakActiveAvgShippingUsd)
+      isPresent(normalizedTerapeakActiveAvgShippingUsd) ||
+      isPresent(activeListingPriceMinUsd) ||
+      isPresent(activeListingPriceMaxUsd) ||
+      isPresent(activeFreeShippingPct) ||
+      isPresent(activePromotedListingsPct) ||
+      isPresent(activeWatcherCoverageCount)
         ? 'ebay_research_ui'
         : ebay.preOrderListingsCount !== null ||
             ebay.marketPriceUsd !== null ||
@@ -708,11 +722,27 @@ export async function runValidation(
             ? (terapeak.queryDebug.writeSources?.activeAvgPriceUsd ?? 'research_active')
             : 'ebay'
           : 'none',
+      activeListingPriceMinUsd:
+        activeListingPriceMinUsd !== null
+          ? (terapeak.queryDebug.writeSources?.activeListingPriceMinUsd ?? 'research_active')
+          : 'none',
+      activeListingPriceMaxUsd:
+        activeListingPriceMaxUsd !== null
+          ? (terapeak.queryDebug.writeSources?.activeListingPriceMaxUsd ?? 'research_active')
+          : 'none',
       activeAvgShippingUsd:
         activeAvgShippingUsd !== null
           ? terapeak.activeAvgShippingUsd !== null
             ? (terapeak.queryDebug.writeSources?.activeAvgShippingUsd ?? 'research_active')
             : 'ebay'
+          : 'none',
+      activeFreeShippingPct:
+        activeFreeShippingPct !== null
+          ? (terapeak.queryDebug.writeSources?.activeFreeShippingPct ?? 'research_active')
+          : 'none',
+      activePromotedListingsPct:
+        activePromotedListingsPct !== null
+          ? (terapeak.queryDebug.writeSources?.activePromotedListingsPct ?? 'research_active')
           : 'none',
       activeListingsCount:
         activeListingsCount !== null
@@ -726,6 +756,10 @@ export async function runValidation(
             ? (terapeak.queryDebug.writeSources?.activeAvgWatchersPerListing ?? 'research_active')
             : 'ebay'
           : 'none',
+      activeWatcherCoverageCount:
+        activeWatcherCoverageCount !== null
+          ? (terapeak.queryDebug.writeSources?.activeWatcherCoverageCount ?? 'research_active_rows')
+          : 'none',
       soldAvgPriceUsd:
         soldAvgPriceUsd !== null
           ? isPresent(normalizedTerapeakSoldAvgPriceUsd)
@@ -737,7 +771,19 @@ export async function runValidation(
       soldMedianPriceUsd:
         soldMedianPriceUsd !== null
           ? terapeak.soldMedianPriceUsd !== null
-            ? (terapeak.queryDebug.writeSources?.soldMedianPriceUsd ?? 'research_sold')
+            ? (terapeak.queryDebug.writeSources?.soldMedianPriceUsd ?? 'research_sold_rows')
+            : 'sold'
+          : 'none',
+      soldPriceMinUsd:
+        soldPriceMinUsd !== null
+          ? terapeak.soldPriceMinUsd !== null
+            ? (terapeak.queryDebug.writeSources?.soldPriceMinUsd ?? 'research_sold')
+            : 'sold'
+          : 'none',
+      soldPriceMaxUsd:
+        soldPriceMaxUsd !== null
+          ? terapeak.soldPriceMaxUsd !== null
+            ? (terapeak.queryDebug.writeSources?.soldPriceMaxUsd ?? 'research_sold')
             : 'sold'
           : 'none',
       soldAvgShippingUsd:
@@ -745,6 +791,10 @@ export async function runValidation(
           ? isPresent(normalizedTerapeakSoldAvgShippingUsd)
             ? (terapeak.queryDebug.writeSources?.soldAvgShippingUsd ?? 'research_sold')
             : 'none'
+          : 'none',
+      soldFreeShippingPct:
+        soldFreeShippingPct !== null
+          ? (terapeak.queryDebug.writeSources?.soldFreeShippingPct ?? 'research_sold')
           : 'none',
       soldListingsCount:
         soldListingsCount !== null
@@ -755,6 +805,10 @@ export async function runValidation(
       soldSellThroughPct:
         soldSellThroughPct !== null
           ? (terapeak.queryDebug.writeSources?.soldSellThroughPct ?? 'research_sold')
+          : 'none',
+      soldTotalSellers:
+        soldTotalSellers !== null
+          ? (terapeak.queryDebug.writeSources?.soldTotalSellers ?? 'research_sold')
           : 'none',
       soldTotalRevenueUsd:
         soldTotalRevenueUsd !== null
@@ -817,15 +871,24 @@ export async function runValidation(
         avgWatchersPerListing: mergedAvgWatchers,
         preOrderListingsCount: mergedPreorderListings,
         activeAvgPriceUsd,
+        activeListingPriceMinUsd,
+        activeListingPriceMaxUsd,
         activeAvgShippingUsd,
+        activeFreeShippingPct,
+        activePromotedListingsPct,
         activeListingsCount,
         activeAvgWatchersPerListing,
+        activeWatcherCoverageCount,
         ...socialWrites,
         soldAvgPriceUsd,
         soldMedianPriceUsd,
+        soldPriceMinUsd,
+        soldPriceMaxUsd,
         soldAvgShippingUsd,
+        soldFreeShippingPct,
         soldListingsCount,
         soldSellThroughPct,
+        soldTotalSellers,
         soldTotalRevenueUsd,
         marketPriceUsd,
         avgShippingCostUsd: mergedAvgShippingCostUsd,

@@ -1460,11 +1460,18 @@ function parseCurrencyValue(value: string | null | undefined): number | null {
     return null;
   }
 
-  if (/free shipping/i.test(value)) {
+  const normalized = value.replace(/,/g, '').replace(/\s+/g, ' ').trim();
+  const currencyMatch = /[$£€]\s*(-?\d+(?:\.\d+)?)/u.exec(normalized);
+  if (currencyMatch?.[1]) {
+    const parsed = Number(currencyMatch[1]);
+    return Number.isFinite(parsed) ? round(parsed) : null;
+  }
+
+  if (/^free shipping$/iu.test(normalized)) {
     return 0;
   }
 
-  return parseNumberLike(value.replace(/\$/g, '').replace(/\+/g, ''));
+  return parseNumberLike(normalized.replace(/[$£€]/g, '').replace(/\+/g, ''));
 }
 
 function parsePercentValue(value: string | null | undefined): number | null {
@@ -1788,6 +1795,18 @@ function parseSoldRows(module: unknown): EbayResearchSoldRow[] {
   }));
 }
 
+function sumSoldRowTotals(rows: EbayResearchSoldRow[]): number | null {
+  const rowTotals = rows
+    .map((row) => row.totalSold)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+  if (rowTotals.length === 0) {
+    return null;
+  }
+
+  return rowTotals.reduce((sum, value) => sum + value, 0);
+}
+
 function aggregateHasUsefulValues(value: Record<string, number | null>): boolean {
   return Object.values(value).some((entry) => entry !== null);
 }
@@ -1825,8 +1844,350 @@ function parseSoldAggregate(module: unknown): Omit<EbayResearchResponse['sold'],
     sellThroughPct: parsePercentValue(findAggregateMetricText(module, ['Sell-through'])),
     totalSold: parseNumberLike(findAggregateMetricText(module, ['Total sold'])),
     totalSellers: parseNumberLike(findAggregateMetricText(module, ['Total sellers'])),
-    totalItemSalesUsd: parseCurrencyValue(findAggregateMetricText(module, ['Total item sales'])),
+    totalItemSalesUsd: parseCurrencyValue(
+      findAggregateMetricText(module, ['Total item sales', 'Item sales', 'Total Sales'])
+    ),
   };
+}
+
+const HTML_ENTITY_MAP: Record<string, string> = {
+  amp: '&',
+  apos: "'",
+  gt: '>',
+  lt: '<',
+  nbsp: ' ',
+  quot: '"',
+};
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function decodeHtmlText(value: string): string {
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/giu, (entity, body: string) => {
+    const normalized = body.toLowerCase();
+    if (normalized.startsWith('#x')) {
+      const parsed = Number.parseInt(normalized.slice(2), 16);
+      return Number.isFinite(parsed) ? String.fromCodePoint(parsed) : entity;
+    }
+    if (normalized.startsWith('#')) {
+      const parsed = Number.parseInt(normalized.slice(1), 10);
+      return Number.isFinite(parsed) ? String.fromCodePoint(parsed) : entity;
+    }
+    return HTML_ENTITY_MAP[normalized] ?? entity;
+  });
+}
+
+function stripHtmlText(value: string): string {
+  return decodeHtmlText(
+    value
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, ' ')
+      .replace(/<[^>]+>/gu, ' ')
+  )
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function isEbayResearchResultsHtml(payload: string): boolean {
+  return (
+    /\bresearch-table-row\b/iu.test(payload) ||
+    /\baggregate-metric\b/iu.test(payload) ||
+    /\b(?:active|sold)-tab-content\b/iu.test(payload)
+  );
+}
+
+function findHtmlElementEnd(source: string, startIndex: number, tagName: string): number | null {
+  const tagPattern = new RegExp(`</?${escapeRegex(tagName)}\\b[^>]*>`, 'giu');
+  tagPattern.lastIndex = startIndex;
+  let depth = 0;
+
+  for (;;) {
+    const match = tagPattern.exec(source);
+    if (!match) {
+      return null;
+    }
+
+    const tag = match[0];
+    const isClosing = tag.startsWith('</');
+    const isSelfClosing = tag.endsWith('/>');
+    if (isClosing) {
+      depth -= 1;
+      if (depth === 0) {
+        return tagPattern.lastIndex;
+      }
+    } else if (!isSelfClosing) {
+      depth += 1;
+    }
+  }
+}
+
+function extractHtmlBlocksByClass(
+  source: string,
+  className: string,
+  tagName = '[a-z0-9-]+'
+): string[] {
+  const classPattern = new RegExp(
+    `<(${tagName})\\b(?=[^>]*\\bclass=(["'])[^"']*${escapeRegex(className)}[^"']*\\2)[^>]*>`,
+    'giu'
+  );
+  const blocks: string[] = [];
+  const consumedStarts = new Set<number>();
+
+  for (;;) {
+    const match = classPattern.exec(source);
+    if (!match) {
+      break;
+    }
+
+    if (consumedStarts.has(match.index)) {
+      continue;
+    }
+    consumedStarts.add(match.index);
+
+    const matchedTag = match[1];
+    if (!matchedTag) {
+      continue;
+    }
+
+    const endIndex = findHtmlElementEnd(source, match.index, matchedTag);
+    if (endIndex !== null) {
+      blocks.push(source.slice(match.index, endIndex));
+    }
+  }
+
+  return blocks;
+}
+
+function extractFirstHtmlAttribute(
+  block: string,
+  tagName: string,
+  attributeName: string
+): string | null {
+  const pattern = new RegExp(
+    `<${escapeRegex(tagName)}\\b[^>]*\\b${escapeRegex(attributeName)}=(["'])(.*?)\\1`,
+    'isu'
+  );
+  const match = pattern.exec(block);
+  return match?.[2] ? decodeHtmlText(match[2]) : null;
+}
+
+function getHtmlCellBlock(rowHtml: string, classNames: string[]): string | null {
+  for (const className of classNames) {
+    const block = extractHtmlBlocksByClass(rowHtml, className, 'td')[0];
+    if (block) {
+      return block;
+    }
+  }
+  return null;
+}
+
+function getHtmlCellText(rowHtml: string, classNames: string[]): string | null {
+  const block = getHtmlCellBlock(rowHtml, classNames);
+  const text = block ? stripHtmlText(block) : '';
+  return text.length > 0 ? text : null;
+}
+
+function getHtmlCellCurrencyText(rowHtml: string, classNames: string[]): string | null {
+  const block = getHtmlCellBlock(rowHtml, classNames);
+  if (!block) {
+    return null;
+  }
+
+  const text = stripHtmlText(block);
+  const currencyMatch = /[$£€]\s*-?\d[\d,]*(?:\.\d+)?/u.exec(text);
+  return currencyMatch?.[0] ?? (text.length > 0 ? text : null);
+}
+
+function extractHtmlListingUrl(productCell: string): string | null {
+  const href = extractFirstHtmlAttribute(productCell, 'a', 'href');
+  return href && href.length > 0 ? href : null;
+}
+
+function extractHtmlItemId(url: string | null): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const itemPathMatch = /\/itm\/(\d+)/u.exec(url);
+  if (itemPathMatch?.[1]) {
+    return itemPathMatch[1];
+  }
+
+  const itemQueryMatch = /[?&]itemId=(\d+)/u.exec(url);
+  return itemQueryMatch?.[1] ?? null;
+}
+
+function extractHtmlListingTitle(productCell: string): string {
+  const imageAlt = extractFirstHtmlAttribute(productCell, 'img', 'alt');
+  if (imageAlt && imageAlt.trim().length > 0) {
+    return imageAlt.trim();
+  }
+
+  const titleBlock = extractHtmlBlocksByClass(
+    productCell,
+    'research-table-row__product-info-name'
+  )[0];
+  const title = titleBlock ? stripHtmlText(titleBlock) : stripHtmlText(productCell);
+  return title.length > 0 ? title : 'Untitled research listing';
+}
+
+function parseHtmlAggregateModule(
+  html: string,
+  moduleName: 'HtmlActiveAggregateModule' | 'HtmlSoldAggregateModule'
+): ParsedResearchModule | null {
+  const seenLabels = new Set<string>();
+  const metrics = extractHtmlBlocksByClass(html, 'aggregate-metric', 'section')
+    .map((block) => {
+      const valueBlock = extractHtmlBlocksByClass(block, 'metric-value', 'div')[0] ?? '';
+      const labelBlock = extractHtmlBlocksByClass(block, 'subtitle', 'span')[0] ?? '';
+      const header = stripHtmlText(labelBlock);
+      const value = stripHtmlText(valueBlock);
+      return { header, value };
+    })
+    .filter((metric) => {
+      if (metric.header.length === 0 || metric.value.length === 0) {
+        return false;
+      }
+      const key = compactComparableText(metric.header);
+      if (seenLabels.has(key)) {
+        return false;
+      }
+      seenLabels.add(key);
+      return true;
+    });
+
+  if (metrics.length === 0) {
+    return null;
+  }
+
+  return {
+    moduleName,
+    raw: {
+      _type: moduleName,
+      metrics,
+    },
+  };
+}
+
+function parseHtmlSoldRowsModule(html: string): ParsedResearchModule | null {
+  const results = extractHtmlBlocksByClass(html, 'research-table-row', 'tr')
+    .map((rowHtml) => {
+      const productCell = getHtmlCellBlock(rowHtml, ['research-table-row__product-info']);
+      if (!productCell) {
+        return null;
+      }
+
+      const url = extractHtmlListingUrl(productCell);
+      return {
+        listing: {
+          title: {
+            text: extractHtmlListingTitle(productCell),
+            action: url ? { URL: url } : undefined,
+          },
+          itemId: { value: extractHtmlItemId(url) },
+        },
+        avgsalesprice: {
+          avgsalesprice: getHtmlCellCurrencyText(rowHtml, ['research-table-row__avgSoldPrice']),
+        },
+        avgshipping: {
+          avgshipping: getHtmlCellCurrencyText(rowHtml, ['research-table-row__avgShippingCost']),
+        },
+        itemssold: getHtmlCellText(rowHtml, ['research-table-row__totalSoldCount']),
+        totalsales: getHtmlCellCurrencyText(rowHtml, ['research-table-row__totalSalesValue']),
+        datelastsold: getHtmlCellText(rowHtml, ['research-table-row__dateLastSold']),
+      };
+    })
+    .filter((row) => row !== null);
+
+  if (results.length === 0) {
+    return null;
+  }
+
+  return {
+    moduleName: 'HtmlSoldSearchResultsModule',
+    raw: {
+      _type: 'HtmlSoldSearchResultsModule',
+      results,
+    },
+  };
+}
+
+function parseHtmlActiveRowsModule(html: string): ParsedResearchModule | null {
+  const results = extractHtmlBlocksByClass(html, 'research-table-row', 'tr')
+    .map((rowHtml) => {
+      const productCell = getHtmlCellBlock(rowHtml, ['research-table-row__product-info']);
+      if (!productCell) {
+        return null;
+      }
+
+      const url = extractHtmlListingUrl(productCell);
+      return {
+        listing: {
+          title: {
+            text: extractHtmlListingTitle(productCell),
+            action: url ? { URL: url } : undefined,
+          },
+          itemId: { value: extractHtmlItemId(url) },
+        },
+        listingPrice: {
+          listingPrice: getHtmlCellText(rowHtml, [
+            'research-table-row__listingPrice',
+            'research-table-row__price',
+            'research-table-row__currentPrice',
+          ]),
+          listingShipping: getHtmlCellText(rowHtml, [
+            'research-table-row__shippingCost',
+            'research-table-row__shipping',
+            'research-table-row__listingShipping',
+          ]),
+        },
+        watchers: getHtmlCellText(rowHtml, [
+          'research-table-row__watchers',
+          'research-table-row__watchCount',
+        ]),
+        promoted: getHtmlCellText(rowHtml, [
+          'research-table-row__promoted',
+          'research-table-row__promotedListing',
+        ]),
+        startDate: getHtmlCellText(rowHtml, [
+          'research-table-row__startDate',
+          'research-table-row__dateStarted',
+        ]),
+      };
+    })
+    .filter((row) => row !== null);
+
+  if (results.length === 0) {
+    return null;
+  }
+
+  return {
+    moduleName: 'HtmlActiveSearchResultsModule',
+    raw: {
+      _type: 'HtmlActiveSearchResultsModule',
+      results,
+    },
+  };
+}
+
+function parseResearchHtmlModules(payload: string): ParsedResearchModule[] {
+  if (!isEbayResearchResultsHtml(payload)) {
+    return [];
+  }
+
+  const modules: (ParsedResearchModule | null)[] = [];
+  for (const soldHtml of extractHtmlBlocksByClass(payload, 'sold-tab-content', 'div')) {
+    modules.push(parseHtmlAggregateModule(soldHtml, 'HtmlSoldAggregateModule'));
+    modules.push(parseHtmlSoldRowsModule(soldHtml));
+  }
+
+  for (const activeHtml of extractHtmlBlocksByClass(payload, 'active-tab-content', 'div')) {
+    modules.push(parseHtmlAggregateModule(activeHtml, 'HtmlActiveAggregateModule'));
+    modules.push(parseHtmlActiveRowsModule(activeHtml));
+  }
+
+  return modules.filter((module): module is ParsedResearchModule => module !== null);
 }
 
 function buildWatcherMetrics(rows: EbayResearchListingRow[]): {
@@ -1946,6 +2307,16 @@ function consumeJsonChunks(buffer: string): {
 }
 
 function parseResearchModules(payload: string): ParsedResearchPayload {
+  const htmlModules = parseResearchHtmlModules(payload);
+  if (htmlModules.length > 0) {
+    return {
+      modules: htmlModules,
+      modulesSeen: uniqueStrings(htmlModules.map((module) => module.moduleName)),
+      moduleCount: htmlModules.length,
+      parseErrors: [],
+    };
+  }
+
   const modules: ParsedResearchModule[] = [];
   const parseErrors: string[] = [];
   let buffer = '';
@@ -2021,6 +2392,16 @@ function detectEbayResearchAntiBotResponse(
   const looksLikeHtml =
     normalizedContentType.includes('text/html') ||
     /^\s*<!doctype\s+html|^\s*<html[\s>]/iu.test(payload);
+
+  if (looksLikeHtml && isEbayResearchResultsHtml(payload)) {
+    return {
+      detected: false,
+      kind: null,
+      title,
+      contentType,
+      matchedSignals: [],
+    };
+  }
 
   if (/pardon\s+our\s+interruption/iu.test(payload)) {
     matchedSignals.push('pardon_our_interruption');
@@ -2937,13 +3318,13 @@ export async function fetchEbayResearch(
     ]);
 
     const activeAggregateModule = activeResult.modules.find((module) =>
-      /ResearchAggregateModule/i.test(module.moduleName)
+      /(?:ResearchAggregateModule|HtmlActiveAggregateModule)/i.test(module.moduleName)
     )?.raw;
     const activeSearchResultsModule = activeResult.modules.find((module) =>
       /ActiveSearchResultsModule/i.test(module.moduleName)
     )?.raw;
     const soldAggregateModule = soldResult.modules.find((module) =>
-      /ResearchAggregateModule/i.test(module.moduleName)
+      /(?:ResearchAggregateModule|HtmlSoldAggregateModule)/i.test(module.moduleName)
     )?.raw;
     const soldSearchResultsModule = soldResult.modules.find((module) =>
       /SearchResultsModule/i.test(module.moduleName)
@@ -2954,6 +3335,7 @@ export async function fetchEbayResearch(
     const watcherMetrics = buildWatcherMetrics(activeRows);
     const soldAggregate = parseSoldAggregate(soldAggregateModule);
     const soldRows = parseSoldRows(soldSearchResultsModule);
+    const totalSold = soldAggregate.totalSold ?? sumSoldRowTotals(soldRows);
     const activeAggregateExtracted = aggregateHasUsefulValues({
       avgListingPriceUsd: activeAggregate.avgListingPriceUsd,
       listingPriceMinUsd: activeAggregate.listingPriceMinUsd,
@@ -2970,7 +3352,7 @@ export async function fetchEbayResearch(
       avgShippingUsd: soldAggregate.avgShippingUsd,
       freeShippingPct: soldAggregate.freeShippingPct,
       sellThroughPct: soldAggregate.sellThroughPct,
-      totalSold: soldAggregate.totalSold,
+      totalSold,
       totalSellers: soldAggregate.totalSellers,
       totalItemSalesUsd: soldAggregate.totalItemSalesUsd,
     });
@@ -3002,6 +3384,7 @@ export async function fetchEbayResearch(
       },
       sold: {
         ...soldAggregate,
+        totalSold,
         soldRows,
       },
       debug: {

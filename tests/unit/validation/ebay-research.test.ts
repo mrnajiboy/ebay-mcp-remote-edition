@@ -341,6 +341,25 @@ describe('fetchEbayResearch()', () => {
     expect(response.sold.soldRows).toHaveLength(1);
   });
 
+  it('derives SOLD aggregate total from row itemssold when the aggregate module omits Total sold', async () => {
+    process.env.EBAY_RESEARCH_COOKIES_JSON = JSON.stringify([
+      { name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' },
+    ]);
+
+    const { fetchEbayResearch } = await import('../../../src/validation/providers/ebay-research.js');
+
+    axiosGetMock
+      .mockResolvedValueOnce({ status: 200, data: buildValidationPayload() })
+      .mockResolvedValueOnce({ status: 200, data: buildActivePayload() })
+      .mockResolvedValueOnce({ status: 200, data: buildSoldPayload() });
+
+    const response = await fetchEbayResearch('ATEEZ GOLDEN HOUR');
+
+    expect(response.sold.soldRows).toHaveLength(1);
+    expect(response.sold.soldRows[0]?.totalSold).toBe(2);
+    expect(response.sold.totalSold).toBe(2);
+  });
+
   it('parses the ACTIVE and SOLD research fixtures with usable module debug output', async () => {
     process.env.EBAY_RESEARCH_COOKIES_JSON = JSON.stringify([
       { name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' },
@@ -423,6 +442,50 @@ describe('fetchEbayResearch()', () => {
         'ActiveSearchResultsModule',
         'SearchResultsModule',
       ])
+    );
+  });
+
+  it('parses current Seller Hub SOLD HTML when Research API returns rendered markup', async () => {
+    process.env.EBAY_RESEARCH_COOKIES_JSON = JSON.stringify([
+      { name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' },
+    ]);
+
+    const soldHtmlFixture = await readFixture('./fixtures/ebay-research-sold-seller-hub-html.html');
+    const { fetchEbayResearch } = await import('../../../src/validation/providers/ebay-research.js');
+
+    axiosGetMock
+      .mockResolvedValueOnce({ status: 200, data: buildValidationPayload() })
+      .mockResolvedValueOnce({ status: 200, data: buildActivePayload() })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: soldHtmlFixture,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+
+    const response = await fetchEbayResearch('ateez light stick strap');
+
+    expect(response.debug.antiBotDetection).toBeUndefined();
+    expect(response.debug.soldParse?.parseErrors).toEqual([]);
+    expect(response.debug.soldParse?.modulesSeen).toEqual(
+      expect.arrayContaining(['HtmlSoldAggregateModule', 'HtmlSoldSearchResultsModule'])
+    );
+    expect(response.debug.soldParse?.aggregateExtracted).toBe(true);
+    expect(response.debug.soldParse?.rowCount).toBe(2);
+    expect(response.sold.avgSoldPriceUsd).toBe(57.66);
+    expect(response.sold.soldPriceMinUsd).toBe(20);
+    expect(response.sold.soldPriceMaxUsd).toBe(75.09);
+    expect(response.sold.freeShippingPct).toBe(50);
+    expect(response.sold.totalSold).toBe(3);
+    expect(response.sold.soldRows[0]).toEqual(
+      expect.objectContaining({
+        title: 'ATEEZ OFFICIAL LIGHT STICK VER.3 w/Strap,8 PhotoCard,POB,GIFT FANLIGHT GOODS MD',
+        itemId: '168339550804',
+        avgSoldPriceUsd: 74.83,
+        avgShippingUsd: 1,
+        totalSold: 2,
+        totalRevenueUsd: 149.66,
+        lastSoldDate: 'May 30, 2026',
+      })
     );
   });
 
