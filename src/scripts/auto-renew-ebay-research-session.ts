@@ -217,106 +217,270 @@ function getRequiredEnvVar(name: string): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyPage = any;
 
-function parseHasTextSelector(selector: string): { cssSelector: string; text: string } | null {
-  const match = /^(.*):has-text\(["'](.+)["']\)$/.exec(selector);
-  if (!match) {
-    return null;
-  }
-
-  return {
-    cssSelector: match[1]?.trim() || '*',
-    text: match[2]?.trim().toLowerCase() ?? '',
-  };
-}
-
-async function elementExists(page: AnyPage, selector: string): Promise<boolean> {
-  const hasTextSelector = parseHasTextSelector(selector);
-  if (hasTextSelector) {
-    return await (page as unknown as CaptchaPage).evaluate(
-      ({ cssSelector, text }: { cssSelector: string; text: string }) => {
-        const elements = document.querySelectorAll<HTMLElement>(cssSelector);
-        return Array.from(elements).some((element) => {
-          const elementText =
-            `${element.innerText ?? ''} ${(element as HTMLInputElement).value ?? ''}`
-              .trim()
-              .toLowerCase();
-          return element.offsetParent !== null && elementText.includes(text);
-        });
-      },
-      hasTextSelector
-    );
-  }
-
-  try {
-    return await (page as unknown as CaptchaPage).evaluate(
-      (sel: string) => document.querySelector(sel) !== null,
-      selector
-    );
-  } catch (error) {
-    console.warn(
-      `[AutoRenew] Ignoring invalid selector ${selector}: ${error instanceof Error ? error.message : String(error)}`
-    );
+/**
+ * Check if an element is visible (not hidden, not zero-size, not display:none).
+ */
+function isVisible(el: HTMLElement): boolean {
+  if (el.offsetParent === null && el.tagName !== 'INPUT') {
     return false;
   }
-}
-
-async function clickSelector(page: AnyPage, selector: string): Promise<boolean> {
-  const hasTextSelector = parseHasTextSelector(selector);
-  if (hasTextSelector) {
-    return await (page as unknown as CaptchaPage).evaluate(
-      ({ cssSelector, text }: { cssSelector: string; text: string }) => {
-        const elements = document.querySelectorAll<HTMLElement>(cssSelector);
-        for (const element of Array.from(elements)) {
-          const elementText =
-            `${element.innerText ?? ''} ${(element as HTMLInputElement).value ?? ''}`
-              .trim()
-              .toLowerCase();
-          if (element.offsetParent !== null && elementText.includes(text)) {
-            element.click();
-            return true;
-          }
-        }
-        return false;
-      },
-      hasTextSelector
-    );
-  }
-
-  try {
-    return await (page as unknown as CaptchaPage).evaluate((s: string) => {
-      const el = document.querySelector<HTMLElement>(s);
-      if (!el) {
-        return false;
-      }
-      el.click();
-      return true;
-    }, selector);
-  } catch (error) {
-    console.warn(
-      `[AutoRenew] Ignoring invalid selector ${selector}: ${error instanceof Error ? error.message : String(error)}`
-    );
-    return false;
-  }
+  const style = window.getComputedStyle(el);
+  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
 }
 
 /**
- * Wait for an element to appear on the page with a timeout.
+ * Find a VISIBLE form input matching a given strategy.
+ * Strategies: name, id, attribute, placeholder, aria-label, type, test-id.
+ * Returns the element ref index (-1 if not found).
  */
-async function waitForSelector(
+async function findVisibleInput(
   page: AnyPage,
-  selector: string,
-  timeoutMs = 15_000
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const found = await elementExists(page, selector);
-    if (found) return true;
-
-    await new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), 500);
-    });
+  strategy: {
+    name?: string;
+    id?: string;
+    type?: string;
+    placeholderPattern?: string;
+    ariaLabelPattern?: string;
+    testId?: string;
+    attribute?: { key: string; value: string };
   }
-  return false;
+): Promise<HTMLInputElement | null> {
+  return await (page as unknown as CaptchaPage).evaluate((strat) => {
+    const inputs = document.querySelectorAll<HTMLInputElement>('input');
+    for (const input of Array.from(inputs)) {
+      if (input.type === 'hidden' || input.type === 'submit' || input.type === 'checkbox') {
+        continue;
+      }
+      if (!isVisible(input)) {
+        continue;
+      }
+      let match = false;
+      if (input.name?.toLowerCase() === strat.name?.toLowerCase()) {
+        match = true;
+      }
+      if (input.id?.toLowerCase() === strat.id?.toLowerCase()) {
+        match = true;
+      }
+      if (strat.type && input.type === strat.type) {
+        match = true;
+      }
+      if (strat.placeholderPattern && input.placeholder) {
+        if (input.placeholder.toLowerCase().includes(strat.placeholderPattern.toLowerCase())) {
+          match = true;
+        }
+      }
+      if (strat.ariaLabelPattern && input.getAttribute('aria-label')) {
+        if (
+          input
+            .getAttribute('aria-label')!
+            .toLowerCase()
+            .includes(strat.ariaLabelPattern.toLowerCase())
+        ) {
+          match = true;
+        }
+      }
+      if (strat.testId) {
+        const tid =
+          input.getAttribute('data-testid') ||
+          input.getAttribute('data-test-id') ||
+          input.getAttribute('data-playwright-test-trigger-id');
+        if (tid?.toLowerCase() === strat.testId.toLowerCase()) {
+          match = true;
+        }
+      }
+      if (strat.attribute && input.getAttribute(strat.attribute.key) === strat.attribute?.value) {
+        match = true;
+      }
+      if (match) {
+        return input;
+      }
+    }
+    return null;
+  }, strategy);
+}
+
+/**
+ * Find a VISIBLE button matching text content or selector.
+ */
+async function findVisibleButton(page: AnyPage, labelPattern: string): Promise<HTMLElement | null> {
+  return await (page as unknown as CaptchaPage).evaluate((pattern) => {
+    const buttons = document.querySelectorAll<HTMLElement>(
+      'button, input[type="submit"], [role="button"]'
+    );
+    for (const btn of Array.from(buttons)) {
+      if (!isVisible(btn)) continue;
+      const text = `${btn.innerText ?? ''} ${(btn as HTMLInputElement).value ?? ''}`.trim();
+      if (text.toLowerCase().includes(pattern.toLowerCase())) {
+        return btn;
+      }
+    }
+    return null;
+  }, labelPattern);
+}
+
+/**
+ * Fill a form field by trying multiple strategies in order.
+ */
+async function fillField(
+  page: AnyPage,
+  value: string,
+  strategies: {
+    name?: string;
+    id?: string;
+    type?: string;
+    placeholderPattern?: string;
+    ariaLabelPattern?: string;
+    testId?: string;
+    attribute?: { key: string; value: string };
+  }[]
+): Promise<string | null> {
+  for (const strat of strategies) {
+    const el = await findVisibleInput(page, strat);
+    if (el !== null) {
+      const stratDesc = JSON.stringify(strat);
+      await (page as unknown as CaptchaPage).evaluate(
+        ({ value: val, index }: { value: string; index: number }) => {
+          const inputs = document.querySelectorAll<HTMLInputElement>('input');
+          let count = 0;
+          for (const input of Array.from(inputs)) {
+            if (input.type === 'hidden' || input.type === 'submit' || input.type === 'checkbox')
+              continue;
+            if (input.offsetParent === null && input.tagName !== 'INPUT') continue;
+            const style = window.getComputedStyle(input);
+            if (style.display === 'none' || style.visibility === 'hidden') continue;
+            count++;
+            if (count === index + 1) {
+              input.focus();
+              input.value = val;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              break;
+            }
+          }
+        },
+        { value, index: -1 }
+      );
+      // Actually fill via focused element approach — use page.type equivalent
+      // by focusing then typing
+      await (page as unknown as CaptchaPage).evaluate((val: string) => {
+        const active = document.activeElement as HTMLInputElement;
+        if (active?.tagName === 'INPUT') {
+          active.value = val;
+          active.dispatchEvent(new Event('input', { bubbles: true }));
+          active.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }, value);
+      // Use Playwright's native fill if available
+      try {
+        const pwPage = page;
+        if (pwPage.fill) {
+          // Try to fill using Playwright's native method on the first visible matching input
+          const selector = buildSelectorFromStrat(strat);
+          if (selector) {
+            await pwPage.fill(selector, value);
+            return stratDesc;
+          }
+        }
+      } catch {
+        // Playwright fill not available or failed — DOM fill already done above
+      }
+      // Fallback: use Playwright's native type if available
+      try {
+        const pwPage = page;
+        if (pwPage.locator) {
+          const selector = buildSelectorFromStrat(strat);
+          if (selector) {
+            await pwPage.locator(selector).first().fill(value);
+            return stratDesc;
+          }
+        }
+      } catch {
+        // Already filled via DOM above
+      }
+      return stratDesc;
+    }
+  }
+  return null;
+}
+
+function buildSelectorFromStrat(strat: Record<string, unknown>): string | null {
+  if (strat.id) return `input#${strat.id as string}`;
+  if (strat.name) return `input[name="${strat.name as string}"]`;
+  if (strat.type) return `input[type="${strat.type as string}"]`;
+  if (strat.testId) return `[data-testid="${strat.testId as string}"]`;
+  if (strat.attribute) {
+    const attr = strat.attribute as { key: string; value: string };
+    return `[${attr.key}="${attr.value}"]`;
+  }
+  return null;
+}
+
+/**
+ * Click a button by trying text content matching, then CSS selectors.
+ */
+async function clickButton(page: AnyPage, labelPatterns: string[]): Promise<string | null> {
+  // Try Playwright native click first
+  try {
+    const pwPage = page;
+    if (pwPage.getByRole) {
+      for (const label of labelPatterns) {
+        try {
+          await pwPage.getByRole('button', { name: label }).first().click();
+          return `getByRole('button', '${label}')`;
+        } catch {
+          // try next
+        }
+      }
+    }
+  } catch {
+    // getByRole not available
+  }
+
+  // Fallback: DOM-based click
+  for (const pattern of labelPatterns) {
+    const btn = await findVisibleButton(page, pattern);
+    if (btn !== null) {
+      await (page as unknown as CaptchaPage).evaluate((pattern: string) => {
+        const buttons = document.querySelectorAll<HTMLElement>(
+          'button, input[type="submit"], [role="button"]'
+        );
+        for (const btn of Array.from(buttons)) {
+          const style = window.getComputedStyle(btn);
+          if (style.display === 'none' || style.visibility === 'hidden') continue;
+          const text = `${btn.innerText ?? ''} ${(btn as HTMLInputElement).value ?? ''}`.trim();
+          if (text.toLowerCase().includes(pattern.toLowerCase())) {
+            btn.click();
+            break;
+          }
+        }
+      }, pattern);
+      return `button containing "${pattern}"`;
+    }
+  }
+
+  // Try classic CSS selectors as last resort
+  const classicSelectors = [
+    '#signin-continue-btn',
+    'button#signin-continue-btn',
+    '#sgnBt',
+    'button#sgnBt',
+    'button[type="submit"]',
+    'input[type="submit"]',
+  ];
+  for (const sel of classicSelectors) {
+    try {
+      await (page as unknown as CaptchaPage).evaluate((s: string) => {
+        const el = document.querySelector<HTMLElement>(s);
+        if (el && el.offsetParent !== null) {
+          el.click();
+        }
+      }, sel);
+      return sel;
+    } catch {
+      // skip
+    }
+  }
+  return null;
 }
 
 /**
@@ -380,183 +544,227 @@ async function main(): Promise<void> {
     // ── Step 1: Navigate to sign-in page ────────────────────────────────────
     console.log('[AutoRenew] Navigating to eBay sign-in page...');
     await page.goto(EBAY_SIGNIN_URL, { waitUntil: 'domcontentloaded' });
+
+    // Wait for page to fully render (captcha + sign-in form)
     await new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), 500);
+      setTimeout(() => resolve(), 3_000);
     });
 
     // Auto-solve captcha if encountered on the sign-in page
     await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
 
-    // ── Step 2: Fill username ────────────────────────────────────────────────
-    console.log('[AutoRenew] Filling username...');
+    // Wait after captcha solve for sign-in form to render
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 3_000);
+    });
 
-    // Try multiple possible selectors for the user ID field
-    const userIdSelectors = [
-      'input[name="userid"]',
-      'input#userid',
-      'input[data-testid="userid"]',
-      'input[data-test-id="userid"]',
-      'input[aria-label*="user" i]',
-      'input[placeholder*="Email" i]',
-      'input[placeholder*="user" i]',
-    ];
-
-    let userIdField = false;
-    for (const sel of userIdSelectors) {
-      userIdField = await waitForSelector(page, sel, 2000);
-      if (userIdField) {
-        await (page as unknown as CaptchaPage).evaluate(
-          ({ selector, value }: { selector: string; value: string }) => {
-            const el = document.querySelector<HTMLInputElement>(selector);
-            if (el) {
-              el.value = value;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-          },
-          { selector: sel, value: username }
-        );
-        console.log(`[AutoRenew] Filled username using selector: ${sel}`);
-        break;
+    // Verify we're on a sign-in page (not already logged in or on captcha)
+    const afterCaptchaUrl = page.url();
+    if (!afterCaptchaUrl.includes('signin.ebay.com') && !afterCaptchaUrl.includes('SignIn')) {
+      if (afterCaptchaUrl.includes('/sh/research')) {
+        console.log('[AutoRenew] Already at research page — session was still valid!');
+        // Skip to Step 5
+      } else {
+        console.warn(`[AutoRenew] Unexpected URL after captcha: ${afterCaptchaUrl}`);
       }
     }
 
-    if (!userIdField) {
-      // Fallback: try to find ANY visible input field on the page
-      console.log('[AutoRenew] Trying fallback — filling first visible text input...');
-      await (page as unknown as CaptchaPage).evaluate((val: string) => {
-        const inputs = document.querySelectorAll<HTMLInputElement>(
-          'input:not([type="hidden"]):not([type="submit"]):not([type="checkbox"])'
-        );
-        for (const input of Array.from(inputs)) {
-          if (input.offsetParent !== null) {
-            input.value = val;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            break;
+    // ── Step 2: Fill username/email ─────────────────────────────────────────
+    console.log('[AutoRenew] Filling username/email...');
+
+    // Strategy-based field finding — no CSS i-flag, proper visibility check
+    const userIdStrategies = [
+      // Classic eBay selectors
+      { name: 'userid' },
+      { id: 'userid' },
+      { testId: 'userid' },
+      // Modern eBay sign-in (two-step flow)
+      { placeholderPattern: 'Email' },
+      { placeholderPattern: 'email' },
+      { placeholderPattern: 'User ID' },
+      { placeholderPattern: 'user' },
+      { ariaLabelPattern: 'email' },
+      { ariaLabelPattern: 'user' },
+      { ariaLabelPattern: 'Email or mobile' },
+      // Generic fallbacks
+      { type: 'email' },
+    ];
+
+    const filledUser = await fillField(page, username, userIdStrategies);
+    if (filledUser) {
+      console.log(`[AutoRenew] Filled username using strategy: ${filledUser}`);
+    } else {
+      // Debug: dump all visible inputs
+      console.warn('[AutoRenew] Username field not found. Dumping visible form fields...');
+      await (page as unknown as CaptchaPage)
+        .evaluate(() => {
+          const inputs = document.querySelectorAll<HTMLInputElement>('input');
+          const results: string[] = [];
+          for (const input of Array.from(inputs)) {
+            if (input.type === 'hidden') continue;
+            const style = window.getComputedStyle(input);
+            if (style.display === 'none' || style.visibility === 'hidden') continue;
+            results.push(
+              `[${input.type}] id=${input.id} name=${input.name} placeholder="${input.placeholder}" ` +
+                `aria-label="${input.getAttribute('aria-label') ?? ''}" ` +
+                `data-testid="${input.getAttribute('data-testid') ?? ''}"`
+            );
           }
-        }
-      }, username);
+          return results;
+        })
+        .then((fields: string[]) => {
+          console.warn(`[AutoRenew] Visible inputs on page: ${JSON.stringify(fields)}`);
+        });
+
+      throw new Error(
+        'Could not find username/email field on eBay sign-in page. ' +
+          'The page structure may have changed. See visible inputs above. Manual bootstrap required.'
+      );
     }
 
+    // Wait for field to register
     await new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), 500);
+      setTimeout(() => resolve(), 1_500);
     });
 
     // ── Step 3: Click Continue / Sign-in button ──────────────────────────────
     console.log('[AutoRenew] Clicking continue/sign-in button...');
-    const continueSelectors = [
-      '#signin-continue-btn',
-      'button#signin-continue-btn',
-      'button#sgnBt',
-      'button[data-testid="sgnBt"]',
-      'button[type="submit"]',
-      'input#sgnBt',
-      'input[type="submit"]',
-      'button:has-text("Continue")',
-      'button:has-text("Sign in")',
-    ];
 
-    let clickedSignIn = false;
-    for (const sel of continueSelectors) {
-      const found = await waitForSelector(page, sel, 2000);
-      if (found) {
-        const clicked = await clickSelector(page, sel);
-        if (clicked) {
-          console.log(`[AutoRenew] Clicked: ${sel}`);
-          clickedSignIn = true;
-          break;
-        }
-      }
-    }
+    const clickedStep3 = await clickButton(page, [
+      'Continue',
+      'Sign in',
+      'Next',
+      'Log in',
+      'Continue to sign in',
+    ]);
 
-    if (!clickedSignIn) {
+    if (clickedStep3) {
+      console.log(`[AutoRenew] Clicked button: ${clickedStep3}`);
+    } else {
       throw new Error(
         'Could not find sign-in/continue button on eBay sign-in page. ' +
           'The page structure may have changed. Manual bootstrap required.'
       );
     }
 
-    // ── Step 4: Wait for password field (or research page if no password step) ──
+    // ── Step 4: Wait for password page (two-step eBay sign-in) ──────────────
     console.log('[AutoRenew] Waiting for password page or redirect...');
 
-    // Wait a moment for the password page to load
+    // Wait for page transition — eBay two-step sign-in redirects to password page
+    // Give it up to 15 seconds for the page to navigate
+    const passwordPageLoaded = await waitForUrlContains(page, 'pass', 15_000);
+
+    // Check current URL to determine next step
+    let urlAfterContinue = page.url();
+
+    // Auto-solve captcha if encountered after clicking continue
+    await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
     await new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), 500);
+      setTimeout(() => resolve(), 3_000);
     });
 
-    // Check if we've been redirected to the research page already
-    const currentUrl = page.url();
-    if (currentUrl.includes('/sh/research')) {
+    urlAfterContinue = page.url();
+
+    if (urlAfterContinue.includes('/sh/research')) {
       console.log('[AutoRenew] Already at research page — session may have been valid!');
-    } else if (currentUrl.includes('signin.ebay.com') || currentUrl.includes('SignIn')) {
-      // Still on sign-in page — need to fill password
+    } else if (
+      passwordPageLoaded ||
+      urlAfterContinue.includes('pass') ||
+      urlAfterContinue.includes('password') ||
+      urlAfterContinue.includes('SignIn') ||
+      urlAfterContinue.includes('signin')
+    ) {
+      // On password page — fill password
       console.log('[AutoRenew] On password page — filling password...');
 
-      // Auto-solve captcha if encountered
-      await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
+      // Wait for password field to be visible
+      await new Promise<void>((resolve) => {
+        setTimeout(() => resolve(), 2_000);
+      });
 
-      const passwordSelectors = [
-        'input[name="pass"]',
-        'input#pass',
-        'input[data-testid="pass"]',
-        'input[type="password"]',
+      const passwordStrategies = [
+        // Classic eBay selectors
+        { name: 'pass' },
+        { id: 'pass' },
+        { testId: 'pass' },
+        // Modern eBay
+        { placeholderPattern: 'Password' },
+        { ariaLabelPattern: 'password' },
+        // Generic
+        { type: 'password' },
       ];
 
-      let passwordField = false;
-      for (const sel of passwordSelectors) {
-        passwordField = await waitForSelector(page, sel, 2000);
-        if (passwordField) {
-          await (page as unknown as CaptchaPage).evaluate(
-            ({ selector, value }: { selector: string; value: string }) => {
-              const el = document.querySelector<HTMLInputElement>(selector);
-              if (el) {
-                el.value = value;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-              }
-            },
-            { selector: sel, value: password }
-          );
-          console.log(`[AutoRenew] Filled password using selector: ${sel}`);
-          break;
-        }
-      }
+      const filledPass = await fillField(page, password, passwordStrategies);
+      if (filledPass) {
+        console.log(`[AutoRenew] Filled password using strategy: ${filledPass}`);
+      } else {
+        // Debug: dump all visible inputs
+        console.warn('[AutoRenew] Password field not found. Dumping visible form fields...');
+        await (page as unknown as CaptchaPage)
+          .evaluate(() => {
+            const inputs = document.querySelectorAll<HTMLInputElement>('input');
+            const results: string[] = [];
+            for (const input of Array.from(inputs)) {
+              if (input.type === 'hidden') continue;
+              const style = window.getComputedStyle(input);
+              if (style.display === 'none' || style.visibility === 'hidden') continue;
+              results.push(
+                `[${input.type}] id=${input.id} name=${input.name} placeholder="${input.placeholder}" ` +
+                  `aria-label="${input.getAttribute('aria-label') ?? ''}" ` +
+                  `data-testid="${input.getAttribute('data-testid') ?? ''}"`
+              );
+            }
+            return results;
+          })
+          .then((fields: string[]) => {
+            console.warn(`[AutoRenew] Visible inputs on password page: ${JSON.stringify(fields)}`);
+          });
 
-      if (!passwordField) {
         throw new Error(
           'Could not find password field on eBay sign-in page. ' +
-            'Auto-renewal requires manual inspection of the sign-in flow.'
+            'Auto-renewal requires manual inspection of the sign-in flow. See visible inputs above.'
         );
       }
 
       await new Promise<void>((resolve) => {
-        setTimeout(() => resolve(), 500);
+        setTimeout(() => resolve(), 1_500);
       });
 
       // Click sign-in submit
       console.log('[AutoRenew] Clicking sign-in submit...');
-      const signInSelectors = [
-        'button#sgnBt',
-        'button[data-testid="sgnBt"]',
-        'button[type="submit"]',
-        'input#sgnBt',
-        'input[type="submit"]',
-      ];
+      const clickedSubmit = await clickButton(page, ['Sign in', 'Sign In', 'Log in', 'Continue']);
 
-      let clickedSubmit = false;
-      for (const sel of signInSelectors) {
-        const found = await waitForSelector(page, sel, 2000);
-        if (found) {
-          const clicked = await clickSelector(page, sel);
-          if (clicked) {
-            console.log(`[AutoRenew] Clicked sign-in: ${sel}`);
-            clickedSubmit = true;
-            break;
-          }
-        }
-      }
-
-      if (!clickedSubmit) {
+      if (clickedSubmit) {
+        console.log(`[AutoRenew] Clicked sign-in: ${clickedSubmit}`);
+      } else {
         throw new Error('Could not find sign-in submit button on eBay password page.');
       }
+    } else {
+      // Neither research page nor password page — something unexpected
+      console.warn(`[AutoRenew] Unexpected URL after clicking continue: ${urlAfterContinue}`);
+      // Dump visible inputs for debugging
+      await (page as unknown as CaptchaPage)
+        .evaluate(() => {
+          const inputs = document.querySelectorAll<HTMLInputElement>('input');
+          const results: string[] = [];
+          for (const input of Array.from(inputs)) {
+            if (input.type === 'hidden') continue;
+            const style = window.getComputedStyle(input);
+            if (style.display === 'none' || style.visibility === 'hidden') continue;
+            results.push(
+              `[${input.type}] id=${input.id} name=${input.name} placeholder="${input.placeholder}"`
+            );
+          }
+          return results;
+        })
+        .then((fields: string[]) => {
+          console.warn(`[AutoRenew] Visible inputs: ${JSON.stringify(fields)}`);
+        });
+
+      throw new Error(
+        `Unexpected page after clicking continue: ${urlAfterContinue}. ` +
+          'Manual bootstrap may be required.'
+      );
     }
 
     // ── Step 5: Wait for redirect to research page ───────────────────────────
