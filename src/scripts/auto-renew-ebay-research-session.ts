@@ -217,21 +217,141 @@ function getRequiredEnvVar(name: string): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyPage = any;
 
-/**
- * Check if an element is visible (not hidden, not zero-size, not display:none).
- */
-function isVisible(el: HTMLElement): boolean {
-  if (el.offsetParent === null && el.tagName !== 'INPUT') {
-    return false;
-  }
-  const style = window.getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+// Strategy type for field finding
+interface FieldStrategy {
+  name?: string;
+  id?: string;
+  type?: string;
+  placeholderPattern?: string;
+  ariaLabelPattern?: string;
+  testId?: string;
+  attribute?: { key: string; value: string };
 }
 
 /**
- * Find a VISIBLE form input matching a given strategy.
+ * Dump visible form inputs across ALL frames (main + iframes) for debugging.
+ */
+async function dumpVisibleInputs(page: AnyPage, label: string): Promise<void> {
+  const allFrames = getAllFrames(page);
+  const results: string[] = [];
+
+  for (const frame of allFrames) {
+    try {
+      const frameUrl = frame.url?.() ?? 'unknown';
+      const shortUrl = frameUrl.length > 80 ? frameUrl.substring(0, 80) + '…' : frameUrl;
+      const fields = await frame.evaluate(() => {
+        const inputs = [];
+        for (const el of document.querySelectorAll<HTMLInputElement>('input')) {
+          if (el.type === 'hidden') continue;
+          const style = window.getComputedStyle(el);
+          if (style.display === 'none' || style.visibility === 'hidden') continue;
+          inputs.push(
+            `[${el.type}] id=${el.id} name=${el.name} placeholder="${el.placeholder}" ` +
+              `aria-label="${el.getAttribute('aria-label') ?? ''}" ` +
+              `data-testid="${el.getAttribute('data-testid') ?? ''}"`
+          );
+        }
+        return inputs;
+      });
+      if (fields.length > 0) {
+        results.push(`[${shortUrl}] ${JSON.stringify(fields)}`);
+      }
+    } catch {
+      // Cross-origin frame — skip
+    }
+  }
+
+  if (results.length > 0) {
+    console.warn(`[AutoRenew] ${label}: ${results.join('\n')}`);
+  } else {
+    console.warn(
+      `[AutoRenew] ${label}: No visible inputs found across ${allFrames.length} frame(s).`
+    );
+  }
+
+  // Also dump frame list for context
+  const frameList = allFrames.map((f: AnyPage) => {
+    const url = f.url?.() ?? 'unknown';
+    return url.length > 100 ? url.substring(0, 100) + '…' : url;
+  });
+  console.warn(`[AutoRenew] Frames: ${JSON.stringify(frameList)}`);
+}
+
+/**
+ * Get all frames (main + child iframes) from a Playwright page.
+ */
+function getAllFrames(page: AnyPage): AnyPage[] {
+  const frames = page.frames;
+  if (Array.isArray(frames)) {
+    // Filter out detached/blank frames
+    return frames.filter((f: AnyPage) => {
+      const url = f.url?.() ?? '';
+      return url && !url.startsWith('about:blank') && !url.startsWith('devtools://');
+    });
+  }
+  return [page];
+}
+
+/**
+ * Build a CSS selector from a strategy for Playwright locator.
+ */
+function buildInputSelector(strat: Record<string, unknown>): string | null {
+  if (strat.id) return `input#${strat.id as string}`;
+  if (strat.name) return `input[name="${strat.name as string}"]`;
+  if (strat.type) return `input[type="${strat.type as string}"]`;
+  if (strat.testId) return `[data-testid="${strat.testId as string}"]`;
+  if (strat.attribute) {
+    const attr = strat.attribute as { key: string; value: string };
+    return `[${attr.key}="${attr.value}"]`;
+  }
+  return null;
+}
+
+/**
+ * Find a matching visible input in a single frame using Playwright locator.
+ * Returns { frame, elementHandle } or null.
+ */
+async function findInputInFrame(
+  frame: AnyPage,
+  strat: Record<string, unknown>
+): Promise<{ frame: AnyPage; selector: string } | null> {
+  const selector = buildInputSelector(strat);
+  if (!selector) return null;
+
+  try {
+    const locator = frame.locator(selector);
+    const count = await locator.count();
+    for (let i = 0; i < count; i++) {
+      const el = locator.nth(i);
+      const isVisible = await el.isVisible().catch(() => false);
+      if (!isVisible) continue;
+
+      // Verify via DOM that it matches all strategy criteria
+      const domOk = await frame
+        .evaluate((sel: string) => {
+          const input = document.querySelector<HTMLElement>(sel);
+          if (!input) return false;
+          const style = window.getComputedStyle(input);
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          if (input.getAttribute('type') === 'hidden') return false;
+          return true;
+        }, selector)
+        .catch(() => false);
+
+      if (domOk) {
+        return { frame, selector };
+      }
+    }
+  } catch {
+    // Frame may be cross-origin or not ready
+  }
+  return null;
+}
+
+/**
+ * Find a VISIBLE form input matching a given strategy across ALL frames (main + iframes).
  * Strategies: name, id, attribute, placeholder, aria-label, type, test-id.
- * Returns the element ref index (-1 if not found).
+ * Falls back to placeholder/aria-label pattern matching via DOM evaluation.
  */
 async function findVisibleInput(
   page: AnyPage,
@@ -244,82 +364,201 @@ async function findVisibleInput(
     testId?: string;
     attribute?: { key: string; value: string };
   }
-): Promise<HTMLInputElement | null> {
-  return await (page as unknown as CaptchaPage).evaluate((strat) => {
-    const inputs = document.querySelectorAll<HTMLInputElement>('input');
-    for (const input of Array.from(inputs)) {
-      if (input.type === 'hidden' || input.type === 'submit' || input.type === 'checkbox') {
-        continue;
-      }
-      if (!isVisible(input)) {
-        continue;
-      }
-      let match = false;
-      if (input.name?.toLowerCase() === strat.name?.toLowerCase()) {
-        match = true;
-      }
-      if (input.id?.toLowerCase() === strat.id?.toLowerCase()) {
-        match = true;
-      }
-      if (strat.type && input.type === strat.type) {
-        match = true;
-      }
-      if (strat.placeholderPattern && input.placeholder) {
-        if (input.placeholder.toLowerCase().includes(strat.placeholderPattern.toLowerCase())) {
-          match = true;
+): Promise<{ frame: AnyPage; selector: string } | null> {
+  const allFrames = getAllFrames(page);
+
+  // Try each frame
+  for (const frame of allFrames) {
+    const result = await findInputInFrame(frame, strategy);
+    if (result) return result;
+  }
+
+  // Fallback: pattern-based search (placeholder, aria-label) across all frames
+  if (strategy.placeholderPattern || strategy.ariaLabelPattern || strategy.type) {
+    for (const frame of allFrames) {
+      try {
+        const found = await frame.evaluate((strat: FieldStrategy) => {
+          const inputs = document.querySelectorAll<HTMLInputElement>('input');
+          for (const input of Array.from(inputs)) {
+            if (input.type === 'hidden' || input.type === 'submit' || input.type === 'checkbox') {
+              continue;
+            }
+            const style = window.getComputedStyle(input);
+            if (style.display === 'none' || style.visibility === 'hidden') continue;
+            if (strat.type && input.type !== strat.type) continue;
+            if (strat.placeholderPattern && input.placeholder) {
+              if (
+                input.placeholder.toLowerCase().includes(strat.placeholderPattern.toLowerCase())
+              ) {
+                return input;
+              }
+            }
+            if (strat.ariaLabelPattern && input.getAttribute('aria-label')) {
+              if (
+                input
+                  .getAttribute('aria-label')!
+                  .toLowerCase()
+                  .includes(strat.ariaLabelPattern.toLowerCase())
+              ) {
+                return input;
+              }
+            }
+            if (strat.testId) {
+              const tid =
+                input.getAttribute('data-testid') ||
+                input.getAttribute('data-test-id') ||
+                input.getAttribute('data-playwright-test-trigger-id');
+              if (tid?.toLowerCase() === strat.testId.toLowerCase()) {
+                return input;
+              }
+            }
+            if (
+              strat.attribute &&
+              input.getAttribute(strat.attribute.key) === strat.attribute?.value
+            ) {
+              return input;
+            }
+          }
+          return null;
+        }, strategy);
+        if (found) {
+          // Use a unique attribute to identify the element
+          const attrs = await frame.evaluate((strat: FieldStrategy) => {
+            const inputs = document.querySelectorAll<HTMLInputElement>('input');
+            for (const input of Array.from(inputs)) {
+              if (input.type === 'hidden' || input.type === 'submit' || input.type === 'checkbox')
+                continue;
+              const style = window.getComputedStyle(input);
+              if (style.display === 'none' || style.visibility === 'hidden') continue;
+              let match = false;
+              if (strat.type && input.type === strat.type) match = true;
+              if (strat.placeholderPattern && input.placeholder) {
+                if (
+                  input.placeholder.toLowerCase().includes(strat.placeholderPattern.toLowerCase())
+                ) {
+                  match = true;
+                }
+              }
+              if (strat.ariaLabelPattern && input.getAttribute('aria-label')) {
+                if (
+                  input
+                    .getAttribute('aria-label')!
+                    .toLowerCase()
+                    .includes(strat.ariaLabelPattern.toLowerCase())
+                ) {
+                  match = true;
+                }
+              }
+              if (match) {
+                return {
+                  id: input.id || null,
+                  name: input.name || null,
+                  type: input.type || null,
+                  placeholder: input.placeholder || null,
+                  ariaLabel: input.getAttribute('aria-label') || null,
+                  testId:
+                    input.getAttribute('data-testid') ||
+                    input.getAttribute('data-test-id') ||
+                    input.getAttribute('data-playwright-test-trigger-id') ||
+                    null,
+                };
+              }
+            }
+            return null;
+          }, strategy);
+          if (attrs) {
+            // Build selector from attrs
+            let sel: string | null = null;
+            if (attrs.id) sel = `input#${attrs.id}`;
+            else if (attrs.name) sel = `input[name="${attrs.name}"]`;
+            else if (attrs.placeholder) sel = `input[placeholder="${attrs.placeholder}"]`;
+            else if (attrs.ariaLabel) sel = `input[aria-label="${attrs.ariaLabel}"]`;
+            else if (attrs.testId) sel = `[data-testid="${attrs.testId}"]`;
+            else if (attrs.type) sel = `input[type="${attrs.type}"]`;
+            if (sel) return { frame, selector: sel };
+          }
         }
-      }
-      if (strat.ariaLabelPattern && input.getAttribute('aria-label')) {
-        if (
-          input
-            .getAttribute('aria-label')!
-            .toLowerCase()
-            .includes(strat.ariaLabelPattern.toLowerCase())
-        ) {
-          match = true;
-        }
-      }
-      if (strat.testId) {
-        const tid =
-          input.getAttribute('data-testid') ||
-          input.getAttribute('data-test-id') ||
-          input.getAttribute('data-playwright-test-trigger-id');
-        if (tid?.toLowerCase() === strat.testId.toLowerCase()) {
-          match = true;
-        }
-      }
-      if (strat.attribute && input.getAttribute(strat.attribute.key) === strat.attribute?.value) {
-        match = true;
-      }
-      if (match) {
-        return input;
+      } catch {
+        // Cross-origin frame
       }
     }
-    return null;
-  }, strategy);
+  }
+
+  return null;
 }
 
 /**
- * Find a VISIBLE button matching text content or selector.
+ * Find a VISIBLE button matching text content or selector across all frames.
  */
-async function findVisibleButton(page: AnyPage, labelPattern: string): Promise<HTMLElement | null> {
-  return await (page as unknown as CaptchaPage).evaluate((pattern) => {
-    const buttons = document.querySelectorAll<HTMLElement>(
-      'button, input[type="submit"], [role="button"]'
-    );
-    for (const btn of Array.from(buttons)) {
-      if (!isVisible(btn)) continue;
-      const text = `${btn.innerText ?? ''} ${(btn as HTMLInputElement).value ?? ''}`.trim();
-      if (text.toLowerCase().includes(pattern.toLowerCase())) {
-        return btn;
+async function findVisibleButton(
+  page: AnyPage,
+  labelPattern: string
+): Promise<{ frame: AnyPage; selector: string; text: string } | null> {
+  const allFrames = getAllFrames(page);
+
+  for (const frame of allFrames) {
+    // Try Playwright getByRole first
+    try {
+      const locator = frame.getByRole('button', { name: labelPattern, exact: false });
+      const count = await locator.count();
+      if (count > 0) {
+        const el = locator.first();
+        const isVisible = await el.isVisible().catch(() => false);
+        if (isVisible) {
+          const text = await el.textContent().catch(() => '');
+          const selector = await el
+            .evaluate((el: HTMLElement) => {
+              if (el.id) return `${el.tagName.toLowerCase()}#${el.id}`;
+              if (el.className && typeof el.className === 'string') {
+                return `${el.tagName.toLowerCase()}.${el.className.split(' ')[0]}`;
+              }
+              return el.tagName.toLowerCase();
+            })
+            .catch(() => 'button');
+          return { frame, selector: selector as string, text: text?.trim() || labelPattern };
+        }
       }
+    } catch {
+      // getByRole not available
     }
-    return null;
-  }, labelPattern);
+
+    // DOM-based fallback within frame
+    try {
+      const found = await frame.evaluate((pattern: string) => {
+        const buttons = document.querySelectorAll<HTMLElement>(
+          'button, input[type="submit"], [role="button"]'
+        );
+        for (const btn of Array.from(buttons)) {
+          const style = window.getComputedStyle(btn);
+          if (style.display === 'none' || style.visibility === 'hidden') continue;
+          const text = `${btn.innerText ?? ''} ${(btn as HTMLInputElement).value ?? ''}`.trim();
+          if (text.toLowerCase().includes(pattern.toLowerCase())) {
+            return {
+              text,
+              id: btn.id || null,
+              tagName: btn.tagName,
+              className: btn.className || '',
+            };
+          }
+        }
+        return null;
+      }, labelPattern);
+      if (found) {
+        let sel = 'button';
+        if (found.id) sel = `${found.tagName.toLowerCase()}#${found.id}`;
+        return { frame, selector: sel, text: found.text };
+      }
+    } catch {
+      // Cross-origin frame
+    }
+  }
+
+  return null;
 }
 
 /**
  * Fill a form field by trying multiple strategies in order.
+ * Searches across ALL frames (main + iframes) and fills in the correct frame.
  */
 async function fillField(
   page: AnyPage,
@@ -335,91 +574,63 @@ async function fillField(
   }[]
 ): Promise<string | null> {
   for (const strat of strategies) {
-    const el = await findVisibleInput(page, strat);
-    if (el !== null) {
+    const result = await findVisibleInput(page, strat);
+    if (result) {
+      const { frame, selector } = result;
       const stratDesc = JSON.stringify(strat);
-      await (page as unknown as CaptchaPage).evaluate(
-        ({ value: val, index }: { value: string; index: number }) => {
-          const inputs = document.querySelectorAll<HTMLInputElement>('input');
-          let count = 0;
-          for (const input of Array.from(inputs)) {
-            if (input.type === 'hidden' || input.type === 'submit' || input.type === 'checkbox')
-              continue;
-            if (input.offsetParent === null && input.tagName !== 'INPUT') continue;
-            const style = window.getComputedStyle(input);
-            if (style.display === 'none' || style.visibility === 'hidden') continue;
-            count++;
-            if (count === index + 1) {
+
+      // Fill using Playwright's frame-aware locator.fill()
+      try {
+        await frame.locator(selector).first().fill(value);
+        return stratDesc;
+      } catch (e) {
+        console.warn(
+          `[AutoRenew] frame.locator.fill failed: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
+
+      // Fallback: DOM-based fill in the correct frame
+      try {
+        await frame.evaluate(
+          (sel: string, val: string) => {
+            const input = document.querySelector<HTMLElement>(sel) as HTMLInputElement | null;
+            if (input?.tagName === 'INPUT') {
               input.focus();
               input.value = val;
               input.dispatchEvent(new Event('input', { bubbles: true }));
               input.dispatchEvent(new Event('change', { bubbles: true }));
-              break;
             }
-          }
-        },
-        { value, index: -1 }
-      );
-      // Actually fill via focused element approach — use page.type equivalent
-      // by focusing then typing
-      await (page as unknown as CaptchaPage).evaluate((val: string) => {
-        const active = document.activeElement as HTMLInputElement;
-        if (active?.tagName === 'INPUT') {
-          active.value = val;
-          active.dispatchEvent(new Event('input', { bubbles: true }));
-          active.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      }, value);
-      // Use Playwright's native fill if available
-      try {
-        const pwPage = page;
-        if (pwPage.fill) {
-          // Try to fill using Playwright's native method on the first visible matching input
-          const selector = buildSelectorFromStrat(strat);
-          if (selector) {
-            await pwPage.fill(selector, value);
-            return stratDesc;
-          }
-        }
-      } catch {
-        // Playwright fill not available or failed — DOM fill already done above
+          },
+          selector,
+          value
+        );
+        return stratDesc;
+      } catch (e) {
+        console.warn(
+          `[AutoRenew] frame.evaluate fill failed: ${e instanceof Error ? e.message : String(e)}`
+        );
       }
-      // Fallback: use Playwright's native type if available
+
+      // Last resort: clear and type
       try {
-        const pwPage = page;
-        if (pwPage.locator) {
-          const selector = buildSelectorFromStrat(strat);
-          if (selector) {
-            await pwPage.locator(selector).first().fill(value);
-            return stratDesc;
-          }
-        }
+        await frame.locator(selector).first().click();
+        await frame.locator(selector).first().press('Control+a');
+        await frame.locator(selector).first().press('Backspace');
+        await frame.locator(selector).first().fill(value);
+        return stratDesc;
       } catch {
-        // Already filled via DOM above
+        // skip
       }
-      return stratDesc;
     }
   }
   return null;
 }
 
-function buildSelectorFromStrat(strat: Record<string, unknown>): string | null {
-  if (strat.id) return `input#${strat.id as string}`;
-  if (strat.name) return `input[name="${strat.name as string}"]`;
-  if (strat.type) return `input[type="${strat.type as string}"]`;
-  if (strat.testId) return `[data-testid="${strat.testId as string}"]`;
-  if (strat.attribute) {
-    const attr = strat.attribute as { key: string; value: string };
-    return `[${attr.key}="${attr.value}"]`;
-  }
-  return null;
-}
-
 /**
- * Click a button by trying text content matching, then CSS selectors.
+ * Click a button by trying text content matching across all frames, then CSS selectors.
  */
 async function clickButton(page: AnyPage, labelPatterns: string[]): Promise<string | null> {
-  // Try Playwright native click first
+  // Try Playwright native click on main page first
   try {
     const pwPage = page;
     if (pwPage.getByRole) {
@@ -436,29 +647,32 @@ async function clickButton(page: AnyPage, labelPatterns: string[]): Promise<stri
     // getByRole not available
   }
 
-  // Fallback: DOM-based click
+  // Use frame-aware findVisibleButton
   for (const pattern of labelPatterns) {
-    const btn = await findVisibleButton(page, pattern);
-    if (btn !== null) {
-      await (page as unknown as CaptchaPage).evaluate((pattern: string) => {
-        const buttons = document.querySelectorAll<HTMLElement>(
-          'button, input[type="submit"], [role="button"]'
-        );
-        for (const btn of Array.from(buttons)) {
-          const style = window.getComputedStyle(btn);
-          if (style.display === 'none' || style.visibility === 'hidden') continue;
-          const text = `${btn.innerText ?? ''} ${(btn as HTMLInputElement).value ?? ''}`.trim();
-          if (text.toLowerCase().includes(pattern.toLowerCase())) {
-            btn.click();
-            break;
-          }
+    const btnResult = await findVisibleButton(page, pattern);
+    if (btnResult) {
+      const { frame, selector } = btnResult;
+      // Try Playwright click in the correct frame
+      try {
+        await frame.locator(selector).first().click();
+        return `button "${pattern}" (selector: ${selector})`;
+      } catch {
+        // Fallback: DOM click in frame
+        try {
+          await frame.evaluate((sel: string) => {
+            const el = document.querySelector<HTMLElement>(sel);
+            if (el) el.click();
+          }, selector);
+          return `button "${pattern}" (DOM click)`;
+        } catch {
+          // skip
         }
-      }, pattern);
-      return `button containing "${pattern}"`;
+      }
     }
   }
 
-  // Try classic CSS selectors as last resort
+  // Try classic CSS selectors across all frames as last resort
+  const allFrames = getAllFrames(page);
   const classicSelectors = [
     '#signin-continue-btn',
     'button#signin-continue-btn',
@@ -467,17 +681,14 @@ async function clickButton(page: AnyPage, labelPatterns: string[]): Promise<stri
     'button[type="submit"]',
     'input[type="submit"]',
   ];
-  for (const sel of classicSelectors) {
-    try {
-      await (page as unknown as CaptchaPage).evaluate((s: string) => {
-        const el = document.querySelector<HTMLElement>(s);
-        if (el && el.offsetParent !== null) {
-          el.click();
-        }
-      }, sel);
-      return sel;
-    } catch {
-      // skip
+  for (const frame of allFrames) {
+    for (const sel of classicSelectors) {
+      try {
+        await frame.locator(sel).first().click();
+        return sel;
+      } catch {
+        // skip
+      }
     }
   }
   return null;
@@ -594,27 +805,9 @@ async function main(): Promise<void> {
     if (filledUser) {
       console.log(`[AutoRenew] Filled username using strategy: ${filledUser}`);
     } else {
-      // Debug: dump all visible inputs
+      // Debug: dump all visible inputs across all frames
       console.warn('[AutoRenew] Username field not found. Dumping visible form fields...');
-      await (page as unknown as CaptchaPage)
-        .evaluate(() => {
-          const inputs = document.querySelectorAll<HTMLInputElement>('input');
-          const results: string[] = [];
-          for (const input of Array.from(inputs)) {
-            if (input.type === 'hidden') continue;
-            const style = window.getComputedStyle(input);
-            if (style.display === 'none' || style.visibility === 'hidden') continue;
-            results.push(
-              `[${input.type}] id=${input.id} name=${input.name} placeholder="${input.placeholder}" ` +
-                `aria-label="${input.getAttribute('aria-label') ?? ''}" ` +
-                `data-testid="${input.getAttribute('data-testid') ?? ''}"`
-            );
-          }
-          return results;
-        })
-        .then((fields: string[]) => {
-          console.warn(`[AutoRenew] Visible inputs on page: ${JSON.stringify(fields)}`);
-        });
+      await dumpVisibleInputs(page, 'Username inputs dump');
 
       throw new Error(
         'Could not find username/email field on eBay sign-in page. ' +
@@ -698,27 +891,9 @@ async function main(): Promise<void> {
       if (filledPass) {
         console.log(`[AutoRenew] Filled password using strategy: ${filledPass}`);
       } else {
-        // Debug: dump all visible inputs
+        // Debug: dump all visible inputs across all frames
         console.warn('[AutoRenew] Password field not found. Dumping visible form fields...');
-        await (page as unknown as CaptchaPage)
-          .evaluate(() => {
-            const inputs = document.querySelectorAll<HTMLInputElement>('input');
-            const results: string[] = [];
-            for (const input of Array.from(inputs)) {
-              if (input.type === 'hidden') continue;
-              const style = window.getComputedStyle(input);
-              if (style.display === 'none' || style.visibility === 'hidden') continue;
-              results.push(
-                `[${input.type}] id=${input.id} name=${input.name} placeholder="${input.placeholder}" ` +
-                  `aria-label="${input.getAttribute('aria-label') ?? ''}" ` +
-                  `data-testid="${input.getAttribute('data-testid') ?? ''}"`
-              );
-            }
-            return results;
-          })
-          .then((fields: string[]) => {
-            console.warn(`[AutoRenew] Visible inputs on password page: ${JSON.stringify(fields)}`);
-          });
+        await dumpVisibleInputs(page, 'Password inputs dump');
 
         throw new Error(
           'Could not find password field on eBay sign-in page. ' +
@@ -742,24 +917,8 @@ async function main(): Promise<void> {
     } else {
       // Neither research page nor password page — something unexpected
       console.warn(`[AutoRenew] Unexpected URL after clicking continue: ${urlAfterContinue}`);
-      // Dump visible inputs for debugging
-      await (page as unknown as CaptchaPage)
-        .evaluate(() => {
-          const inputs = document.querySelectorAll<HTMLInputElement>('input');
-          const results: string[] = [];
-          for (const input of Array.from(inputs)) {
-            if (input.type === 'hidden') continue;
-            const style = window.getComputedStyle(input);
-            if (style.display === 'none' || style.visibility === 'hidden') continue;
-            results.push(
-              `[${input.type}] id=${input.id} name=${input.name} placeholder="${input.placeholder}"`
-            );
-          }
-          return results;
-        })
-        .then((fields: string[]) => {
-          console.warn(`[AutoRenew] Visible inputs: ${JSON.stringify(fields)}`);
-        });
+      // Dump visible inputs across all frames for debugging
+      await dumpVisibleInputs(page, 'Unexpected page inputs dump');
 
       throw new Error(
         `Unexpected page after clicking continue: ${urlAfterContinue}. ` +
