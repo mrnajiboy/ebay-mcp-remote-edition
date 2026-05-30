@@ -2,7 +2,12 @@ import axios from 'axios';
 import { getBaseUrl } from '@/config/environment.js';
 import type { EbaySellerApi } from '@/api/index.js';
 import type { EbayValidationSignals, ValidationRunRequest } from '../types.js';
-import { buildResolvedBrowseQueryPlan } from './query-utils.js';
+import { getValidationEffectiveContext } from '../effective-context.js';
+import {
+  buildResolvedBrowseQueryPlan,
+  extractSemanticTokens,
+  titleAlreadyContainsArtist,
+} from './query-utils.js';
 
 interface BrowseItemSummary {
   title?: string;
@@ -42,6 +47,93 @@ function median(values: number[]): number | null {
     return (sorted[middle - 1] + sorted[middle]) / 2;
   }
   return sorted[middle];
+}
+
+const MAX_UNVERIFIED_BROWSE_TOTAL = 1000;
+
+function tokenPattern(token: string): RegExp {
+  return new RegExp(
+    `(^|[^\\p{L}\\p{N}])${token.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}([^\\p{L}\\p{N}]|$)`,
+    'iu'
+  );
+}
+
+function getBrowseEvidenceContext(request: ValidationRunRequest): {
+  primaryArtist: string | null;
+  requiredTokens: string[];
+} {
+  const effectiveContext = getValidationEffectiveContext(request);
+  const primaryArtist =
+    effectiveContext.searchArtist ?? request.item.canonicalArtists[0]?.trim() ?? null;
+  const contextPhrase =
+    effectiveContext.sourceType === 'event'
+      ? [effectiveContext.searchEvent, effectiveContext.searchItem, effectiveContext.searchLocation]
+          .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+          .join(' ')
+      : (effectiveContext.searchAlbum ?? effectiveContext.searchItem ?? request.item.name);
+
+  return {
+    primaryArtist,
+    requiredTokens: extractSemanticTokens(contextPhrase),
+  };
+}
+
+function titleMatchesBrowseEvidence(
+  title: string | undefined,
+  evidenceContext: ReturnType<typeof getBrowseEvidenceContext>
+): boolean {
+  if (!title) {
+    return false;
+  }
+
+  if (
+    evidenceContext.primaryArtist &&
+    !titleAlreadyContainsArtist(title, evidenceContext.primaryArtist)
+  ) {
+    return false;
+  }
+
+  if (evidenceContext.requiredTokens.length === 0) {
+    return true;
+  }
+
+  return evidenceContext.requiredTokens.some((token) => tokenPattern(token).test(title));
+}
+
+function applyBrowseCountGuard(
+  request: ValidationRunRequest,
+  itemSummaries: BrowseItemSummary[],
+  rawTotalListings: number
+): {
+  metricSummaries: BrowseItemSummary[];
+  safeListingsCount: number | null;
+  guardNote: string | null;
+  titleMatchedCount: number | null;
+} {
+  if (rawTotalListings <= MAX_UNVERIFIED_BROWSE_TOTAL) {
+    return {
+      metricSummaries: itemSummaries,
+      safeListingsCount: rawTotalListings,
+      guardNote: null,
+      titleMatchedCount: null,
+    };
+  }
+
+  const evidenceContext = getBrowseEvidenceContext(request);
+  const matchingSummaries = itemSummaries.filter((item) =>
+    titleMatchesBrowseEvidence(item.title, evidenceContext)
+  );
+  const safeListingsCount = matchingSummaries.length > 0 ? matchingSummaries.length : null;
+
+  return {
+    metricSummaries: matchingSummaries,
+    safeListingsCount,
+    guardNote:
+      safeListingsCount === null
+        ? `Suppressed eBay Browse total ${rawTotalListings} because it exceeds ${MAX_UNVERIFIED_BROWSE_TOTAL} and the sampled titles did not prove artist/item relevance.`
+        : `Replaced eBay Browse total ${rawTotalListings} with ${safeListingsCount} artist/item-matched sampled row(s) because the aggregate exceeds ${MAX_UNVERIFIED_BROWSE_TOTAL}.`,
+    titleMatchedCount: matchingSummaries.length,
+  };
 }
 
 function getAxiosFailureDebug(error: unknown): {
@@ -131,10 +223,16 @@ export async function getEbayValidationSignals(
       });
 
       const itemSummaries = response.itemSummaries ?? [];
-      const prices = itemSummaries
+      const rawTotalListings =
+        typeof response.total === 'number' && Number.isFinite(response.total)
+          ? response.total
+          : itemSummaries.length;
+      const { metricSummaries, safeListingsCount, guardNote, titleMatchedCount } =
+        applyBrowseCountGuard(request, itemSummaries, rawTotalListings);
+      const prices = metricSummaries
         .map((item) => Number(item.price?.value ?? Number.NaN))
         .filter((value) => Number.isFinite(value) && value > 0);
-      const shipping = itemSummaries
+      const shipping = metricSummaries
         .map((item) => Number(item.shippingOptions?.[0]?.shippingCost?.value ?? Number.NaN))
         .filter((value) => Number.isFinite(value) && value >= 0);
 
@@ -143,22 +241,30 @@ export async function getEbayValidationSignals(
         shipping.length > 0
           ? shipping.reduce((sum, value) => sum + value, 0) / shipping.length
           : null;
-      const totalListings =
-        typeof response.total === 'number' && Number.isFinite(response.total)
-          ? response.total
-          : itemSummaries.length;
-      const attemptScore = Math.max(itemSummaries.length, totalListings);
+      const totalListings = safeListingsCount;
+      const attemptScore = Math.max(metricSummaries.length, totalListings ?? 0);
 
       queryDiagnostics.push({
         query,
         tier: index + 1,
         family: queryPlan[index]?.family,
-        itemSummaryCount: itemSummaries.length,
+        itemSummaryCount: metricSummaries.length,
+        rawItemSummaryCount: itemSummaries.length,
         totalListings,
+        rawTotalListings,
+        countGuard: guardNote
+          ? {
+              applied: true,
+              note: guardNote,
+              titleMatchedCount,
+            }
+          : { applied: false },
       });
 
+      const hasSufficientDepth = metricSummaries.length >= 5 || (totalListings ?? 0) >= 5;
+
       if (attemptScore <= bestScore) {
-        if (itemSummaries.length >= 5 || totalListings >= 5) {
+        if (hasSufficientDepth) {
           break;
         }
         continue;
@@ -182,18 +288,19 @@ export async function getEbayValidationSignals(
         selectedQuery: query,
         selectedQueryTier: index + 1,
         queryDiagnostics: [...queryDiagnostics],
-        selectionReason:
-          itemSummaries.length >= 5 || totalListings >= 5
+        selectionReason: guardNote
+          ? guardNote
+          : hasSufficientDepth
             ? 'Selected because this cleaned browse candidate produced sufficient listing depth.'
             : attemptScore > 0
               ? 'Selected as the strongest cleaned browse fallback after higher-priority candidates returned weaker results.'
               : 'All cleaned browse candidates seen so far returned zero results; keeping the highest-priority candidate for traceability.',
-        sampleSize: itemSummaries.length,
+        sampleSize: metricSummaries.length,
         soldVelocity: emptyResult.soldVelocity,
         queryResolution,
       };
 
-      if (itemSummaries.length >= 5 || totalListings >= 5) {
+      if (hasSufficientDepth) {
         break;
       }
     }

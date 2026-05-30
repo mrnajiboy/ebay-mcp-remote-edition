@@ -625,7 +625,48 @@ function getEffectiveResolvedQueryCandidate(
     queryNormalizer ? queryNormalizer(usableResolvedQuery) : usableResolvedQuery
   );
 
+  if (
+    normalizedResolvedQuery &&
+    !isResolvedQueryCompatibleWithDeclaredScope(request, normalizedResolvedQuery)
+  ) {
+    return null;
+  }
+
   return normalizedResolvedQuery || null;
+}
+
+function isResolvedQueryCompatibleWithDeclaredScope(
+  request: ValidationRunRequest,
+  resolvedQuery: string
+): boolean {
+  const sanitizedQuery = sanitizeQueryCandidate(resolvedQuery);
+  if (!sanitizedQuery) {
+    return false;
+  }
+
+  const primaryArtist = getPrimaryArtist(request);
+  const hasArtist = primaryArtist
+    ? titleAlreadyContainsArtist(sanitizedQuery, primaryArtist)
+    : false;
+  const nonArtistSemanticTokens = extractSemanticTokens(
+    primaryArtist ? stripPrimaryArtist(sanitizedQuery, primaryArtist) : sanitizedQuery
+  );
+  const hasNonArtistEvidence = nonArtistSemanticTokens.length > 0;
+
+  switch (resolveDeclaredQueryScope(request)) {
+    case 'direct_query':
+      return true;
+    case 'artist_only':
+      return primaryArtist ? hasArtist : hasNonArtistEvidence;
+    case 'artist_item':
+    case 'artist_album':
+    case 'artist_event':
+    case 'artist_location':
+    case 'artist_item_location':
+      return primaryArtist ? hasArtist && hasNonArtistEvidence : hasNonArtistEvidence;
+    case 'unknown':
+      return primaryArtist ? hasArtist : hasNonArtistEvidence;
+  }
 }
 
 function finalizeLooseQueryPlan(candidates: ProviderQueryCandidate[]): ProviderQueryCandidate[] {

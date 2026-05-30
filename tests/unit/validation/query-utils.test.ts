@@ -127,11 +127,18 @@ describe('resolved validation query plans', () => {
   });
 
   it('suppresses unrelated fallback expansion for location-scoped resolved queries', () => {
-    const request = createRequest({
-      directQueryActive: false,
-      queryScope: 'Artist + City / Country / State/Province',
-      resolvedSearchQuery: 'ive seoul',
-    });
+    const request = createRequest(
+      {
+        directQueryActive: false,
+        queryScope: 'Artist + City / Country / State/Province',
+        resolvedSearchQuery: 'ive seoul',
+      },
+      {
+        name: 'IVE Seoul concert ticket',
+        canonicalArtists: ['IVE'],
+        relatedAlbums: [],
+      }
+    );
 
     expect(buildResolvedSoldQueryPlan(request).queryPlan).toEqual([
       { family: 'resolved_query_context', query: 'ive seoul' },
@@ -141,7 +148,7 @@ describe('resolved validation query plans', () => {
     ]);
   });
 
-  it('still prepends fallback candidates for album-scoped resolved queries', () => {
+  it('drops malformed non-direct resolved queries that do not satisfy artist+album scope', () => {
     const request = createRequest({
       directQueryActive: false,
       queryScope: 'Artist + Album',
@@ -150,13 +157,20 @@ describe('resolved validation query plans', () => {
 
     const plan = buildResolvedBrowseQueryPlan(request);
 
-    expect(plan.queryPlan[0]).toEqual({ family: 'resolved_query_context', query: 'test' });
-    expect(plan.queryPlan.length).toBeGreaterThan(1);
-    expect(
-      plan.queryPlan.some(
-        (candidate: { family: string }) => candidate.family !== 'resolved_query_context'
-      )
-    ).toBe(true);
+    expect(plan.queryPlan[0]).toEqual({ family: 'artist_album_core', query: 'BTS ARIRANG' });
+    expect(plan.queryPlan.some((candidate) => candidate.query === 'test')).toBe(false);
+  });
+
+  it('allows item-only resolved queries only when Direct Query is explicitly active', () => {
+    const request = createRequest({
+      directQueryActive: true,
+      queryScope: 'Direct Query',
+      resolvedSearchQuery: 'magazine',
+    });
+
+    expect(buildResolvedBrowseQueryPlan(request).queryPlan).toEqual([
+      { family: 'resolved_query_context', query: 'magazine' },
+    ]);
   });
 });
 
@@ -332,7 +346,9 @@ describe('social query normalization', () => {
 
     expect(twitterPlan.queryPlan[0]?.query).toBe('BTS The Package');
     expect(
-      twitterPlan.queryPlan.some((candidate: { query: string }) => candidate.query.includes('Package'))
+      twitterPlan.queryPlan.some((candidate: { query: string }) =>
+        candidate.query.includes('Package')
+      )
     ).toBe(true);
   });
 });

@@ -75,6 +75,28 @@ function isPresent<T>(value: T | null | undefined): value is T {
   return value !== null && value !== undefined;
 }
 
+const MAX_UNVERIFIED_ACTIVE_LISTING_COUNT = 1000;
+
+function guardAggregateListingCount(
+  aggregateCount: number | null,
+  sampledRowCount: number | null | undefined
+): { value: number | null; guardSource: string | null } {
+  if (aggregateCount === null || aggregateCount <= MAX_UNVERIFIED_ACTIVE_LISTING_COUNT) {
+    return { value: aggregateCount, guardSource: null };
+  }
+
+  if (
+    typeof sampledRowCount === 'number' &&
+    Number.isFinite(sampledRowCount) &&
+    sampledRowCount > 0 &&
+    sampledRowCount <= MAX_UNVERIFIED_ACTIVE_LISTING_COUNT
+  ) {
+    return { value: sampledRowCount, guardSource: 'research_active_row_guard' };
+  }
+
+  return { value: null, guardSource: 'research_active_suppressed_unverified_total' };
+}
+
 function hasSoldVelocityEvidence(soldVelocity: {
   day1Sold: number | null;
   day2Sold: number | null;
@@ -466,10 +488,19 @@ export async function runValidation(
     const research = await getPreviousComebackResearchSignals(effectiveRequest);
     const marketPriceWriteSource = terapeak.queryDebug.writeSources?.marketPriceUsd ?? null;
     const avgShippingWriteSource = terapeak.queryDebug.writeSources?.avgShippingCostUsd ?? null;
-    const normalizedTerapeakActiveListingsCount =
+    const rawNormalizedTerapeakActiveListingsCount =
       terapeak.activeListingsCount ??
       terapeak.currentListingsCount ??
       terapeak.preOrderListingsCount;
+    const guardedTerapeakActiveListingsCount = guardAggregateListingCount(
+      rawNormalizedTerapeakActiveListingsCount,
+      terapeak.queryDebug.currentActiveParse?.rowCount ?? terapeak.queryDebug.currentResultCount
+    );
+    const normalizedTerapeakActiveListingsCount = guardedTerapeakActiveListingsCount.value;
+    const researchActiveListingsWriteSource =
+      guardedTerapeakActiveListingsCount.guardSource ??
+      terapeak.queryDebug.writeSources?.activeListingsCount ??
+      'research_active';
     const normalizedTerapeakActiveAvgWatchersPerListing =
       terapeak.activeAvgWatchersPerListing ?? terapeak.avgWatchersPerListing;
     const normalizedTerapeakActiveAvgPriceUsd =
@@ -525,7 +556,7 @@ export async function runValidation(
             ? 'ebay'
             : 'none',
       competitionLevel: isPresent(normalizedTerapeakActiveListingsCount)
-        ? (terapeak.queryDebug.writeSources?.competitionLevel ?? 'research_active')
+        ? researchActiveListingsWriteSource
         : mergedCompetitionLevel !== null
           ? 'ebay'
           : 'none',
@@ -667,8 +698,8 @@ export async function runValidation(
           : 'none',
       preOrderListingsCount:
         activeListingsCount !== null
-          ? terapeak.activeListingsCount !== null
-            ? (terapeak.queryDebug.writeSources?.activeListingsCount ?? 'research_active')
+          ? isPresent(normalizedTerapeakActiveListingsCount)
+            ? researchActiveListingsWriteSource
             : 'ebay'
           : 'none',
       activeAvgPriceUsd:
@@ -685,8 +716,8 @@ export async function runValidation(
           : 'none',
       activeListingsCount:
         activeListingsCount !== null
-          ? terapeak.activeListingsCount !== null
-            ? (terapeak.queryDebug.writeSources?.activeListingsCount ?? 'research_active')
+          ? isPresent(normalizedTerapeakActiveListingsCount)
+            ? researchActiveListingsWriteSource
             : 'ebay'
           : 'none',
       activeAvgWatchersPerListing:

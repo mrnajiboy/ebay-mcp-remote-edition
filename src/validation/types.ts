@@ -190,7 +190,14 @@ export interface EbayValidationSignals {
     tier: number;
     family?: string;
     itemSummaryCount: number;
-    totalListings: number;
+    rawItemSummaryCount?: number;
+    totalListings: number | null;
+    rawTotalListings?: number;
+    countGuard?: {
+      applied: boolean;
+      note?: string;
+      titleMatchedCount?: number | null;
+    };
   }[];
   selectionReason?: string;
   errorMessage?: string;
