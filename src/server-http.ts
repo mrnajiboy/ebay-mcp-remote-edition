@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import axios from 'axios';
 import { createServer as createHttpsServer } from 'https';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, createHash } from 'crypto';
@@ -61,6 +61,90 @@ function getServerBaseUrl(): string {
 
 function getExpectedOAuthCallbackUrl(serverUrl = getServerBaseUrl()): string {
   return `${serverUrl.replace(/\/+$/, '')}/oauth/callback`;
+}
+
+function getNoVncPasswordFilePath(): string {
+  return process.env.NOVNC_PASSWORD_FILE?.trim() || '/tmp/novnc-vnc-password';
+}
+
+function readNoVncPassword(): string | null {
+  const passwordPath = getNoVncPasswordFilePath();
+  if (!existsSync(passwordPath)) {
+    return null;
+  }
+  try {
+    const password = readFileSync(passwordPath, 'utf8').trim();
+    return password.length > 0 ? password : null;
+  } catch {
+    return null;
+  }
+}
+
+function getNoVncPublicUrl(): string {
+  const explicitUrl = process.env.NOVNC_PUBLIC_URL?.trim();
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+
+  const serverBaseUrl = getServerBaseUrl();
+  try {
+    const parsed = new URL(serverBaseUrl);
+    parsed.port = process.env.NOVNC_PUBLIC_PORT?.trim() || process.env.NOVNC_PORT?.trim() || '6081';
+    parsed.pathname = '/vnc.html';
+    parsed.search = '';
+    parsed.searchParams.set('autoconnect', '1');
+    parsed.searchParams.set('resize', 'scale');
+    parsed.searchParams.set('reconnect', '1');
+    return parsed.toString();
+  } catch {
+    return `http://localhost:${process.env.NOVNC_PORT?.trim() || '6081'}/vnc.html?autoconnect=1&resize=scale&reconnect=1`;
+  }
+}
+
+function getResearchLiveStorageStatePath(): string {
+  return (
+    process.env.EBAY_RESEARCH_LIVE_STORAGE_STATE_PATH?.trim() ||
+    '/tmp/ebay-research-live-storage-state.json'
+  );
+}
+
+function getResearchLivePidPath(): string {
+  return process.env.EBAY_RESEARCH_LIVE_PID_PATH?.trim() || '/tmp/ebay-research-live.pid';
+}
+
+function getResearchLiveStatus(): {
+  enabled: boolean;
+  display: string;
+  noVncUrl: string;
+  noVncPassword: string | null;
+  noVncPasswordFile: string;
+  storageStatePath: string;
+  storageStateExists: boolean;
+  livePid: number | null;
+  livePidFile: string;
+} {
+  const pidPath = getResearchLivePidPath();
+  let livePid: number | null = null;
+  if (existsSync(pidPath)) {
+    const rawPid = readFileSync(pidPath, 'utf8').trim();
+    const parsedPid = Number(rawPid);
+    if (Number.isInteger(parsedPid) && parsedPid > 0) {
+      livePid = parsedPid;
+    }
+  }
+
+  const storageStatePath = getResearchLiveStorageStatePath();
+  return {
+    enabled: ['1', 'true', 'yes'].includes((process.env.ENABLE_NOVNC ?? '').toLowerCase()),
+    display: process.env.DISPLAY || `:${process.env.NOVNC_DISPLAY || '99'}`,
+    noVncUrl: getNoVncPublicUrl(),
+    noVncPassword: readNoVncPassword(),
+    noVncPasswordFile: getNoVncPasswordFilePath(),
+    storageStatePath,
+    storageStateExists: existsSync(storageStatePath),
+    livePid,
+    livePidFile: pidPath,
+  };
 }
 
 function getEbayOAuthRedirectUri(ebayConfig: ReturnType<typeof getEbayConfig>): string | undefined {
@@ -884,6 +968,192 @@ export function createApp(): express.Application {
   </script>
 </body>
 </html>`);
+  });
+
+  // ── Admin: Live Server Browser / noVNC Research Rescue ────────────────────
+
+  app.get('/admin/research-session/live', requireAdmin, (req, res) => {
+    const status = getResearchLiveStatus();
+    if (req.query.format === 'json') {
+      res.json(status);
+      return;
+    }
+
+    res.set(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+    );
+    res.status(200).send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eBay Research — Live Server Browser</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 760px; margin: 32px auto; padding: 0 18px; color: #111827; line-height: 1.55; }
+    .card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 14px 0; }
+    .btn { display: inline-block; background: #111827; color: #fff; text-decoration: none; padding: 11px 18px; border-radius: 10px; border: 0; cursor: pointer; margin: 6px 8px 6px 0; }
+    .btn.secondary { background: #4b5563; }
+    .muted { color: #6b7280; font-size: .92rem; }
+    code, pre { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 2px 6px; }
+    pre { padding: 10px; white-space: pre-wrap; word-break: break-all; }
+    .warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+    .ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+  </style>
+</head>
+<body>
+  <h1>🖥️ eBay Research Live Server Browser</h1>
+  <p class="muted">Use this when Research/Terapeak returns <strong>Pardon Our Interruption</strong>. Open a headed server Chrome inside noVNC, solve/login manually, then persist the rescued Playwright storage state.</p>
+
+  <div class="card ${status.enabled ? 'ok' : 'warn'}">
+    <strong>noVNC status:</strong> ${status.enabled ? 'enabled' : 'not enabled for this container'}<br>
+    <strong>DISPLAY:</strong> <code>${htmlEscape(status.display)}</code><br>
+    <strong>Storage mirror:</strong> <code>${htmlEscape(status.storageStatePath)}</code> (${status.storageStateExists ? 'exists' : 'not written yet'})<br>
+    <strong>Live browser PID:</strong> <code>${status.livePid ?? 'none'}</code>
+  </div>
+
+  <div class="card">
+    <h3>1. Open / control server Chrome</h3>
+    <p><a class="btn" href="${htmlEscape(status.noVncUrl)}" target="_blank" rel="noopener">Open noVNC ↗</a></p>
+    <p class="muted">VNC password:</p>
+    <pre>${htmlEscape(status.noVncPassword ?? '(password file not available yet — ENABLE_NOVNC may be off)')}</pre>
+  </div>
+
+  <div class="card">
+    <h3>2. Start a Research browser tab</h3>
+    <p class="muted">Optional: include query + validation ID so the browser opens the exact validation-bound page.</p>
+    <input id="query" placeholder="Search query, e.g. stray kids skzoo plush" style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
+    <input id="validationId" placeholder="Validation record ID (optional)" style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
+    <button class="btn secondary" onclick="openLiveBrowser()">Start / Open Server Chrome</button>
+    <pre id="openResult" class="muted"></pre>
+  </div>
+
+  <div class="card">
+    <h3>3. Persist rescued session</h3>
+    <p class="muted">After you clear login/challenge in noVNC and Research loads, click persist. This validates and stores the mirrored Playwright storage state into the configured Research session store.</p>
+    <button class="btn secondary" onclick="persistLiveSession()">Persist Live Session</button>
+    <pre id="persistResult" class="muted"></pre>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const adminKey = urlParams.get('key') || '';
+    async function postJson(path, body) {
+      const resp = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-API-Key': adminKey },
+        body: JSON.stringify(body || {})
+      });
+      return await resp.json();
+    }
+    async function openLiveBrowser() {
+      const result = await postJson('/admin/research-session/live/open', {
+        query: document.getElementById('query').value.trim(),
+        validationId: document.getElementById('validationId').value.trim(),
+        marketplace: 'EBAY-US'
+      });
+      document.getElementById('openResult').textContent = JSON.stringify(result, null, 2);
+    }
+    async function persistLiveSession() {
+      const result = await postJson('/admin/research-session/live/persist', { marketplace: 'EBAY-US' });
+      document.getElementById('persistResult').textContent = JSON.stringify(result, null, 2);
+    }
+  </script>
+</body>
+</html>`);
+  });
+
+  app.post('/admin/research-session/live/open', requireAdmin, async (req, res) => {
+    const marketplace = (req.body?.marketplace ?? 'EBAY-US').toUpperCase();
+    const query = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
+    const validationId =
+      typeof req.body?.validationId === 'string' ? req.body.validationId.trim() : '';
+    const { spawn } = await import('child_process');
+
+    const scriptPath = resolve(projectRoot, 'build', 'scripts', 'open-ebay-research-live.js');
+    const args = [scriptPath, `--marketplace=${marketplace}`];
+    if (query) args.push(`--query=${query}`);
+    if (validationId) args.push(`--validation-id=${validationId}`);
+
+    const child = spawn('node', args, {
+      env: {
+        ...process.env,
+        DISPLAY: process.env.DISPLAY || `:${process.env.NOVNC_DISPLAY || '99'}`,
+      },
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+
+    serverLogger.info('[admin/research-session/live/open] Started live Research browser', {
+      pid: child.pid,
+      marketplace,
+      hasQuery: query.length > 0,
+      validationId: validationId || null,
+    });
+
+    res.json({
+      ok: true,
+      pid: child.pid ?? null,
+      marketplace,
+      query: query || null,
+      validationId: validationId || null,
+      status: getResearchLiveStatus(),
+    });
+  });
+
+  app.post('/admin/research-session/live/persist', requireAdmin, async (req, res) => {
+    const marketplace = (req.body?.marketplace ?? 'EBAY-US').toUpperCase();
+    const storageStatePath = getResearchLiveStorageStatePath();
+    if (!existsSync(storageStatePath)) {
+      res.status(404).json({
+        ok: false,
+        error: 'LIVE_STORAGE_STATE_NOT_FOUND',
+        storageStatePath,
+      });
+      return;
+    }
+
+    let parsedStorageState: ResearchStorageState;
+    try {
+      parsedStorageState = JSON.parse(
+        readFileSync(storageStatePath, 'utf8')
+      ) as ResearchStorageState;
+    } catch (error) {
+      res.status(400).json({
+        ok: false,
+        error: `Could not parse live storage state: ${error instanceof Error ? error.message : String(error)}`,
+        storageStatePath,
+      });
+      return;
+    }
+
+    try {
+      const persistence = await validateAndStoreEbayResearchSessionToKv(
+        marketplace,
+        parsedStorageState,
+        'storage_state'
+      );
+      res.json({
+        ok: true,
+        marketplace,
+        backend: persistence.backend,
+        storageStateKey: persistence.stateKey,
+        metadataKey: persistence.metaKey,
+        bytes: persistence.bytes,
+        cookieCount: persistence.cookieCount,
+        expiresAt: persistence.expiresAt,
+        validation: persistence.validation,
+      });
+    } catch (error) {
+      res.status(400).json({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        marketplace,
+        storageStatePath,
+      });
+    }
   });
 
   // ── Admin: Auto-Renew eBay Research Session ──────────────────────────────

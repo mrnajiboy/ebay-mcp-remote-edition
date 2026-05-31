@@ -57,7 +57,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN corepack enable && \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
+    apt-get install -y --no-install-recommends curl python3 xvfb x11vnc novnc websockify && \
     rm -rf /var/lib/apt/lists/*
 
 COPY package.json pnpm-lock.yaml .npmrc ./
@@ -74,7 +74,9 @@ COPY --from=playwright /etc/fonts /etc/fonts
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/docs ./docs
 COPY --from=builder /app/public ./public
+COPY scripts ./scripts
+RUN chmod +x ./scripts/start-http-with-novnc.sh
 
-EXPOSE 3000
+EXPOSE 3000 6081
 
-CMD ["pnpm", "run", "start:http"]
+CMD ["./scripts/start-http-with-novnc.sh"]
