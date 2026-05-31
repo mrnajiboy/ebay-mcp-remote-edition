@@ -123,6 +123,16 @@ function getResearchLivePidPath(): string {
   return process.env.EBAY_RESEARCH_LIVE_PID_PATH?.trim() || '/tmp/ebay-research-live.pid';
 }
 
+function getValidationRunnerWebhookUrl(): string {
+  return (
+    process.env.VALIDATION_RUNNER_RECORD_WEBHOOK_URL?.trim() ||
+    process.env.N8N_VALIDATION_RUNNER_RECORD_WEBHOOK_URL?.trim() ||
+    process.env.VALIDATION_RUNNER_WEBHOOK_URL?.trim() ||
+    process.env.N8N_VALIDATION_RUNNER_WEBHOOK_URL?.trim() ||
+    'https://n8n-n9t0lck7ziudk0uscztz4bfj.thousandstory.fyi/webhook/manual-data-runner-record'
+  );
+}
+
 function getResearchLiveStatus(): {
   enabled: boolean;
   display: string;
@@ -203,6 +213,21 @@ function getValidationIdFromBody(body: unknown): string {
     return body.validationId;
   }
   return '';
+}
+
+function getValidationRecordIdFromBody(body: unknown): string {
+  if (typeof body !== 'object' || body === null) {
+    return '';
+  }
+
+  const maybeBody = body as { recordId?: unknown; validationId?: unknown };
+  const rawRecordId =
+    typeof maybeBody.recordId === 'string'
+      ? maybeBody.recordId
+      : typeof maybeBody.validationId === 'string'
+        ? maybeBody.validationId
+        : '';
+  return rawRecordId.trim();
 }
 
 function getRetryTimestampFromBody(body: unknown): string {
@@ -1033,9 +1058,9 @@ export function createApp(): express.Application {
 
   <div class="card">
     <h3>2. Start a Research browser tab</h3>
-    <p class="muted">Optional: include query + validation ID so the browser opens the exact validation-bound page.</p>
+    <p class="muted">Optional: include query + validation ID so the browser opens the exact validation-bound page. You can also use the same Airtable validation record ID below to re-run just that record after persisting the live session.</p>
     <input id="query" placeholder="Search query, e.g. stray kids skzoo plush" style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
-    <input id="validationId" placeholder="Validation record ID (optional)" style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
+    <input id="validationId" placeholder="Airtable validation record ID, e.g. rec..." style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
     <button class="btn secondary" onclick="openLiveBrowser()">Start / Open Server Chrome</button>
     <pre id="openResult" class="muted"></pre>
   </div>
@@ -1045,6 +1070,13 @@ export function createApp(): express.Application {
     <p class="muted">After you clear login/challenge in noVNC and Research loads, click persist. This validates and stores the mirrored Playwright storage state into the configured Research session store.</p>
     <button class="btn secondary" onclick="persistLiveSession()">Persist Live Session</button>
     <pre id="persistResult" class="muted"></pre>
+  </div>
+
+  <div class="card">
+    <h3>4. Re-run one Airtable validation record</h3>
+    <p class="muted">Uses the Airtable validation record ID above and sends only that record through the Validation Data Runner. This writes the refreshed Terapeak/eBay metrics back to Airtable without kicking off the 200+ record sweep.</p>
+    <button class="btn" onclick="runTargetedValidation()">Run Targeted Validation</button>
+    <pre id="targetedValidationResult" class="muted"></pre>
   </div>
 
   <script>
@@ -1069,6 +1101,20 @@ export function createApp(): express.Application {
     async function persistLiveSession() {
       const result = await postJson('/admin/research-session/live/persist', { marketplace: 'EBAY-US' });
       document.getElementById('persistResult').textContent = JSON.stringify(result, null, 2);
+    }
+    async function runTargetedValidation() {
+      const validationId = document.getElementById('validationId').value.trim();
+      if (!validationId) {
+        document.getElementById('targetedValidationResult').textContent = 'Paste an Airtable validation record ID first (rec...).';
+        return;
+      }
+      document.getElementById('targetedValidationResult').textContent = 'Running targeted validation for ' + validationId + '...';
+      const result = await postJson('/admin/validation/run-record', {
+        validationId,
+        recordId: validationId,
+        providerOptions: { skipTwitter: true }
+      });
+      document.getElementById('targetedValidationResult').textContent = JSON.stringify(result, null, 2);
     }
   </script>
 </body>
@@ -1163,6 +1209,62 @@ export function createApp(): express.Application {
         error: error instanceof Error ? error.message : String(error),
         marketplace,
         storageStatePath,
+      });
+    }
+  });
+
+  app.post('/admin/validation/run-record', requireAdmin, async (req, res) => {
+    const recordId = getValidationRecordIdFromBody(req.body);
+    if (!/^rec[A-Za-z0-9]+$/.test(recordId)) {
+      res.status(400).json({
+        ok: false,
+        error: 'VALIDATION_RECORD_ID_REQUIRED',
+        message: 'Provide an Airtable validation record ID such as recXXXXXXXXXXXXXX.',
+      });
+      return;
+    }
+
+    const webhookUrl = getValidationRunnerWebhookUrl();
+    const providerOptions =
+      typeof req.body === 'object' && req.body !== null && 'providerOptions' in req.body
+        ? (req.body as { providerOptions?: unknown }).providerOptions
+        : undefined;
+    const payload = {
+      recordId,
+      validationId: recordId,
+      triggerSource: 'mcp_admin_targeted_validation',
+      requestedAt: new Date().toISOString(),
+      ...(providerOptions && typeof providerOptions === 'object' ? { providerOptions } : {}),
+    };
+
+    try {
+      const response = await axios.post(webhookUrl, payload, {
+        timeout: 120_000,
+        headers: { 'Content-Type': 'application/json' },
+        validateStatus: () => true,
+      });
+      const ok = response.status >= 200 && response.status < 300;
+      serverLogger.info('[admin/validation/run-record] Targeted validation webhook completed', {
+        recordId,
+        status: response.status,
+        ok,
+      });
+      res.status(ok ? 200 : 502).json({
+        ok,
+        recordId,
+        webhookStatus: response.status,
+        result: response.data,
+      });
+    } catch (error) {
+      serverLogger.error('[admin/validation/run-record] Targeted validation webhook failed', {
+        recordId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(502).json({
+        ok: false,
+        recordId,
+        error: 'TARGETED_VALIDATION_WEBHOOK_FAILED',
+        message: error instanceof Error ? error.message : String(error),
       });
     }
   });
