@@ -89,6 +89,17 @@ function getNoVncPublicUrl(): string {
   const serverBaseUrl = getServerBaseUrl();
   try {
     const parsed = new URL(serverBaseUrl);
+    const publicHost =
+      process.env.NOVNC_PUBLIC_HOST?.trim() ||
+      // Coolify/Traefik only routes the app domain to port 3000. For the current
+      // temporary noVNC sidecar, advertise the verified direct-IP endpoint
+      // rather than https://ebay-mcp.thousandstory.fyi:6081, which browsers
+      // cannot reach through the app-domain router.
+      (parsed.hostname === 'ebay-mcp.thousandstory.fyi' ? '65.108.95.146' : '');
+    if (publicHost) {
+      parsed.hostname = publicHost;
+      parsed.protocol = process.env.NOVNC_PUBLIC_PROTOCOL?.trim() || 'http:';
+    }
     parsed.port = process.env.NOVNC_PUBLIC_PORT?.trim() || process.env.NOVNC_PORT?.trim() || '6081';
     parsed.pathname = '/vnc.html';
     parsed.search = '';
