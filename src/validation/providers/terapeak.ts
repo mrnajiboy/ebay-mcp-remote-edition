@@ -917,6 +917,172 @@ function determineConfidence(input: {
   return 'Low';
 }
 
+function getManualSnapshotNumber(
+  metrics: NonNullable<
+    NonNullable<ValidationRunRequest['providerOptions']>['manualTerapeakSnapshot']
+  >['metrics'],
+  key: keyof NonNullable<
+    NonNullable<
+      NonNullable<ValidationRunRequest['providerOptions']>['manualTerapeakSnapshot']
+    >['metrics']
+  >
+): number | null {
+  const value = metrics?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function buildManualSnapshotSignals(
+  request: ValidationRunRequest,
+  currentQuery: string | null,
+  previousPobQuery: string | null,
+  queryResolution: ReturnType<typeof buildProviderQueryResolutionDebug>,
+  fallbackContext: {
+    currentAttemptedResearch?: EbayResearchResponse | null;
+    previousPobResearch?: EbayResearchResponse | null;
+    fallbackReasons?: string[];
+  },
+  emptySoldVelocity: ValidationSoldVelocity,
+  emptySoldBucketDebug: SoldBucketDebug
+): TerapeakValidationSignals | null {
+  const snapshot = request.providerOptions?.manualTerapeakSnapshot;
+  const metrics = snapshot?.metrics;
+  const activeListingsCount = getManualSnapshotNumber(metrics, 'activeListingsCount');
+  const soldListingsCount = getManualSnapshotNumber(metrics, 'soldListingsCount');
+  const soldAvgPriceUsd = getManualSnapshotNumber(metrics, 'soldAvgPriceUsd');
+  const activeAvgPriceUsd = getManualSnapshotNumber(metrics, 'activeAvgPriceUsd');
+  const soldSellThroughPct = getManualSnapshotNumber(metrics, 'soldSellThroughPct');
+  const soldTotalRevenueUsd = getManualSnapshotNumber(metrics, 'soldTotalRevenueUsd');
+  const hasManualMetric = [
+    activeListingsCount,
+    soldListingsCount,
+    soldAvgPriceUsd,
+    activeAvgPriceUsd,
+    soldSellThroughPct,
+    soldTotalRevenueUsd,
+  ].some((value) => value !== null);
+
+  if (!snapshot || !hasManualMetric) {
+    return null;
+  }
+
+  const currentAttemptedResearch = fallbackContext.currentAttemptedResearch ?? null;
+  const previousPobResearch = fallbackContext.previousPobResearch ?? null;
+  const writeSources: Record<string, string> = {
+    activeAvgPriceUsd: activeAvgPriceUsd !== null ? 'manual_terapeak_snapshot' : 'none',
+    activeListingPriceMinUsd: 'none',
+    activeListingPriceMaxUsd: 'none',
+    activeAvgShippingUsd: 'none',
+    activeFreeShippingPct: 'none',
+    activePromotedListingsPct: 'none',
+    activeListingsCount: activeListingsCount !== null ? 'manual_terapeak_snapshot' : 'none',
+    activeAvgWatchersPerListing: 'none',
+    activeWatcherCoverageCount: 'none',
+    soldAvgPriceUsd: soldAvgPriceUsd !== null ? 'manual_terapeak_snapshot' : 'none',
+    soldMedianPriceUsd: 'none',
+    soldPriceMinUsd: 'none',
+    soldPriceMaxUsd: 'none',
+    soldAvgShippingUsd: 'none',
+    soldFreeShippingPct: 'none',
+    soldListingsCount: soldListingsCount !== null ? 'manual_terapeak_snapshot' : 'none',
+    soldSellThroughPct: soldSellThroughPct !== null ? 'manual_terapeak_snapshot' : 'none',
+    soldTotalSellers: 'none',
+    soldTotalRevenueUsd: soldTotalRevenueUsd !== null ? 'manual_terapeak_snapshot' : 'none',
+    marketPriceUsd:
+      soldAvgPriceUsd !== null || activeAvgPriceUsd !== null ? 'manual_terapeak_snapshot' : 'none',
+    avgShippingCostUsd: 'none',
+    competitionLevel: activeListingsCount !== null ? 'manual_terapeak_snapshot' : 'none',
+    day1Sold: 'none',
+    day2Sold: 'none',
+    day3Sold: 'none',
+    day4Sold: 'none',
+    day5Sold: 'none',
+    daysTracked: 'none',
+  };
+
+  return {
+    avgWatchersPerListing: null,
+    preOrderListingsCount: activeListingsCount,
+    activeAvgPriceUsd,
+    activeListingPriceMinUsd: null,
+    activeListingPriceMaxUsd: null,
+    activeAvgShippingUsd: null,
+    activeFreeShippingPct: null,
+    activePromotedListingsPct: null,
+    activeListingsCount,
+    activeAvgWatchersPerListing: null,
+    activeWatcherCoverageCount: null,
+    soldAvgPriceUsd,
+    soldMedianPriceUsd: null,
+    soldPriceMinUsd: null,
+    soldPriceMaxUsd: null,
+    soldAvgShippingUsd: null,
+    soldFreeShippingPct: null,
+    marketPriceUsd: soldAvgPriceUsd ?? activeAvgPriceUsd,
+    researchSoldPriceUsd: soldAvgPriceUsd,
+    avgShippingCostUsd: null,
+    competitionLevel: activeListingsCount,
+    soldSellThroughPct,
+    soldTotalSellers: null,
+    soldTotalRevenueUsd,
+    previousPobAvgPriceUsd: previousPobResearch?.sold.avgSoldPriceUsd ?? null,
+    previousPobSellThroughPct: previousPobResearch?.sold.sellThroughPct ?? null,
+    currentListingsCount: activeListingsCount,
+    soldListingsCount,
+    soldVelocity: emptySoldVelocity,
+    recentSoldCount7d: null,
+    soldBucketDebug: emptySoldBucketDebug,
+    provider: 'ebay_research_ui',
+    confidence: soldListingsCount !== null || soldAvgPriceUsd !== null ? 'Medium' : 'Low',
+    queryDebug: {
+      currentQuery: snapshot.query ?? currentQuery,
+      previousPobQuery,
+      currentQueryFamily: 'manual_terapeak_snapshot',
+      previousPobQueryFamily: null,
+      selectedMode: 'current_market',
+      currentResultCount: Math.max(activeListingsCount ?? 0, soldListingsCount ?? 0) || null,
+      previousPobResultCount: null,
+      queryResolution,
+      currentModulesSeen: currentAttemptedResearch?.debug.modulesSeen,
+      previousPobModulesSeen: previousPobResearch?.debug.modulesSeen,
+      currentPageErrors: currentAttemptedResearch?.debug.pageErrors,
+      previousPobPageErrors: previousPobResearch?.debug.pageErrors,
+      antiBotDetection:
+        currentAttemptedResearch?.debug.antiBotDetection ??
+        previousPobResearch?.debug.antiBotDetection,
+      currentActiveParse: currentAttemptedResearch?.debug.activeParse,
+      currentSoldParse: currentAttemptedResearch?.debug.soldParse,
+      previousPobActiveParse: previousPobResearch?.debug.activeParse,
+      previousPobSoldParse: previousPobResearch?.debug.soldParse,
+      authState: currentAttemptedResearch?.debug.authState,
+      sessionStrategy: currentAttemptedResearch?.debug.sessionStrategy,
+      sessionSource: currentAttemptedResearch?.debug.sessionSource,
+      sessionStoreConfigured: currentAttemptedResearch?.debug.sessionStoreConfigured,
+      sessionStoreSelected: currentAttemptedResearch?.debug.sessionStoreSelected,
+      kvLoadAttempted: currentAttemptedResearch?.debug.kvLoadAttempted,
+      kvLoadSucceeded: currentAttemptedResearch?.debug.kvLoadSucceeded,
+      cfKvLoadAttempted: currentAttemptedResearch?.debug.cfKvLoadAttempted,
+      cfKvLoadSucceeded: currentAttemptedResearch?.debug.cfKvLoadSucceeded,
+      upstashLoadAttempted: currentAttemptedResearch?.debug.upstashLoadAttempted,
+      upstashLoadSucceeded: currentAttemptedResearch?.debug.upstashLoadSucceeded,
+      kvStorageStateBytes: currentAttemptedResearch?.debug.kvStorageStateBytes,
+      storageStateBytes: currentAttemptedResearch?.debug.storageStateBytes,
+      authValidationAttempted: currentAttemptedResearch?.debug.authValidationAttempted,
+      authValidationSucceeded: currentAttemptedResearch?.debug.authValidationSucceeded,
+      fallbackReasons: [
+        ...(fallbackContext.fallbackReasons ?? []),
+        'Used manual Terapeak snapshot captured by the Chrome extension because live eBay Research returned no usable metrics.',
+      ],
+      writeSources,
+      notes: [
+        ...(currentAttemptedResearch?.debug.notes ?? []),
+        `Used manual Terapeak snapshot from ${snapshot.source ?? request.providerOptions?.manualTerapeakSnapshotSource ?? 'chrome_extension_visible_page'}.`,
+      ]
+        .filter((entry) => entry.length > 0)
+        .join(' '),
+    },
+  };
+}
+
 export async function getTerapeakValidationSignals(
   _api: EbaySellerApi,
   request: ValidationRunRequest
@@ -1018,6 +1184,23 @@ export async function getTerapeakValidationSignals(
       (previousPobResearch.sold.totalSold !== null || previousPobResearch.sold.soldRows.length > 0);
 
     if (!currentSelected) {
+      const manualSnapshotSignals = buildManualSnapshotSignals(
+        request,
+        currentQuery,
+        previousPobQuery,
+        currentPlan.queryResolution,
+        {
+          currentAttemptedResearch,
+          previousPobResearch,
+          fallbackReasons: currentOutcome.fallbackReasons,
+        },
+        emptySoldVelocity,
+        emptySoldBucketDebug
+      );
+      if (manualSnapshotSignals) {
+        return manualSnapshotSignals;
+      }
+
       return {
         avgWatchersPerListing: null,
         preOrderListingsCount: null,

@@ -15,6 +15,8 @@ const browserNewContextMock = vi.fn();
 const browserContextCloseMock = vi.fn();
 const browserContextCookiesMock = vi.fn();
 const browserContextStorageStateMock = vi.fn();
+const browserContextNewPageMock = vi.fn();
+const pageGotoMock = vi.fn();
 const persistentContextCookiesMock = vi.fn();
 const persistentContextStorageStateMock = vi.fn();
 const persistentContextCloseMock = vi.fn();
@@ -138,6 +140,8 @@ describe('fetchEbayResearch()', () => {
     browserContextCloseMock.mockReset();
     browserContextCookiesMock.mockReset();
     browserContextStorageStateMock.mockReset();
+    browserContextNewPageMock.mockReset();
+    pageGotoMock.mockReset();
     persistentContextCookiesMock.mockReset();
     persistentContextStorageStateMock.mockReset();
     persistentContextCloseMock.mockReset();
@@ -152,9 +156,14 @@ describe('fetchEbayResearch()', () => {
       cookies: [{ name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' }],
       origins: [],
     }));
+    pageGotoMock.mockResolvedValue(undefined);
+    browserContextNewPageMock.mockResolvedValue({
+      goto: pageGotoMock,
+    });
     browserNewContextMock.mockResolvedValue({
       cookies: browserContextCookiesMock,
       storageState: browserContextStorageStateMock,
+      newPage: browserContextNewPageMock,
       close: browserContextCloseMock,
     });
     chromiumLaunchMock.mockResolvedValue({
@@ -275,6 +284,52 @@ describe('fetchEbayResearch()', () => {
     expect(axiosGetMock).toHaveBeenCalledTimes(2);
     expect(recoveryResponse.active.listingRows).toHaveLength(1);
     expect(recoveryResponse.sold.soldRows).toHaveLength(1);
+  });
+
+  it('reinjects the original Research query URL through Playwright and retries once when a tab read hits Pardon HTML', async () => {
+    process.env.EBAY_RESEARCH_STORAGE_STATE_JSON = JSON.stringify({
+      cookies: [{ name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' }],
+      origins: [],
+    });
+
+    const { fetchEbayResearch } = await import('../../../src/validation/providers/ebay-research.js');
+    const pardonHtml = buildEbayPardonHtml();
+    let activeAttempts = 0;
+
+    axiosGetMock.mockImplementation(async (url: string) => {
+      const parsedUrl = new URL(url);
+      const tabName = parsedUrl.searchParams.get('tabName');
+      if (parsedUrl.searchParams.get('keywords') === 'pokemon') {
+        return { status: 200, data: buildValidationPayload() };
+      }
+      if (tabName === 'ACTIVE') {
+        activeAttempts += 1;
+        if (activeAttempts === 1) {
+          return {
+            status: 200,
+            data: pardonHtml,
+            headers: { 'content-type': 'text/html; charset=utf-8' },
+          };
+        }
+        return { status: 200, data: buildActivePayload() };
+      }
+      return { status: 200, data: buildSoldPayload() };
+    });
+
+    const response = await fetchEbayResearch('ATEEZ GOLDEN HOUR');
+
+    expect(activeAttempts).toBe(2);
+    expect(response.active.listingRows).toHaveLength(1);
+    expect(response.sold.soldRows).toHaveLength(1);
+    expect(browserContextNewPageMock).toHaveBeenCalled();
+    expect(pageGotoMock).toHaveBeenCalledWith(
+      expect.stringContaining('https://www.ebay.com/sh/research?'),
+      { waitUntil: 'domcontentloaded' }
+    );
+    const reinjectedUrl = new URL(pageGotoMock.mock.calls.at(-1)?.[0] as string);
+    expect(reinjectedUrl.pathname).toBe('/sh/research');
+    expect(reinjectedUrl.searchParams.get('keywords')).toBe('ATEEZ GOLDEN HOUR');
+    expect(reinjectedUrl.searchParams.get('tabName')).toBe('ACTIVE');
   });
 
   it('does not classify normal research JSON containing challenge text as anti-bot HTML', async () => {
@@ -955,6 +1010,27 @@ describe('fetchEbayResearch()', () => {
       expect.any(String),
       179 * 24 * 60 * 60
     );
+  });
+
+  it('rejects storage-state validation when eBay returns Pardon HTML even with HTTP 200', async () => {
+    const { validateAndStoreEbayResearchSessionToKv } = await import(
+      '../../../src/validation/providers/ebay-research.js'
+    );
+
+    axiosGetMock.mockResolvedValueOnce({
+      status: 200,
+      data: buildEbayPardonHtml(),
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    });
+
+    await expect(
+      validateAndStoreEbayResearchSessionToKv('EBAY-US', {
+        cookies: [{ name: 'sid', value: 'cookie-ebay', domain: '.ebay.com', path: '/' }],
+        origins: [],
+      })
+    ).rejects.toThrow('anti-bot challenge detected');
+
+    expect(kvPutMock).not.toHaveBeenCalled();
   });
 
   it('rejects hosted admin/session storage when ACTIVE endpoint validation fails', async () => {

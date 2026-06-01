@@ -42,6 +42,26 @@ export const validationSourceContextSchema = z.object({
 
 export const validationProviderOptionsSchema = z.object({
   skipTwitter: z.boolean().optional(),
+  manualTerapeakSnapshot: z
+    .object({
+      capturedAt: z.string().optional(),
+      source: z.string().optional(),
+      url: z.string().optional(),
+      title: z.string().optional(),
+      query: z.string().optional(),
+      metrics: z
+        .object({
+          activeListingsCount: z.number().nullable().optional(),
+          soldListingsCount: z.number().nullable().optional(),
+          soldAvgPriceUsd: z.number().nullable().optional(),
+          activeAvgPriceUsd: z.number().nullable().optional(),
+          soldSellThroughPct: z.number().nullable().optional(),
+          soldTotalRevenueUsd: z.number().nullable().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  manualTerapeakSnapshotSource: z.string().optional(),
 });
 
 const validationItemSchema = z.object({

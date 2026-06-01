@@ -166,6 +166,22 @@ export interface ValidationRunRequest {
   sourceContext?: ValidationSourceContext;
   providerOptions?: {
     skipTwitter?: boolean;
+    manualTerapeakSnapshot?: {
+      capturedAt?: string;
+      source?: string;
+      url?: string;
+      title?: string;
+      query?: string;
+      metrics?: {
+        activeListingsCount?: number | null;
+        soldListingsCount?: number | null;
+        soldAvgPriceUsd?: number | null;
+        activeAvgPriceUsd?: number | null;
+        soldSellThroughPct?: number | null;
+        soldTotalRevenueUsd?: number | null;
+      };
+    };
+    manualTerapeakSnapshotSource?: string;
   };
   effectiveContext?: ValidationEffectiveContext;
   item: ValidationItem;
