@@ -406,11 +406,21 @@ All `/admin/*` routes accept authentication via either:
 - Query param: `?key=<ADMIN_API_KEY>` (useful for browser access)
 
 ```
-GET  /admin/token-status              # OAuth + Playwright session health
-POST /admin/oauth/start-for-validation # Start OAuth flow for validation runner
-POST /admin/playwright-session        # Store Playwright storage state JSON
-GET  /admin/playwright-capture        # Browser UI to capture eBay Research cookies
+GET  /admin/token-status                    # OAuth + Playwright session health
+POST /admin/oauth/start-for-validation       # Start OAuth flow for validation runner
+POST /admin/playwright-session              # Store Playwright storage state JSON
+GET  /admin/playwright-capture              # Browser UI to capture eBay Research cookies
+GET  /admin/research-session/live           # noVNC live browser rescue page
+GET  /admin/research-session/live?format=json # live browser rescue status JSON
+POST /admin/research-session/live/open      # start headed server Chrome for eBay Research
+POST /admin/research-session/live/persist   # persist live browser state into research storage
 ```
+
+**`/admin/research-session/live`** is the preferred rescue lane when eBay Research/Terapeak is blocked by login, captcha, 2FA, or "Pardon Our Interruption". Open the admin page with a browser-safe admin key query parameter, click **Open Live Session**, connect to noVNC with the displayed VNC password, complete any eBay challenge in the server Chrome window, and make sure the final browser page is `https://www.ebay.com/sh/research` before clicking **Persist Live Session**.
+
+A successful persist response should show `ok: true`, `cookieCount > 0`, and validation success against the eBay Research ACTIVE endpoint with real research modules such as `ResearchAggregateModule` and `ActiveSearchResultsModule`. In hosted Upstash deployments the persisted storage state is written to `ebay_research_storage_state_json` with metadata in `ebay_research_storage_state_meta`; future validation runs consume that stored state automatically. Persisting only locks in the Terapeak session — Airtable rows are updated after validation rows are rerun.
+
+If the backend validation debug reports `providerResolution.activeSource = ebay_research_ui` and `providerResolution.soldSource = ebay_research_ui` with `soldFallbackUsed = false`, the run is using authenticated first-party eBay Research/Terapeak data rather than the temporary sold-data fallback. The write-resolution debug should mark active fields as `research_active`, sold aggregate fields as `research_sold`, and day-level sold velocity as `research_sold_rows` when row-level sold dates are available.
 
 **`/admin/playwright-capture`** renders a self-service page for renewing the eBay Research Playwright session. Open it in a browser with the admin key as a query parameter:
 
