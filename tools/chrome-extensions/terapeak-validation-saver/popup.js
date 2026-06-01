@@ -128,6 +128,53 @@ function selectedFieldLines(summary, group) {
   });
 }
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (Array.isArray(value)) {
+      const stringValue = value.find((item) => typeof item === 'string' && item.trim());
+      if (stringValue) return stringValue.trim();
+    }
+  }
+  return null;
+}
+
+function formatTerapeakInsight(result, snapshot) {
+  const debug = result?.result?.debug || {};
+  const providerResolution = debug.providerResolution || {};
+  const terapeak = debug.providers?.terapeak || {};
+  const antiBot = terapeak.antiBotDetection || snapshot.terapeakAntiBotDetection || {};
+  const soldFallbackUsed = providerResolution.soldFallbackUsed || snapshot.soldFallbackUsed;
+  const fallbackReason = firstNonEmpty(
+    providerResolution.fallbackReason,
+    snapshot.terapeakFailureReason,
+    terapeak.fallbackReasons,
+    terapeak.currentPageErrors,
+    terapeak.notes
+  );
+
+  const lines = [];
+  if (fallbackReason || soldFallbackUsed || antiBot.detected || terapeak.authState || terapeak.sessionSource) {
+    lines.push('Terapeak diagnostics:');
+    if (soldFallbackUsed) lines.push('• Sold fallback used: yes');
+    if (fallbackReason) lines.push(`• Reason: ${fallbackReason}`);
+    if (antiBot.detected) {
+      lines.push(`• eBay response: anti-bot challenge${antiBot.kind ? ` (${antiBot.kind})` : ''}`);
+    }
+    if (terapeak.authState || snapshot.terapeakAuthState) {
+      lines.push(`• Auth state: ${terapeak.authState || snapshot.terapeakAuthState}`);
+    }
+    if (terapeak.sessionSource || snapshot.terapeakSessionSource) {
+      lines.push(`• Session source: ${terapeak.sessionSource || snapshot.terapeakSessionSource}`);
+    }
+    if (terapeak.authValidationSucceeded !== undefined) {
+      lines.push(`• Auth validation: ${terapeak.authValidationSucceeded ? 'passed' : 'failed'}`);
+    }
+    lines.push('');
+  }
+  return lines;
+}
+
 function formatValidationResult(result) {
   const summary = result.transferSummary;
   if (!summary) return JSON.stringify(result, null, 2);
@@ -148,6 +195,8 @@ function formatValidationResult(result) {
     if (snapshot.soldSource) lines.push(`• Sold source: ${snapshot.soldSource}`);
     lines.push('');
   }
+
+  lines.push(...formatTerapeakInsight(result, snapshot));
 
   const activeLines = selectedFieldLines(summary, 'active');
   const soldLines = selectedFieldLines(summary, 'sold');

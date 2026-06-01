@@ -522,7 +522,7 @@ function createEmptySoldSignals(
   errorMessage?: string
 ): EbaySoldValidationSignals {
   return {
-    provider: 'third_party_sold_api',
+    provider: 'rapidgate_sold_api',
     confidence: 'Low',
     soldResultsCount: null,
     soldAveragePriceUsd: null,
@@ -764,7 +764,7 @@ export async function getEbaySoldValidationSignals(
         : undefined;
 
       selectedResult = {
-        provider: 'third_party_sold_api',
+        provider: 'rapidgate_sold_api',
         confidence: selectedCandidate.confidence,
         soldResultsCount: selectedCandidate.soldResultsCount,
         soldAveragePriceUsd: selectedCandidate.soldAveragePriceUsd,

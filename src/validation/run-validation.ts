@@ -120,7 +120,7 @@ function hasPrimaryResearchSoldSignals(terapeak: ResolvedTerapeakSignals): boole
 
 function createSkippedSoldSignals(): Awaited<ReturnType<typeof getEbaySoldValidationSignals>> {
   return {
-    provider: 'third_party_sold_api',
+    provider: 'rapidgate_sold_api',
     confidence: 'Low',
     soldResultsCount: null,
     soldAveragePriceUsd: null,
@@ -647,7 +647,7 @@ export async function runValidation(
           sold.soldAveragePriceUsd !== null ||
           sold.soldResultsCount !== null ||
           hasSoldVelocityEvidence(sold.soldVelocity)
-        ? 'third_party_sold_api'
+        ? 'rapidgate_sold_api'
         : ebay.marketPriceUsd !== null
           ? 'ebay_browse'
           : 'none';
@@ -659,10 +659,10 @@ export async function runValidation(
       activeSource,
       soldSource,
       soldFallbackUsed:
-        !primaryResearchSoldSignalsAvailable && soldSource === 'third_party_sold_api',
+        !primaryResearchSoldSignalsAvailable && soldSource === 'rapidgate_sold_api',
       fallbackReason: primaryResearchSoldSignalsAvailable
         ? null
-        : soldSource === 'third_party_sold_api'
+        : soldSource === 'rapidgate_sold_api'
           ? researchAuthUnavailable
             ? `ebay_research_ui auth unavailable (state=${terapeak.queryDebug.authState ?? 'unknown'}, source=${terapeak.queryDebug.sessionSource ?? 'none'}), so the legacy sold provider was used as automatic fallback.`
             : 'ebay_research_ui returned insufficient sold signals, so the legacy sold provider was used as automatic fallback.'

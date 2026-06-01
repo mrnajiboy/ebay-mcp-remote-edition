@@ -354,7 +354,7 @@ avgWatchersPerListing: null,
     });
 
     getEbaySoldValidationSignalsMock.mockResolvedValue({
-      provider: 'third_party_sold_api',
+      provider: 'rapidgate_sold_api',
       confidence: 'High',
       soldResultsCount: 8,
       soldAveragePriceUsd: 21,
@@ -556,7 +556,7 @@ avgWatchersPerListing: null,
       ).providerResolution
     ).toMatchObject({
       activeSource: 'ebay_browse',
-      soldSource: 'third_party_sold_api',
+      soldSource: 'rapidgate_sold_api',
       soldFallbackUsed: true,
       fallbackReason:
         'ebay_research_ui returned insufficient sold signals, so the legacy sold provider was used as automatic fallback.',
@@ -601,7 +601,7 @@ avgWatchersPerListing: null,
     });
 
     getEbaySoldValidationSignalsMock.mockResolvedValue({
-      provider: 'third_party_sold_api',
+      provider: 'rapidgate_sold_api',
       confidence: 'High',
       soldResultsCount: 8,
       soldAveragePriceUsd: 21,
@@ -806,7 +806,7 @@ avgWatchersPerListing: null,
       ).providerResolution
     ).toMatchObject({
       activeSource: 'ebay_research_ui',
-      soldSource: 'third_party_sold_api',
+      soldSource: 'rapidgate_sold_api',
       soldFallbackUsed: true,
       fallbackReason:
         'ebay_research_ui returned insufficient sold signals, so the legacy sold provider was used as automatic fallback.',
