@@ -658,8 +658,7 @@ export async function runValidation(
     const providerResolution = {
       activeSource,
       soldSource,
-      soldFallbackUsed:
-        !primaryResearchSoldSignalsAvailable && soldSource === 'rapidgate_sold_api',
+      soldFallbackUsed: !primaryResearchSoldSignalsAvailable && soldSource === 'rapidgate_sold_api',
       fallbackReason: primaryResearchSoldSignalsAvailable
         ? null
         : soldSource === 'rapidgate_sold_api'

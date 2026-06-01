@@ -329,6 +329,27 @@ function extractSnapshotSummary(
     const ebay = (parsed.ebay ?? {}) as Record<string, unknown>;
     const sold = (parsed.sold ?? {}) as Record<string, unknown>;
     const terapeak = (parsed.terapeak ?? {}) as Record<string, unknown>;
+    const queryDebug = (terapeak.queryDebug ?? {}) as Record<string, unknown>;
+    const antiBotDetection = (queryDebug.antiBotDetection ?? null) as Record<
+      string,
+      unknown
+    > | null;
+    const fallbackReasons = Array.isArray(queryDebug.fallbackReasons)
+      ? queryDebug.fallbackReasons.filter((value): value is string => typeof value === 'string')
+      : [];
+    const currentPageErrors = Array.isArray(queryDebug.currentPageErrors)
+      ? queryDebug.currentPageErrors.filter((value): value is string => typeof value === 'string')
+      : [];
+    const notes = typeof queryDebug.notes === 'string' ? queryDebug.notes : null;
+    const terapeakFailureReason =
+      currentPageErrors[0] ??
+      fallbackReasons.find((reason) => !reason.includes('Hydrated ')) ??
+      notes ??
+      null;
+    const soldFallbackUsed =
+      (terapeak.soldListingsCount === null || terapeak.soldListingsCount === undefined) &&
+      sold.provider !== null &&
+      sold.provider !== undefined;
     return {
       itemName: effectiveContext.itemName ?? null,
       effectiveSearchQuery: effectiveContext.effectiveSearchQuery ?? null,
@@ -342,10 +363,15 @@ function extractSnapshotSummary(
         terapeak.soldListingsCount !== null && terapeak.soldListingsCount !== undefined
           ? 'ebay_research_ui'
           : (sold.provider ?? 'none'),
+      soldFallbackUsed,
       terapeakProvider: terapeak.provider ?? null,
       terapeakConfidence: terapeak.confidence ?? null,
       terapeakActiveListingsCount: terapeak.activeListingsCount ?? null,
       terapeakSoldListingsCount: terapeak.soldListingsCount ?? null,
+      terapeakFailureReason,
+      terapeakAntiBotDetection: antiBotDetection,
+      terapeakAuthState: queryDebug.authState ?? null,
+      terapeakSessionSource: queryDebug.sessionSource ?? null,
       thirdPartySoldStatus: sold.status ?? null,
       ebayActiveListingsCount: ebay.preOrderListingsCount ?? ebay.competitionLevel ?? null,
     };
