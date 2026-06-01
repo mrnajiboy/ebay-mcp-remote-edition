@@ -22,10 +22,80 @@
     }
   }
 
+  function safeDecode(value) {
+    let decoded = String(value || '').replace(/\+/g, ' ');
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) break;
+        decoded = next;
+      } catch {
+        break;
+      }
+    }
+    return decoded.trim().replace(/\s+/g, ' ');
+  }
+
+  function normalizeSearchQuery(value) {
+    const query = safeDecode(value);
+    if (!query || /^https?:\/\//i.test(query)) return '';
+    return query.slice(0, 160);
+  }
+
+  function queryFromUrlString(rawUrl, depth = 0) {
+    if (!rawUrl || depth > 3) return '';
+    const decodedUrl = safeDecode(rawUrl);
+    let url;
+    try {
+      url = new URL(decodedUrl, location.origin);
+    } catch {
+      return '';
+    }
+
+    for (const key of ['keywords', 'query', '_nkw', 'q']) {
+      const direct = normalizeSearchQuery(url.searchParams.get(key));
+      if (direct) return direct;
+    }
+
+    for (const key of ['url', 'ru', 'r', 'redirect', 'redirectUrl', 'returnUrl', 'continue', 'target', 'targetUrl']) {
+      const nested = queryFromUrlString(url.searchParams.get(key), depth + 1);
+      if (nested) return nested;
+    }
+
+    const queryMatch = decodedUrl.match(/[?&](?:keywords|query|_nkw)=([^&#\s]+)/i);
+    return normalizeSearchQuery(queryMatch?.[1]);
+  }
+
+  function queryFromDocument(pageText) {
+    const inputSelectors = [
+      'input[name="keywords"]',
+      'input[name="query"]',
+      'input[name="_nkw"]',
+      'input[type="search"]',
+      'input[placeholder*="Search" i]',
+      'input[aria-label*="Search" i]'
+    ];
+    for (const selector of inputSelectors) {
+      const value = normalizeSearchQuery(document.querySelector(selector)?.value);
+      if (value) return value;
+    }
+
+    const html = document.documentElement?.innerHTML || '';
+    const encodedMatch = html.match(/(?:keywords|query|_nkw)=([^"'&<>\s]+(?:%20|\+)[^"'&<>\s]*)/i);
+    const encodedQuery = normalizeSearchQuery(encodedMatch?.[1]);
+    if (encodedQuery) return encodedQuery;
+
+    const textMatch = pageText.match(/(?:search query|keywords?)\s*[:=]\s*["“]?([^"”\n|]{3,120})/i);
+    return normalizeSearchQuery(textMatch?.[1]);
+  }
+
+  function extractSearchQuery(pageText) {
+    return queryFromUrlString(location.href) || queryFromDocument(pageText);
+  }
+
   function extractTerapeakSnapshot() {
     const pageText = text();
-    const url = new URL(location.href);
-    const query = url.searchParams.get('keywords') || url.searchParams.get('query') || '';
+    const query = extractSearchQuery(pageText);
 
     return {
       capturedAt: new Date().toISOString(),

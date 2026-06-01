@@ -116,6 +116,42 @@ function valueText(value) {
   return String(value);
 }
 
+function normalizeComparableQuery(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function searchTextMatchesQuery(searchText, pageQuery) {
+  const haystack = normalizeComparableQuery(searchText);
+  const terms = normalizeComparableQuery(pageQuery)
+    .split(' ')
+    .filter((term) => term.length > 2);
+  return terms.length > 0 && terms.every((term) => haystack.includes(term));
+}
+
+async function hydrateSearchFromActivePage() {
+  try {
+    const tab = await getActiveTab();
+    const snapshot = (await collectPageSnapshot(tab.id)).snapshot;
+    const pageQuery = snapshot?.query?.trim();
+    if (!pageQuery) return;
+
+    const currentSearch = $('recordSearch').value.trim();
+    if (normalizeComparableQuery(currentSearch) === normalizeComparableQuery(pageQuery)) return;
+
+    $('recordSearch').value = pageQuery;
+    if ($('recordId').value.trim() && currentSearch && !searchTextMatchesQuery(currentSearch, pageQuery)) {
+      $('recordId').value = '';
+    }
+    $('recordResults').textContent = `Detected page query: ${pageQuery}. Click Search records.`;
+    await saveOptions();
+  } catch {
+    // The popup can open on non-eBay/chrome pages where content-script injection is not allowed.
+  }
+}
+
 function selectedFieldLines(summary, group) {
   const fields = (summary?.fields || []).filter((field) => field.group === group && field.field !== 'Last Data Snapshot');
   return fields.map((field) => {
@@ -308,4 +344,9 @@ $('saveAndRerun').addEventListener('click', () => withBusy('saveAndRerun', async
   return { ok: true, session, validation };
 }, (result) => `Session saved.\n\n${formatValidationResult(result.validation)}`));
 
-loadOptions().catch((error) => setStatus(String(error), 'err'));
+async function init() {
+  await loadOptions();
+  await hydrateSearchFromActivePage();
+}
+
+init().catch((error) => setStatus(String(error), 'err'));
