@@ -2654,6 +2654,9 @@ async function reinjectResearchQueryUrlWithPlaywright(
         return null;
       }
       const page = await context.newPage();
+      await page.goto('https://www.ebay.com/', {
+        waitUntil: 'domcontentloaded',
+      });
       await page.goto(buildResearchUiUrlFromEndpointUrl(requestUrl), {
         waitUntil: 'domcontentloaded',
       });

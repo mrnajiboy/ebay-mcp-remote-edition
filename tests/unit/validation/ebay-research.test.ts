@@ -322,7 +322,8 @@ describe('fetchEbayResearch()', () => {
     expect(response.active.listingRows).toHaveLength(1);
     expect(response.sold.soldRows).toHaveLength(1);
     expect(browserContextNewPageMock).toHaveBeenCalled();
-    expect(pageGotoMock).toHaveBeenCalledWith(
+    expect(pageGotoMock).toHaveBeenNthCalledWith(1, 'https://www.ebay.com/', { waitUntil: 'domcontentloaded' });
+    expect(pageGotoMock).toHaveBeenLastCalledWith(
       expect.stringContaining('https://www.ebay.com/sh/research?'),
       { waitUntil: 'domcontentloaded' }
     );
