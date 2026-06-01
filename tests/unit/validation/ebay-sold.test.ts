@@ -78,8 +78,8 @@ describe('eBay sold provider query context', () => {
   });
 
   it('builds broad album fallback from resolved artist text, not Airtable linked record IDs', async () => {
-    vi.stubEnv('SOLD_ITEMS_API_URL', '');
-    vi.stubEnv('SOLD_ITEMS_API_KEY', '');
+    vi.stubEnv('RAPIDGATE_API_URL', '');
+    vi.stubEnv('RAPIDGATE_API_KEY', '');
 
     const signals = await getEbaySoldValidationSignals(createRequest());
 

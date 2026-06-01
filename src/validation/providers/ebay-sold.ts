@@ -568,8 +568,8 @@ function createEmptySoldSignals(
 export async function getEbaySoldValidationSignals(
   request: ValidationRunRequest
 ): Promise<EbaySoldValidationSignals> {
-  const soldApiUrl = process.env.SOLD_ITEMS_API_URL?.trim();
-  const soldApiKey = process.env.SOLD_ITEMS_API_KEY?.trim();
+  const soldApiUrl = process.env.RAPIDGATE_API_URL?.trim();
+  const soldApiKey = process.env.RAPIDGATE_API_KEY?.trim();
   const { queryPlan, queryResolution } = buildResolvedSoldQueryPlan(request);
   const queryCandidates = queryPlan.map((candidate) => candidate.query);
   const query = queryCandidates[0] ?? null;

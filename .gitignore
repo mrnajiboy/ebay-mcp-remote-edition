@@ -16,6 +16,8 @@ out/
 *.d.ts.map
 
 # Environment variables
+*.env
+.env.*
 .env
 .env.keys
 .env.vault

@@ -133,7 +133,7 @@ Hosted HTTP uses `pnpm run start:http` after `pnpm run build` or `pnpm run dev:h
 | `SESSION_TTL_SECONDS` | Hosted session lifetime in seconds; default is 30 days. |
 | `EBAY_MARKETPLACE_ID`, `EBAY_CONTENT_LANGUAGE` | API defaults; source defaults are `EBAY_US` and `en-US`. |
 | `VALIDATION_RUNNER_USER_ID`, `VALIDATION_RUNNER_USER_ID_SANDBOX`, `VALIDATION_RUNNER_USER_ID_PRODUCTION` | Required only for `/validation/run` and `/validation/health` to find a stored runner user. |
-| `SOLD_ITEMS_API_URL`, `SOLD_ITEMS_API_KEY`, `PERPLEXITY_API_KEY`, `TWITTER_BEARER_TOKEN`, `YOUTUBE_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | Optional validation providers. |
+| `RAPIDGATE_API_URL`, `RAPIDGATE_API_KEY`, `PERPLEXITY_API_KEY`, `TWITTER_BEARER_TOKEN`, `YOUTUBE_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | Optional validation providers. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `EBAY_RESEARCH_SESSION_ALERT_CALLBACK_URL` | Optional eBay Research session expiry alerting. |
 
 #### Admin key authorization behavior

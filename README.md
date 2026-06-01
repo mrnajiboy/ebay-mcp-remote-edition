@@ -262,8 +262,8 @@ VALIDATION_RUNNER_USER_ID_SANDBOX=
 VALIDATION_RUNNER_USER_ID_PRODUCTION=
 
 # Optional validation/research providers and alerts
-SOLD_ITEMS_API_URL=
-SOLD_ITEMS_API_KEY=
+RAPIDGATE_API_URL=
+RAPIDGATE_API_KEY=
 PERPLEXITY_API_KEY=
 TWITTER_BEARER_TOKEN=
 YOUTUBE_API_KEY=
@@ -670,7 +670,7 @@ The hosted backend includes a validation pipeline for item evaluation. Routes li
 **Merge precedence:** Terapeak > sold provider > browse provider for overlapping fields. Optional providers (social, research) only write when data resolves — never blank existing values.
 
 **Known limitations:**
-- Sold-data provider is temporary (external API via `SOLD_ITEMS_API_URL`)
+- Sold-data provider is temporary (external API via `RAPIDGATE_API_URL`)
 - Social signals are supportive only — not authoritative buy triggers
 - Chart provider is a stub
 - eBay Research requires valid Playwright session
@@ -749,7 +749,7 @@ curl https://your-server.com/sandbox/validation/health \
   -H "X-Admin-API-Key: YOUR_ADMIN_API_KEY"
 ```
 
-Check: `VALIDATION_RUNNER_USER_ID` set, runner has stored tokens, tokens not expired, `SOLD_ITEMS_API_URL` configured.
+Check: `VALIDATION_RUNNER_USER_ID` set, runner has stored tokens, tokens not expired, `RAPIDGATE_API_URL` configured.
 
 ### eBay Research shows `authState = missing`
 
