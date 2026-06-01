@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getEbaySoldValidationSignals } from '../../../src/validation/providers/ebay-sold.js';
+import {
+  filterSoldItemsForValidationRelevance,
+  getEbaySoldValidationSignals,
+} from '../../../src/validation/providers/ebay-sold.js';
 import type { ValidationRunRequest } from '../../../src/validation/types.js';
 
-function createRequest(
-  overrides: Partial<ValidationRunRequest> = {}
-): ValidationRunRequest {
+function createRequest(overrides: Partial<ValidationRunRequest> = {}): ValidationRunRequest {
   return {
     validationId: 'rec58N8lisKta90Za',
     runType: 'scheduled',
@@ -78,6 +79,7 @@ describe('eBay sold provider query context', () => {
   });
 
   it('builds broad album fallback from resolved artist text, not Airtable linked record IDs', async () => {
+    vi.stubEnv('EBAY_SOLD_SEARCH_HTML_ENABLED', 'false');
     vi.stubEnv('RAPIDGATE_API_URL', '');
     vi.stubEnv('RAPIDGATE_API_KEY', '');
 
@@ -86,5 +88,54 @@ describe('eBay sold provider query context', () => {
     expect(signals.broadAlbumQuery).toBe('le sserafim launch validation album 2');
     expect(signals.broadAlbumQuery).not.toContain('recdrjKzp9a2uY4mU');
     expect(signals.queryCandidates?.[0]).toBe('le sserafim launch validation album 2');
+  });
+
+  it('filters photocard-only sold-search noise from standard album validation samples', () => {
+    const baseRequest = createRequest();
+    const filtered = filterSoldItemsForValidationRelevance(
+      [
+        {
+          title: 'Stray Kids MAXIDENT Official Album Sealed Ver Photocard Included',
+          soldAt: '2026-05-25T00:00:00.000Z',
+          priceUsd: 24.99,
+          itemUrl: 'https://www.ebay.com/itm/album',
+        },
+        {
+          title: 'Stray Kids MAXIDENT Official Photocard Bang Chan POB Lucky Draw',
+          soldAt: '2026-05-25T00:00:00.000Z',
+          priceUsd: 4.99,
+          itemUrl: 'https://www.ebay.com/itm/pc',
+        },
+        {
+          title: 'NewJeans unrelated photocard lot',
+          soldAt: '2026-05-25T00:00:00.000Z',
+          priceUsd: 999,
+          itemUrl: 'https://www.ebay.com/itm/unrelated',
+        },
+      ],
+      createRequest({
+        item: {
+          ...baseRequest.item,
+          name: 'Stray Kids - MAXIDENT',
+          canonicalArtists: ['Stray Kids'],
+          relatedAlbums: ['MAXIDENT'],
+        },
+        validation: {
+          ...baseRequest.validation,
+          validationType: 'Standard Album',
+          queryContext: {
+            ...baseRequest.validation.queryContext,
+            resolvedSearchArtist: 'stray kids',
+            resolvedSearchItem: 'maxident',
+            resolvedSearchQuery: 'stray kids maxident',
+          },
+        },
+      }),
+      'stray kids maxident'
+    );
+
+    expect(filtered.items.map((item) => item.itemUrl)).toEqual(['https://www.ebay.com/itm/album']);
+    expect(filtered.removedCount).toBe(2);
+    expect(filtered.notes).toContain('filtered out 2 low-relevance sold-search row(s)');
   });
 });

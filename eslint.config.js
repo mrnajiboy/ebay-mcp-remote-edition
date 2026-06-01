@@ -20,6 +20,7 @@ export default tseslint.config(
       '*.config.js',
       '*.config.mjs',
       '.airtable/**',
+      '.tmp/**',
       '**/*.mjs',
       'scripts/**',
       'backups/**',

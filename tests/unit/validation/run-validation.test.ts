@@ -7,6 +7,42 @@ const getSocialValidationSignalsMock = vi.fn();
 const getChartValidationSignalsMock = vi.fn();
 const getPreviousComebackResearchSignalsMock = vi.fn();
 
+function createEmptySoldProviderSignals() {
+  return {
+    provider: 'ebay_sold_search_html',
+    confidence: 'Low',
+    soldResultsCount: null,
+    soldAveragePriceUsd: null,
+    soldMedianPriceUsd: null,
+    soldMinPriceUsd: null,
+    soldMaxPriceUsd: null,
+    soldItemsSample: [],
+    soldVelocity: {
+      day1Sold: null,
+      day2Sold: null,
+      day3Sold: null,
+      day4Sold: null,
+      day5Sold: null,
+      daysTracked: null,
+    },
+    recentSoldCount7d: null,
+    soldBucketDebug: undefined,
+    query: null,
+    queryCandidates: [],
+    queryDiagnostics: [],
+    selectedQuery: undefined,
+    selectedQueryTier: null,
+    selectedQueryFamily: null,
+    broadAlbumQuery: null,
+    subtypeSpecificQuery: null,
+    querySelectionReason: 'test empty sold provider signals',
+    responseUrl: null,
+    status: 'unavailable',
+    errorMessage: undefined,
+    queryResolution: undefined,
+  };
+}
+
 vi.mock('@/validation/providers/ebay.js', () => ({
   getEbayValidationSignals: getEbayValidationSignalsMock,
 }));
@@ -36,17 +72,18 @@ describe('runValidation()', () => {
     vi.resetModules();
     getEbayValidationSignalsMock.mockReset();
     getEbaySoldValidationSignalsMock.mockReset();
+    getEbaySoldValidationSignalsMock.mockResolvedValue(createEmptySoldProviderSignals());
     getTerapeakValidationSignalsMock.mockReset();
     getSocialValidationSignalsMock.mockReset();
     getChartValidationSignalsMock.mockReset();
     getPreviousComebackResearchSignalsMock.mockReset();
   });
 
-  it('prefers first-party research sold velocity over legacy sold fallback when research already has sold evidence', async () => {
+  it('prefers the sold provider over first-party research sold velocity when both have sold evidence', async () => {
     const { runValidation } = await import('../../../src/validation/run-validation.js');
- 
+
     getEbayValidationSignalsMock.mockResolvedValue({
-avgWatchersPerListing: null,
+      avgWatchersPerListing: null,
       preOrderListingsCount: null,
       marketPriceUsd: null,
       avgShippingCostUsd: null,
@@ -265,27 +302,27 @@ avgWatchersPerListing: null,
       throw new Error(`unexpected result: ${JSON.stringify(result)}`);
     }
 
-    expect(getEbaySoldValidationSignalsMock).not.toHaveBeenCalled();
-    expect(result.writes?.soldListingsCount).toBe(2);
-    expect(result.writes?.day1Sold).toBe(0);
-    expect(result.writes?.day2Sold).toBe(0);
-    expect(result.writes?.day3Sold).toBe(0);
+    expect(getEbaySoldValidationSignalsMock).toHaveBeenCalledTimes(1);
+    expect(result.writes?.soldListingsCount).toBe(8);
+    expect(result.writes?.day1Sold).toBe(3);
+    expect(result.writes?.day2Sold).toBe(2);
+    expect(result.writes?.day3Sold).toBe(1);
     expect(result.writes?.daysTracked).toBe(5);
     expect(result.writes?.perplexityHistoricalContextScore).toBeUndefined();
     expect(result.writes?.historicalContextNotes).toBeUndefined();
     expect(result.writes?.researchConfidence).toBeUndefined();
-    expect((result.debug as { writeResolution: Record<string, string> }).writeResolution.day1Sold).toBe(
-      'research_sold_rows'
-    );
-    expect((result.debug as { writeResolution: Record<string, string> }).writeResolution.day2Sold).toBe(
-      'research_sold_rows'
-    );
-    expect((result.debug as { writeResolution: Record<string, string> }).writeResolution.day3Sold).toBe(
-      'research_sold_rows'
-    );
-    expect((result.debug as { writeResolution: Record<string, string> }).writeResolution.daysTracked).toBe(
-      'research_sold_rows'
-    );
+    expect(
+      (result.debug as { writeResolution: Record<string, string> }).writeResolution.day1Sold
+    ).toBe('sold');
+    expect(
+      (result.debug as { writeResolution: Record<string, string> }).writeResolution.day2Sold
+    ).toBe('sold');
+    expect(
+      (result.debug as { writeResolution: Record<string, string> }).writeResolution.day3Sold
+    ).toBe('sold');
+    expect(
+      (result.debug as { writeResolution: Record<string, string> }).writeResolution.daysTracked
+    ).toBe('sold');
     expect(
       (
         result.debug as {
@@ -299,9 +336,10 @@ avgWatchersPerListing: null,
       ).providerResolution
     ).toMatchObject({
       activeSource: 'none',
-      soldSource: 'ebay_research_ui',
-      soldFallbackUsed: false,
-      fallbackReason: null,
+      soldSource: 'ebay_sold',
+      soldFallbackUsed: true,
+      fallbackReason:
+        'ebay_sold had sold signals and took priority over ebay_research_ui sold signals.',
     });
     expect(
       (result.debug as { writeResolution: Record<string, string> }).writeResolution
@@ -537,12 +575,12 @@ avgWatchersPerListing: null,
     expect(result.writes?.day1Sold).toBe(3);
     expect(result.writes?.day2Sold).toBe(2);
     expect(result.writes?.day3Sold).toBe(1);
-    expect((result.debug as { writeResolution: Record<string, string> }).writeResolution.marketPriceUsd).toBe(
-      'sold'
-    );
-    expect((result.debug as { writeResolution: Record<string, string> }).writeResolution.day1Sold).toBe(
-      'sold'
-    );
+    expect(
+      (result.debug as { writeResolution: Record<string, string> }).writeResolution.marketPriceUsd
+    ).toBe('sold');
+    expect(
+      (result.debug as { writeResolution: Record<string, string> }).writeResolution.day1Sold
+    ).toBe('sold');
     expect(
       (
         result.debug as {
@@ -559,7 +597,7 @@ avgWatchersPerListing: null,
       soldSource: 'rapidgate_sold_api',
       soldFallbackUsed: true,
       fallbackReason:
-        'ebay_research_ui returned insufficient sold signals, so the legacy sold provider was used as automatic fallback.',
+        'ebay_research_ui returned insufficient sold signals, so rapidgate_sold_api was used as automatic sold fallback.',
     });
   });
 
@@ -787,12 +825,12 @@ avgWatchersPerListing: null,
     expect(result.writes?.day1Sold).toBe(3);
     expect(result.writes?.day2Sold).toBe(2);
     expect(result.writes?.day3Sold).toBe(1);
-    expect((result.debug as { writeResolution: Record<string, string> }).writeResolution.marketPriceUsd).toBe(
-      'research_active_rows'
-    );
-    expect((result.debug as { writeResolution: Record<string, string> }).writeResolution.day1Sold).toBe(
-      'sold'
-    );
+    expect(
+      (result.debug as { writeResolution: Record<string, string> }).writeResolution.marketPriceUsd
+    ).toBe('research_active_rows');
+    expect(
+      (result.debug as { writeResolution: Record<string, string> }).writeResolution.day1Sold
+    ).toBe('sold');
     expect(
       (
         result.debug as {
@@ -809,7 +847,7 @@ avgWatchersPerListing: null,
       soldSource: 'rapidgate_sold_api',
       soldFallbackUsed: true,
       fallbackReason:
-        'ebay_research_ui returned insufficient sold signals, so the legacy sold provider was used as automatic fallback.',
+        'ebay_research_ui returned insufficient sold signals, so rapidgate_sold_api was used as automatic sold fallback.',
     });
   });
 
@@ -991,7 +1029,7 @@ avgWatchersPerListing: null,
       throw new Error(`unexpected result: ${JSON.stringify(result)}`);
     }
 
-    expect(getEbaySoldValidationSignalsMock).not.toHaveBeenCalled();
+    expect(getEbaySoldValidationSignalsMock).toHaveBeenCalledTimes(1);
     expect(result.writes?.marketPriceUsd).toBe(19);
     expect(result.writes?.latestAiRecommendation).toBe(
       'Sold comps are available, but sample depth is still limited. Keep monitoring until resale momentum becomes clearer.'

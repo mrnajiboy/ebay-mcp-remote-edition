@@ -15,6 +15,12 @@ import {
   getPrimaryAlbumPhrase,
   sanitizeQueryCandidate,
 } from './query-utils.js';
+import {
+  collectCurrencyCodesFromSoldSearchHtml,
+  fetchCurrencyRatesToUsd,
+  fetchEbaySoldSearchHtml,
+  parseEbaySoldSearchHtml,
+} from './ebay-sold-search-html.js';
 
 interface SoldProviderProduct {
   title?: string;
@@ -41,6 +47,12 @@ interface NormalizedSoldProducts {
   withSoldAt: number;
   missingSoldAt: number;
   dateParseFailures: number;
+}
+
+interface SoldRelevanceFilterResult {
+  items: SoldItemSample[];
+  removedCount: number;
+  notes: string[];
 }
 
 interface BucketSoldVelocityResult {
@@ -71,6 +83,10 @@ interface SoldCandidateEvaluation {
 }
 
 const MAX_SOLD_QUERY_EVALUATIONS = 4;
+const PHOTOCARD_ONLY_NOISE_PATTERN =
+  /\b(?:photocards?|photo\s*cards?|pobs?|pre\s*order\s*benefits?|preorder\s*benefits?|lucky\s*draws?|trading\s*cards?|lomo\s*cards?|postcards?|mini\s*cards?)\b/i;
+const ALBUM_DELIVERY_ANCHOR_PATTERN =
+  /\b(?:albums?|cds?|sealed|unsealed|photobooks?|packages?|versions?|ver\.?|jewel|digipack|platform|weverse\s+albums?|nemo|poca\s+albums?|kit|qr|compact|vinyl|lp)\b/i;
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
@@ -377,6 +393,86 @@ function computeSubtypeAlignment(
   return soldItems.some((item) => item.title.toLowerCase().includes(normalizedSubtypeToken));
 }
 
+function hasAnyToken(titleTokens: Set<string>, requiredTokens: string[]): boolean {
+  return requiredTokens.length === 0 || requiredTokens.some((token) => titleTokens.has(token));
+}
+
+function isStandardAlbumValidation(request: ValidationRunRequest): boolean {
+  if (getSubtypeToken(request)) {
+    return false;
+  }
+
+  const combined = [
+    request.validation.validationType,
+    request.validation.queryContext?.validationScope,
+    ...request.item.itemType,
+    ...request.item.releaseType,
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  return /\balbums?\b|standard\s+album|\bcd\b/.test(combined);
+}
+
+function isPhotocardOnlyAlbumNoise(item: SoldItemSample, request: ValidationRunRequest): boolean {
+  if (!isStandardAlbumValidation(request)) {
+    return false;
+  }
+
+  const title = item.title.toLowerCase();
+  return PHOTOCARD_ONLY_NOISE_PATTERN.test(title) && !ALBUM_DELIVERY_ANCHOR_PATTERN.test(title);
+}
+
+export function filterSoldItemsForValidationRelevance(
+  items: SoldItemSample[],
+  request: ValidationRunRequest,
+  query: string
+): SoldRelevanceFilterResult {
+  const artistTokens = extractSemanticTokens(getPrimaryArtist(request));
+  const productTokens = extractSemanticTokens(getPrimaryAlbumPhrase(request));
+  const queryTokens = extractSemanticTokens(query);
+  const seenItemUrls = new Set<string>();
+  const filteredItems: SoldItemSample[] = [];
+  let removedCount = 0;
+
+  for (const item of items) {
+    const dedupeKey = item.itemUrl?.trim();
+    if (dedupeKey && seenItemUrls.has(dedupeKey)) {
+      removedCount += 1;
+      continue;
+    }
+    if (dedupeKey) {
+      seenItemUrls.add(dedupeKey);
+    }
+
+    const titleTokens = new Set(extractSemanticTokens(item.title));
+    const hasArtistMatch = hasAnyToken(titleTokens, artistTokens);
+    const hasProductMatch = hasAnyToken(titleTokens, productTokens);
+    const queryMatches = queryTokens.filter((token) => titleTokens.has(token)).length;
+    const hasMinimumQueryCoverage =
+      queryTokens.length === 0 || queryMatches >= Math.max(1, Math.ceil(queryTokens.length * 0.5));
+
+    if (!hasArtistMatch || !hasProductMatch || !hasMinimumQueryCoverage) {
+      removedCount += 1;
+      continue;
+    }
+
+    if (isPhotocardOnlyAlbumNoise(item, request)) {
+      removedCount += 1;
+      continue;
+    }
+
+    filteredItems.push(item);
+  }
+
+  return {
+    items: filteredItems,
+    removedCount,
+    notes:
+      removedCount > 0 ? [`filtered out ${removedCount} low-relevance sold-search row(s)`] : [],
+  };
+}
+
 function getFamilyPreferenceBonus(family: string | undefined): number {
   switch (family) {
     case 'resolved_query_context':
@@ -515,6 +611,73 @@ function scoreSoldConfidence(
   return 'Low';
 }
 
+function median(values: number[]): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return round((sorted[middle - 1] + sorted[middle]) / 2);
+  }
+  return round(sorted[middle]);
+}
+
+function summarizePrices(items: SoldItemSample[]): {
+  average: number | null;
+  median: number | null;
+  min: number | null;
+  max: number | null;
+} {
+  const prices = items
+    .map((item) => item.priceUsd)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+  if (prices.length === 0) {
+    return { average: null, median: null, min: null, max: null };
+  }
+
+  return {
+    average: round(prices.reduce((sum, value) => sum + value, 0) / prices.length),
+    median: median(prices),
+    min: round(Math.min(...prices)),
+    max: round(Math.max(...prices)),
+  };
+}
+
+function normalizeParsedSoldSearchItems(items: SoldItemSample[]): NormalizedSoldProducts {
+  const withSoldAt = items.filter((item) => item.soldAt !== null).length;
+  const missingSoldAt = items.length - withSoldAt;
+  return {
+    allItems: items,
+    soldItemsSample: items.slice(0, 10),
+    totalItemsExamined: items.length,
+    withSoldAt,
+    missingSoldAt,
+    dateParseFailures: 0,
+  };
+}
+
+function isSoldSearchHtmlEnabled(): boolean {
+  return process.env.EBAY_SOLD_SEARCH_HTML_ENABLED !== 'false';
+}
+
+function createSoldSearchBlockedNote(
+  status: number | null,
+  blockedReason: string | null
+): string | undefined {
+  if (blockedReason) {
+    return `ebay_sold_search_html blocked: ${blockedReason}`;
+  }
+  if (status === 403) {
+    return 'ebay_sold_search_html blocked: http_403';
+  }
+  if (status !== null && status >= 400) {
+    return `ebay_sold_search_html returned HTTP ${status}`;
+  }
+  return undefined;
+}
+
 function createEmptySoldSignals(
   query: string | null,
   queryCandidates: string[] = [],
@@ -581,6 +744,224 @@ export async function getEbaySoldValidationSignals(
     broadAlbumQuery,
     subtypeSpecificQuery
   );
+
+  if (query && isSoldSearchHtmlEnabled()) {
+    let htmlLastErrorMessage: string | undefined;
+    const evaluatedHtmlCandidates: SoldCandidateEvaluation[] = [];
+
+    for (const index of evaluationOrder) {
+      const plannedCandidate = queryPlan[index];
+      if (!plannedCandidate) {
+        continue;
+      }
+
+      const candidate = plannedCandidate.query;
+      try {
+        const fetched = await fetchEbaySoldSearchHtml(candidate);
+        const currencyRatesToUsd = await fetchCurrencyRatesToUsd(
+          collectCurrencyCodesFromSoldSearchHtml(fetched.html)
+        );
+        const parsed = parseEbaySoldSearchHtml(fetched.html, {
+          requestTimestamp: request.timestamp,
+          currencyRatesToUsd,
+        });
+        const blockedNote = createSoldSearchBlockedNote(fetched.status, parsed.blockedReason);
+        if (blockedNote) {
+          htmlLastErrorMessage = blockedNote;
+          queryDiagnostics.push({
+            query: candidate,
+            tier: index + 1,
+            family: plannedCandidate.family,
+            soldResultsCount: null,
+            recentSoldCount7d: null,
+            titleMatchScore: null,
+            status: 'error',
+            note: blockedNote,
+          });
+          continue;
+        }
+
+        const relevanceFilter = filterSoldItemsForValidationRelevance(
+          parsed.items,
+          request,
+          candidate
+        );
+        const normalizedProducts = normalizeParsedSoldSearchItems(relevanceFilter.items);
+        const { soldVelocity, recentSoldCount7d, soldBucketDebug } = bucketSoldVelocity(
+          normalizedProducts.allItems,
+          normalizedProducts,
+          request.timestamp
+        );
+        const soldResultsCount = normalizedProducts.allItems.length;
+        const titleMatchScore = computeTitleMatchScore(normalizedProducts.allItems, request);
+        const subtypeAligned = computeSubtypeAlignment(normalizedProducts.allItems, request);
+        const prices = summarizePrices(normalizedProducts.allItems);
+
+        queryDiagnostics.push({
+          query: candidate,
+          tier: index + 1,
+          family: plannedCandidate.family,
+          soldResultsCount,
+          recentSoldCount7d,
+          titleMatchScore: round(titleMatchScore),
+          subtypeAligned,
+          status: 'ok',
+          note: [
+            parsed.cutoffDetected
+              ? 'Parsed eBay sold-search HTML above Results matching fewer words cutoff.'
+              : 'Parsed eBay sold-search HTML; no fewer-words cutoff detected.',
+            ...relevanceFilter.notes,
+          ].join(' '),
+        });
+
+        const candidateScore =
+          ((soldResultsCount ?? normalizedProducts.allItems.length) *
+            (0.5 + titleMatchScore) *
+            100 +
+            recentSoldCount7d * 25 +
+            (subtypeAligned ? 6 : 0) +
+            getFamilyPreferenceBonus(queryPlan[index]?.family)) |
+          0;
+
+        evaluatedHtmlCandidates.push({
+          query: candidate,
+          tier: index + 1,
+          family: plannedCandidate.family,
+          soldResultsCount,
+          recentSoldCount7d,
+          titleMatchScore,
+          subtypeAligned,
+          confidence: scoreSoldConfidence(soldResultsCount, normalizedProducts.soldItemsSample),
+          soldAveragePriceUsd: prices.average,
+          soldMedianPriceUsd: prices.median,
+          soldMinPriceUsd: prices.min,
+          soldMaxPriceUsd: prices.max,
+          soldItemsSample: normalizedProducts.soldItemsSample,
+          soldVelocity,
+          soldBucketDebug: {
+            ...soldBucketDebug,
+            notes: [...soldBucketDebug.notes, ...parsed.parseNotes, ...relevanceFilter.notes],
+          },
+          responseUrl: fetched.responseUrl,
+          status: 'ok',
+          querySelectionScore: candidateScore,
+        });
+      } catch (error) {
+        htmlLastErrorMessage = error instanceof Error ? error.message : String(error);
+        queryDiagnostics.push({
+          query: candidate,
+          tier: index + 1,
+          family: plannedCandidate.family,
+          soldResultsCount: null,
+          recentSoldCount7d: null,
+          titleMatchScore: null,
+          status: 'error',
+          note: htmlLastErrorMessage,
+        });
+      }
+    }
+
+    const broadAlbumCandidate =
+      evaluatedHtmlCandidates.find(
+        (candidate) =>
+          candidate.family === 'artist_album_core' ||
+          (broadAlbumQuery !== null &&
+            candidate.query.toLowerCase() === broadAlbumQuery.toLowerCase())
+      ) ?? null;
+    const subtypeCandidate =
+      evaluatedHtmlCandidates.find(
+        (candidate) =>
+          isSubtypeSpecificFamily(candidate.family) ||
+          (subtypeSpecificQuery !== null &&
+            candidate.query.toLowerCase() === subtypeSpecificQuery.toLowerCase())
+      ) ?? null;
+
+    for (const diagnostic of queryDiagnostics) {
+      if (!isSubtypeSpecificFamily(diagnostic.family) || !broadAlbumCandidate) {
+        continue;
+      }
+
+      const candidateCount = diagnostic.soldResultsCount ?? 0;
+      const broadCount = broadAlbumCandidate.soldResultsCount ?? 0;
+      diagnostic.tooNarrow =
+        broadCount >= 5 &&
+        broadCount >= Math.max(candidateCount * 2, candidateCount + 4) &&
+        broadAlbumCandidate.titleMatchScore >= 0.45;
+    }
+
+    const selectedHtmlCandidate = evaluatedHtmlCandidates
+      .filter((candidate) => candidate.status === 'ok')
+      .sort((left, right) => {
+        const leftDiagnostic = queryDiagnostics.find(
+          (diagnostic) => diagnostic.query.toLowerCase() === left.query.toLowerCase()
+        );
+        const rightDiagnostic = queryDiagnostics.find(
+          (diagnostic) => diagnostic.query.toLowerCase() === right.query.toLowerCase()
+        );
+        const leftPenalty = leftDiagnostic?.tooNarrow ? 120 : 0;
+        const rightPenalty = rightDiagnostic?.tooNarrow ? 120 : 0;
+        const leftScore = left.querySelectionScore - leftPenalty;
+        const rightScore = right.querySelectionScore - rightPenalty;
+
+        if (rightScore !== leftScore) {
+          return rightScore - leftScore;
+        }
+        if (right.titleMatchScore !== left.titleMatchScore) {
+          return right.titleMatchScore - left.titleMatchScore;
+        }
+        return left.tier - right.tier;
+      })[0];
+
+    if (selectedHtmlCandidate) {
+      const subtypeDiagnostic = subtypeCandidate
+        ? queryDiagnostics.find(
+            (diagnostic) => diagnostic.query.toLowerCase() === subtypeCandidate.query.toLowerCase()
+          )
+        : undefined;
+
+      return {
+        provider: 'ebay_sold_search_html',
+        confidence: selectedHtmlCandidate.confidence,
+        soldResultsCount: selectedHtmlCandidate.soldResultsCount,
+        soldAveragePriceUsd: selectedHtmlCandidate.soldAveragePriceUsd,
+        soldMedianPriceUsd: selectedHtmlCandidate.soldMedianPriceUsd,
+        soldMinPriceUsd: selectedHtmlCandidate.soldMinPriceUsd,
+        soldMaxPriceUsd: selectedHtmlCandidate.soldMaxPriceUsd,
+        soldItemsSample: selectedHtmlCandidate.soldItemsSample,
+        soldVelocity: selectedHtmlCandidate.soldVelocity,
+        recentSoldCount7d: selectedHtmlCandidate.recentSoldCount7d,
+        soldBucketDebug: selectedHtmlCandidate.soldBucketDebug,
+        query: selectedHtmlCandidate.query,
+        queryCandidates,
+        queryDiagnostics: [...queryDiagnostics],
+        selectedQuery: selectedHtmlCandidate.query,
+        selectedQueryTier: selectedHtmlCandidate.tier,
+        selectedQueryFamily: selectedHtmlCandidate.family ?? null,
+        broadAlbumQuery,
+        subtypeSpecificQuery,
+        querySelectionReason: buildSelectionReason(
+          selectedHtmlCandidate,
+          broadAlbumCandidate,
+          subtypeCandidate,
+          subtypeDiagnostic
+        ),
+        responseUrl: selectedHtmlCandidate.responseUrl,
+        status: selectedHtmlCandidate.status,
+        queryResolution,
+      };
+    }
+
+    if (!soldApiUrl || !soldApiKey) {
+      return {
+        ...createEmptySoldSignals(query, queryCandidates, 'error', htmlLastErrorMessage),
+        provider: 'ebay_sold_search_html',
+        queryDiagnostics,
+        broadAlbumQuery,
+        subtypeSpecificQuery,
+        queryResolution,
+      };
+    }
+  }
 
   if (!soldApiUrl || !soldApiKey || !query) {
     return {
