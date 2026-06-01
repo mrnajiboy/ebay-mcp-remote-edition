@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terapeak Validation Saver</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      width: 380px;
+      margin: 0;
+      padding: 14px;
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #111827;
+      background: #f9fafb;
+    }
+    h1 { margin: 0 0 10px; font-size: 16px; }
+    label { display: block; margin: 10px 0 4px; font-weight: 600; }
+    input, textarea {
+      width: 100%;
+      padding: 8px 9px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font: inherit;
+      background: #fff;
+    }
+    input[type="password"] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .record-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 6px;
+      max-height: 132px;
+      overflow: auto;
+    }
+    .record-option {
+      margin-top: 0;
+      padding: 7px 8px;
+      text-align: left;
+      background: #fff;
+      color: #111827;
+      border: 1px solid #d1d5db;
+      font-weight: 600;
+    }
+    .record-option small { display: block; color: #6b7280; font-weight: 500; margin-top: 2px; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 9px;
+      padding: 9px 10px;
+      margin-top: 9px;
+      font-weight: 700;
+      cursor: pointer;
+      background: #111827;
+      color: #fff;
+    }
+    button.secondary { background: #4b5563; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .hint { margin: 6px 0 0; color: #6b7280; font-size: 12px; }
+    .status {
+      margin-top: 10px;
+      padding: 9px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #eff6ff;
+      color: #1e40af;
+      max-height: 180px;
+      overflow: auto;
+    }
+    .status.ok { background: #ecfdf5; color: #065f46; }
+    .status.err { background: #fef2f2; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <h1>Terapeak → Validation</h1>
+
+  <label for="baseUrl">Server base URL</label>
+  <input id="baseUrl" spellcheck="false" value="https://ebay-mcp.thousandstory.fyi">
+
+  <label for="adminKey">Admin API key</label>
+  <input id="adminKey" type="password" spellcheck="false" placeholder="x-admin-api-key">
+
+  <label for="recordSearch">Search validation record</label>
+  <input id="recordSearch" spellcheck="false" placeholder="Type item/query/record ID">
+  <div class="row">
+    <button id="searchRecords" class="secondary">Search records</button>
+    <button id="clearRecord" class="secondary">Clear</button>
+  </div>
+  <div id="recordResults" class="record-list hint">Results appear as: recordID - Item</div>
+
+  <label for="recordId">Selected Airtable validation record ID</label>
+  <input id="recordId" spellcheck="false" placeholder="recXXXXXXXXXXXXXX">
+  <p class="hint">Choose a record above or paste the ID directly. The selected ID is saved locally.</p>
+
+  <div class="row">
+    <button id="saveSession" class="secondary">Save session</button>
+    <button id="rerunRecord" class="secondary">Re-run record</button>
+  </div>
+  <button id="saveAndRerun">Save session + re-run record</button>
+
+  <div id="status" class="status">Ready. Open eBay Research/Terapeak, then use this popup.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

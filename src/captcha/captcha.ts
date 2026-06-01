@@ -15,6 +15,8 @@ export interface CaptchaConfig {
   pageUrl: string;
   /** Optional proxy string (host:port or user:pass@host:port) */
   proxy?: string;
+  /** Browser user-agent to give the captcha solver when provider supports it. */
+  userAgent?: string;
 }
 
 export interface CaptchaSolution {
@@ -104,6 +106,7 @@ class TwoCaptchaClient implements CaptchaProviderClient {
       pageurl: config.pageUrl,
       proxy: config.proxy,
       proxytype: config.proxy ? 'http' : undefined,
+      userAgent: config.userAgent,
       json: '1', // Force JSON response format
     };
 
@@ -354,6 +357,82 @@ export async function injectCaptchaToken(
         }
       }
 
+      // eBay's splashui captcha wrapper does not only post h-captcha-response.
+      // Its provider callback appends a hidden captchaTokenInput before submitting
+      // captcha_form. 2Captcha bypasses that provider callback, so mirror the
+      // expected hidden payload when the eBay captcha metadata input is present.
+      const ebayCaptchaDataInput = document.querySelector<HTMLInputElement>(
+        'input[id$="-captcha-data"], input[id*="captcha-data"]'
+      );
+      if (ebayCaptchaDataInput?.value) {
+        try {
+          const captchaData = JSON.parse(ebayCaptchaDataInput.value) as Record<string, unknown>;
+          const form =
+            (typeof captchaData.form === 'string'
+              ? document.getElementById(captchaData.form)
+              : null) ??
+            ebayCaptchaDataInput.closest('form') ??
+            document.querySelector('form');
+          if (form instanceof HTMLFormElement) {
+            const tokenInput = {
+              guid: typeof captchaData.guid === 'string' ? captchaData.guid : '',
+              provider:
+                typeof captchaData.provider === 'string' ? captchaData.provider : 'hcaptcha',
+              appName: typeof captchaData.appName === 'string' ? captchaData.appName : '',
+              iid: typeof captchaData.iid === 'string' ? captchaData.iid : '',
+              pvt: typeof captchaData.pvt === 'number' ? captchaData.pvt : -1,
+              cvt: typeof captchaData.cvt === 'number' ? captchaData.cvt : -1,
+              crt: Date.now(),
+              token: t,
+            };
+            form
+              .querySelectorAll<HTMLInputElement>('input[name="captchaTokenInput"]')
+              .forEach((existing) => existing.remove());
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = 'captchaTokenInput';
+            hidden.name = 'captchaTokenInput';
+            hidden.value = encodeURIComponent(JSON.stringify(tokenInput));
+            form.appendChild(hidden);
+
+            const cookieKey = 'cpt_guid';
+            const cookieName = 'cpt';
+            let domain = '.ebay.com';
+            const ebayDomainIndex = window.location.hostname.indexOf('.ebay.');
+            if (ebayDomainIndex > 0) {
+              domain = window.location.hostname.substring(ebayDomainIndex);
+            } else if (window.location.hostname) {
+              domain = window.location.hostname;
+            }
+            const existingCookie = document.cookie
+              .split('; ')
+              .find((entry) => entry.startsWith(`${cookieName}=`))
+              ?.split('=')
+              .slice(1)
+              .join('=');
+            let cookieContent = existingCookie ? decodeURIComponent(existingCookie) : '';
+            if (cookieContent) {
+              const parts = cookieContent.split(`^${cookieKey}=`);
+              if (parts.length === 2) {
+                const remainder = parts[1].split('^');
+                remainder.shift();
+                cookieContent = `${parts[0]}^${cookieKey}=${tokenInput.guid}^${remainder.join('^')}`;
+              } else if (parts.length === 1) {
+                cookieContent = `${cookieContent}${cookieKey}=${tokenInput.guid}^`;
+              }
+            }
+            if (!cookieContent) {
+              cookieContent = `^${cookieKey}=${tokenInput.guid}^`;
+            }
+            document.cookie = `${cookieName}=${encodeURIComponent(
+              cookieContent
+            )};path=/;max-age=300;domain=${domain}`;
+          }
+        } catch (_error) {
+          // Generic response-field injection above remains the fallback.
+        }
+      }
+
       const callbackNames = new Set<string>();
       const callbackElements = document.querySelectorAll<HTMLElement>(
         '.h-captcha[data-callback], .hcaptcha[data-callback], [data-callback]'
@@ -469,6 +548,65 @@ export async function triggerCaptchaVerification(
   page: CaptchaPage,
   type: CaptchaType
 ): Promise<boolean> {
+  const submittedInjectedEbayCaptcha = await page.evaluate((): boolean => {
+    const tokenInput = document.querySelector<HTMLInputElement>('input[name="captchaTokenInput"]');
+    const isCaptchaChallengePage =
+      /captcha|challenge|pardon/iu.test(window.location.href) ||
+      /captcha|challenge|pardon/iu.test(document.title) ||
+      /pardon our interruption|captcha challenge|please verify yourself/iu.test(
+        document.body?.innerText ?? ''
+      );
+
+    if (!tokenInput?.value || !isCaptchaChallengePage) {
+      return false;
+    }
+
+    const captchaDataInput = document.querySelector<HTMLInputElement>(
+      'input[id$="-captcha-data"], input[id*="captcha-data"]'
+    );
+    let callback: unknown;
+    if (captchaDataInput?.value) {
+      try {
+        const captchaData = JSON.parse(captchaDataInput.value) as Record<string, unknown>;
+        if (typeof captchaData.cbFn === 'string') {
+          callback = captchaData.cbFn.split('.').reduce<unknown>((target, key) => {
+            if (target && typeof target === 'object') {
+              return (target as Record<string, unknown>)[key];
+            }
+            return undefined;
+          }, window as unknown);
+        }
+      } catch (_error) {
+        // Fall back to form submission below.
+      }
+    }
+
+    if (typeof callback === 'function') {
+      const solvedHook = (window as unknown as Record<string, unknown>).hSolvedRad;
+      if (typeof solvedHook === 'function') {
+        try {
+          (solvedHook as () => void)();
+        } catch (_error) {
+          // Telemetry hook failure should not block captcha submission.
+        }
+      }
+      (callback as (verified: boolean) => void)(true);
+      return true;
+    }
+
+    const form = tokenInput.closest('form') ?? document.querySelector<HTMLFormElement>('form');
+    if (form instanceof HTMLFormElement) {
+      form.requestSubmit();
+      return true;
+    }
+
+    return false;
+  });
+
+  if (submittedInjectedEbayCaptcha) {
+    return true;
+  }
+
   let widgetTriggered = false;
 
   if (type === 'hcaptcha') {

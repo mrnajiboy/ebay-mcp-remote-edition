@@ -127,11 +127,14 @@ async function handleCaptchaChallenge(
   }
 
   try {
+    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- evaluated in browser page context, not Node.js.
+    const userAgent = await page.evaluate(() => navigator.userAgent).catch(() => undefined);
     const solution = await solveCaptcha(
       {
         type: captchaType,
         siteKey,
         pageUrl: page.url(),
+        userAgent,
       },
       getCaptchaSolveOptions()
     );

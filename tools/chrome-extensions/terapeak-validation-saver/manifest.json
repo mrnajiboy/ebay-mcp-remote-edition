@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Hankuk Terapeak Validation Saver",
+  "description": "Save the current eBay Research/Terapeak browser session and trigger one Airtable validation record re-run from the page.",
+  "version": "0.1.0",
+  "permissions": ["activeTab", "cookies", "scripting", "storage"],
+  "host_permissions": [
+    "https://www.ebay.com/*",
+    "https://*.ebay.com/*",
+    "https://ebay-mcp.thousandstory.fyi/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Save Terapeak validation",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.ebay.com/sh/research*", "https://*.ebay.com/sh/research*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

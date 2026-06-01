@@ -23,6 +23,7 @@ export default tseslint.config(
       '**/*.mjs',
       'scripts/**',
       'backups/**',
+      'tools/chrome-extensions/**',
       // Generated OpenAPI types — do not lint auto-generated files
       'src/types/*.d.ts',
       'src/types/sell-apps/**',

@@ -25,10 +25,9 @@ import {
 const configuredMarketplace = process.env.EBAY_RESEARCH_BOOTSTRAP_MARKETPLACE?.trim();
 const marketplace =
   configuredMarketplace && configuredMarketplace.length > 0 ? configuredMarketplace : 'EBAY-US';
-// Used as the redirect target URL after login to confirm session access
-const _researchUrl = `https://www.ebay.com/sh/research?marketplace=${encodeURIComponent(marketplace)}`;
-
-const EBAY_SIGNIN_URL = 'https://signin.ebay.com/ws/eBayISAPI.dll?SignIn&UsingSSL=1';
+// Use the Research URL as the entrypoint so eBay owns the sign-in redirect
+// and preserves the correct return URL through captcha / login handoffs.
+const researchUrl = `https://www.ebay.com/sh/research?marketplace=${encodeURIComponent(marketplace)}`;
 const DEFAULT_CAPTCHA_SOLVE_MAX_WAIT_MS = 300_000;
 const DEFAULT_CAPTCHA_POLL_INTERVAL_MS = 3_000;
 
@@ -82,7 +81,7 @@ function normalizePublicBaseUrl(): string {
 }
 
 function getManualCaptureUrl(): string {
-  return `${normalizePublicBaseUrl()}/admin/playwright-capture`;
+  return `${normalizePublicBaseUrl()}/admin/research-session/live`;
 }
 
 function sanitizeChallengeUrl(rawUrl: string): string {
@@ -140,13 +139,123 @@ class ManualResearchSessionRequiredError extends Error {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyPage = any;
+
+interface CaptchaSubmitDiagnostic {
+  observed: boolean;
+  status?: number;
+  url?: string;
+  location?: string;
+  finalUrl?: string;
+}
+
+interface HandleCaptchaOptions {
+  intendedUrl?: string;
+  reinjectIntendedUrl?: boolean;
+}
+
+function sanitizeUrlForLog(rawUrl: string | undefined): string | undefined {
+  if (!rawUrl) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const safeParams = new URLSearchParams();
+    for (const key of ['marketplace', 'keywords', 'q', 'statuscode']) {
+      const value = parsed.searchParams.get(key);
+      if (value) {
+        safeParams.set(key, value);
+      }
+    }
+    const query = safeParams.toString();
+    return `${parsed.origin}${parsed.pathname}${query ? `?${query}` : ''}`;
+  } catch {
+    return 'unknown';
+  }
+}
+
+function isSameSanitizedUrl(currentUrl: string, intendedUrl: string): boolean {
+  return sanitizeUrlForLog(currentUrl) === sanitizeUrlForLog(intendedUrl);
+}
+
+function observeCaptchaSubmit(page: AnyPage): Promise<CaptchaSubmitDiagnostic> {
+  if (typeof page.waitForResponse !== 'function') {
+    return Promise.resolve({ observed: false });
+  }
+
+  return page
+    .waitForResponse(
+      (response: AnyPage) => {
+        const responseUrl = typeof response.url === 'function' ? response.url() : '';
+        return /\/splashui\/captcha_submit\b|\/captcha_submit\b/iu.test(responseUrl);
+      },
+      { timeout: 15_000 }
+    )
+    .then(async (response: AnyPage): Promise<CaptchaSubmitDiagnostic> => {
+      const headers =
+        typeof response.headers === 'function'
+          ? ((await response.headers()) as Record<string, string | undefined>)
+          : {};
+      const responseUrl = typeof response.url === 'function' ? response.url() : undefined;
+      const status = typeof response.status === 'function' ? response.status() : undefined;
+      return {
+        observed: true,
+        status,
+        url: sanitizeUrlForLog(responseUrl),
+        location: sanitizeUrlForLog(headers.location),
+        finalUrl: sanitizeUrlForLog(page.url?.()),
+      };
+    })
+    .catch(
+      (): CaptchaSubmitDiagnostic => ({
+        observed: false,
+        finalUrl: sanitizeUrlForLog(page.url?.()),
+      })
+    );
+}
+
+function logCaptchaSubmitDiagnostic(label: string, diagnostic: CaptchaSubmitDiagnostic): void {
+  if (diagnostic.observed) {
+    console.warn(
+      `[AutoRenew] ${label}: observed captcha submit response status=${diagnostic.status ?? 'unknown'} url=${diagnostic.url ?? 'unknown'} location=${diagnostic.location ?? 'none'} final=${diagnostic.finalUrl ?? 'unknown'}`
+    );
+    return;
+  }
+
+  console.warn(
+    `[AutoRenew] ${label}: no /splashui/captcha_submit response observed; final=${diagnostic.finalUrl ?? 'unknown'}`
+  );
+}
+
+async function reinjectIntendedUrlAfterCaptcha(
+  page: AnyPage,
+  intendedUrl: string | undefined
+): Promise<void> {
+  if (!intendedUrl) {
+    return;
+  }
+
+  const currentUrl = page.url();
+  if (isSameSanitizedUrl(currentUrl, intendedUrl)) {
+    return;
+  }
+
+  console.warn(
+    `[AutoRenew] Re-injecting intended Research URL after captcha: current=${sanitizeUrlForLog(currentUrl) ?? 'unknown'} intended=${sanitizeUrlForLog(intendedUrl) ?? 'unknown'}`
+  );
+  await page.goto(intendedUrl, { waitUntil: 'domcontentloaded' });
+}
+
 /**
  * Detect anti-bot challenges during auto-renewal, solve them when a captcha
  * provider is configured, and fall back to the supported manual capture flow
  * when the challenge cannot be completed automatically.
  */
 async function handleCaptchaChallenge(
-  page: Parameters<typeof detectCaptcha>[0] & { url(): string }
+  page: Parameters<typeof detectCaptcha>[0] & { url(): string },
+  options: HandleCaptchaOptions = {}
 ): Promise<void> {
   const captchaType = await detectCaptcha(page);
   if (!captchaType) {
@@ -169,11 +278,14 @@ async function handleCaptchaChallenge(
 
   try {
     const solveOptions = getCaptchaSolveOptions();
+    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- evaluated in browser page context, not Node.js.
+    const userAgent = await page.evaluate(() => navigator.userAgent).catch(() => undefined);
     const solution = await solveCaptcha(
       {
         type: captchaType,
         siteKey,
         pageUrl: page.url(),
+        userAgent,
       },
       solveOptions
     );
@@ -181,6 +293,7 @@ async function handleCaptchaChallenge(
     await injectCaptchaToken(page, captchaType, solution.token);
     console.log('[AutoRenew] Token injected successfully');
 
+    const captchaSubmitDiagnosticPromise = observeCaptchaSubmit(page as AnyPage);
     const verificationTriggered = await triggerCaptchaVerification(page, captchaType);
     if (!verificationTriggered) {
       throw new Error('Could not trigger captcha verification control after token injection.');
@@ -192,8 +305,15 @@ async function handleCaptchaChallenge(
     });
 
     const challengeCleared = await waitForCaptchaChallengeToClear(page);
+    const captchaSubmitDiagnostic = await captchaSubmitDiagnosticPromise;
+    captchaSubmitDiagnostic.finalUrl = sanitizeUrlForLog(page.url());
+    logCaptchaSubmitDiagnostic('Captcha submit diagnostic', captchaSubmitDiagnostic);
     if (!challengeCleared) {
       throw new Error('Captcha challenge did not clear after verification trigger.');
+    }
+
+    if (options.reinjectIntendedUrl) {
+      await reinjectIntendedUrlAfterCaptcha(page as AnyPage, options.intendedUrl);
     }
   } catch (error) {
     console.warn(
@@ -214,9 +334,6 @@ function getRequiredEnvVar(name: string): string {
   return value;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyPage = any;
-
 // Strategy type for field finding
 interface FieldStrategy {
   name?: string;
@@ -231,6 +348,20 @@ interface FieldStrategy {
 /**
  * Dump visible form inputs across ALL frames (main + iframes) for debugging.
  */
+function redactSensitiveText(value: string): string {
+  const username = process.env.EBAY_USERNAME?.trim();
+  const usernameRedacted = username
+    ? value.replace(
+        new RegExp(username.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'giu'),
+        '[redacted-username]'
+      )
+    : value;
+  return usernameRedacted
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, '[redacted-email]')
+    .replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/gu, '[redacted-phone]')
+    .slice(0, 1200);
+}
+
 async function dumpVisibleInputs(page: AnyPage, label: string): Promise<void> {
   const allFrames = getAllFrames(page);
   const results: string[] = [];
@@ -262,7 +393,7 @@ async function dumpVisibleInputs(page: AnyPage, label: string): Promise<void> {
   }
 
   if (results.length > 0) {
-    console.warn(`[AutoRenew] ${label}: ${results.join('\n')}`);
+    console.warn(`[AutoRenew] ${label}: ${redactSensitiveText(results.join('\n'))}`);
   } else {
     console.warn(
       `[AutoRenew] ${label}: No visible inputs found across ${allFrames.length} frame(s).`
@@ -275,6 +406,91 @@ async function dumpVisibleInputs(page: AnyPage, label: string): Promise<void> {
     return url.length > 100 ? url.substring(0, 100) + '…' : url;
   });
   console.warn(`[AutoRenew] Frames: ${JSON.stringify(frameList)}`);
+}
+
+async function dumpVisibleButtons(page: AnyPage, label: string): Promise<void> {
+  const allFrames = getAllFrames(page);
+  const results: string[] = [];
+
+  for (const frame of allFrames) {
+    try {
+      const frameUrl = frame.url?.() ?? 'unknown';
+      const shortUrl = frameUrl.length > 80 ? frameUrl.substring(0, 80) + '…' : frameUrl;
+      const buttons = await frame.evaluate(() =>
+        Array.from(
+          document.querySelectorAll<HTMLElement>('button, input[type="submit"], [role="button"]')
+        )
+          .filter((el) => {
+            const style = window.getComputedStyle(el);
+            return style.display !== 'none' && style.visibility !== 'hidden';
+          })
+          .slice(0, 20)
+          .map((el) => {
+            const input = el as HTMLInputElement;
+            const text = `${el.innerText ?? ''} ${input.value ?? ''}`.trim();
+            return `[${el.tagName.toLowerCase()}] id=${el.id || ''} text="${text}" aria-label="${el.getAttribute('aria-label') ?? ''}"`;
+          })
+      );
+      if (buttons.length > 0) {
+        results.push(`[${shortUrl}] ${JSON.stringify(buttons)}`);
+      }
+    } catch {
+      // Cross-origin frame — skip
+    }
+  }
+
+  console.warn(
+    results.length > 0
+      ? `[AutoRenew] ${label}: ${redactSensitiveText(results.join('\n'))}`
+      : `[AutoRenew] ${label}: No visible buttons found across ${allFrames.length} frame(s).`
+  );
+}
+
+async function dumpPageSignals(page: AnyPage, label: string): Promise<void> {
+  const allFrames = getAllFrames(page);
+  const results: string[] = [];
+
+  for (const frame of allFrames) {
+    try {
+      const frameUrl = frame.url?.() ?? 'unknown';
+      const shortUrl = frameUrl.length > 80 ? frameUrl.substring(0, 80) + '…' : frameUrl;
+      const signals = await frame.evaluate(() => {
+        const selectors = [
+          'title',
+          'h1',
+          'h2',
+          '[role="alert"]',
+          '.error',
+          '.errors',
+          '.error-message',
+          '.alert',
+          '#errf',
+          '#pass_err',
+          '#userid_err',
+          '[id*="err"]',
+          '[class*="err"]',
+          '[data-testid*="error"]',
+        ];
+        return Array.from(document.querySelectorAll<HTMLElement>(selectors.join(',')))
+          .map((el) =>
+            `${el.tagName.toLowerCase()}: ${el.innerText || el.textContent || ''}`.trim()
+          )
+          .filter((text) => text.length > 0)
+          .slice(0, 20);
+      });
+      if (signals.length > 0) {
+        results.push(`[${shortUrl}] ${JSON.stringify(signals)}`);
+      }
+    } catch {
+      // Cross-origin frame — skip
+    }
+  }
+
+  console.warn(
+    results.length > 0
+      ? `[AutoRenew] ${label}: ${redactSensitiveText(results.join('\n'))}`
+      : `[AutoRenew] ${label}: No page signals found across ${allFrames.length} frame(s).`
+  );
 }
 
 /**
@@ -752,9 +968,11 @@ async function main(): Promise<void> {
   const page = await context.newPage();
 
   try {
-    // ── Step 1: Navigate to sign-in page ────────────────────────────────────
-    console.log('[AutoRenew] Navigating to eBay sign-in page...');
-    await page.goto(EBAY_SIGNIN_URL, { waitUntil: 'domcontentloaded' });
+    // ── Step 1: Navigate to Research page ──────────────────────────────────
+    // Starting at Research lets eBay redirect to sign-in with a valid return URL.
+    // Going straight to the bare SignIn endpoint can clear captcha into /n/error?statuscode=500.
+    console.log('[AutoRenew] Navigating to eBay Research entrypoint...');
+    await page.goto(researchUrl, { waitUntil: 'domcontentloaded' });
 
     // Wait for page to fully render (captcha + sign-in form)
     await new Promise<void>((resolve) => {
@@ -762,168 +980,201 @@ async function main(): Promise<void> {
     });
 
     // Auto-solve captcha if encountered on the sign-in page
-    await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
+    await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string }, {
+      intendedUrl: researchUrl,
+      reinjectIntendedUrl: true,
+    });
 
     // Wait after captcha solve for sign-in form to render
     await new Promise<void>((resolve) => {
       setTimeout(() => resolve(), 3_000);
     });
 
-    // Verify we're on a sign-in page (not already logged in or on captcha)
-    const afterCaptchaUrl = page.url();
-    if (!afterCaptchaUrl.includes('signin.ebay.com') && !afterCaptchaUrl.includes('SignIn')) {
-      if (afterCaptchaUrl.includes('/sh/research')) {
-        console.log('[AutoRenew] Already at research page — session was still valid!');
-        // Skip to Step 5
-      } else {
-        console.warn(`[AutoRenew] Unexpected URL after captcha: ${afterCaptchaUrl}`);
-      }
-    }
-
-    // ── Step 2: Fill username/email ─────────────────────────────────────────
-    console.log('[AutoRenew] Filling username/email...');
-
-    // Strategy-based field finding — no CSS i-flag, proper visibility check
-    const userIdStrategies = [
-      // Classic eBay selectors
-      { name: 'userid' },
-      { id: 'userid' },
-      { testId: 'userid' },
-      // Modern eBay sign-in (two-step flow)
-      { placeholderPattern: 'Email' },
-      { placeholderPattern: 'email' },
-      { placeholderPattern: 'User ID' },
-      { placeholderPattern: 'user' },
-      { ariaLabelPattern: 'email' },
-      { ariaLabelPattern: 'user' },
-      { ariaLabelPattern: 'Email or mobile' },
-      // Generic fallbacks
-      { type: 'email' },
-    ];
-
-    const filledUser = await fillField(page, username, userIdStrategies);
-    if (filledUser) {
-      console.log(`[AutoRenew] Filled username using strategy: ${filledUser}`);
-    } else {
-      // Debug: dump all visible inputs across all frames
-      console.warn('[AutoRenew] Username field not found. Dumping visible form fields...');
-      await dumpVisibleInputs(page, 'Username inputs dump');
-
-      throw new Error(
-        'Could not find username/email field on eBay sign-in page. ' +
-          'The page structure may have changed. See visible inputs above. Manual bootstrap required.'
-      );
-    }
-
-    // Wait for field to register
-    await new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), 1_500);
-    });
-
-    // ── Step 3: Click Continue / Sign-in button ──────────────────────────────
-    console.log('[AutoRenew] Clicking continue/sign-in button...');
-
-    const clickedStep3 = await clickButton(page, [
-      'Continue',
-      'Sign in',
-      'Next',
-      'Log in',
-      'Continue to sign in',
-    ]);
-
-    if (clickedStep3) {
-      console.log(`[AutoRenew] Clicked button: ${clickedStep3}`);
-    } else {
-      throw new Error(
-        'Could not find sign-in/continue button on eBay sign-in page. ' +
-          'The page structure may have changed. Manual bootstrap required.'
-      );
-    }
-
-    // ── Step 4: Wait for password page (two-step eBay sign-in) ──────────────
-    console.log('[AutoRenew] Waiting for password page or redirect...');
-
-    // Wait for page transition — eBay two-step sign-in redirects to password page
-    // Give it up to 15 seconds for the page to navigate
-    const passwordPageLoaded = await waitForUrlContains(page, 'pass', 15_000);
-
-    // Check current URL to determine next step
-    let urlAfterContinue = page.url();
-
-    // Auto-solve captcha if encountered after clicking continue
-    await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
-    await new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), 3_000);
-    });
-
-    urlAfterContinue = page.url();
-
-    if (urlAfterContinue.includes('/sh/research')) {
-      console.log('[AutoRenew] Already at research page — session may have been valid!');
-    } else if (
-      passwordPageLoaded ||
-      urlAfterContinue.includes('pass') ||
-      urlAfterContinue.includes('password') ||
-      urlAfterContinue.includes('SignIn') ||
-      urlAfterContinue.includes('signin')
+    // Verify we're either on Research (session already usable) or on a sign-in page.
+    // If eBay clears captcha to a transient error page, retry via the Research entrypoint once
+    // before looking for credential fields.
+    let afterCaptchaUrl = page.url();
+    if (
+      !afterCaptchaUrl.includes('/sh/research') &&
+      !afterCaptchaUrl.includes('signin.ebay.com') &&
+      !afterCaptchaUrl.includes('SignIn')
     ) {
-      // On password page — fill password
-      console.log('[AutoRenew] On password page — filling password...');
-
-      // Wait for password field to be visible
+      console.warn(
+        `[AutoRenew] Unexpected URL after captcha: ${sanitizeUrlForLog(afterCaptchaUrl) ?? 'unknown'}`
+      );
+      console.log('[AutoRenew] Retrying via eBay Research entrypoint before credential fill...');
+      await page.goto(researchUrl, { waitUntil: 'domcontentloaded' });
       await new Promise<void>((resolve) => {
-        setTimeout(() => resolve(), 2_000);
+        setTimeout(() => resolve(), 3_000);
       });
+      await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string }, {
+        intendedUrl: researchUrl,
+        reinjectIntendedUrl: true,
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(() => resolve(), 3_000);
+      });
+      afterCaptchaUrl = page.url();
+    }
 
-      const passwordStrategies = [
+    if (afterCaptchaUrl.includes('/sh/research')) {
+      console.log('[AutoRenew] Already at research page — session was still valid!');
+    } else if (
+      !afterCaptchaUrl.includes('signin.ebay.com') &&
+      !afterCaptchaUrl.includes('SignIn')
+    ) {
+      throw new Error(
+        `Unexpected page after captcha/retry: ${afterCaptchaUrl}. Manual bootstrap may be required.`
+      );
+    }
+
+    if (!afterCaptchaUrl.includes('/sh/research')) {
+      // ── Step 2: Fill username/email ─────────────────────────────────────────
+      console.log('[AutoRenew] Filling username/email...');
+
+      // Strategy-based field finding — no CSS i-flag, proper visibility check
+      const userIdStrategies = [
         // Classic eBay selectors
-        { name: 'pass' },
-        { id: 'pass' },
-        { testId: 'pass' },
-        // Modern eBay
-        { placeholderPattern: 'Password' },
-        { ariaLabelPattern: 'password' },
-        // Generic
-        { type: 'password' },
+        { name: 'userid' },
+        { id: 'userid' },
+        { testId: 'userid' },
+        // Modern eBay sign-in (two-step flow)
+        { placeholderPattern: 'Email' },
+        { placeholderPattern: 'email' },
+        { placeholderPattern: 'User ID' },
+        { placeholderPattern: 'user' },
+        { ariaLabelPattern: 'email' },
+        { ariaLabelPattern: 'user' },
+        { ariaLabelPattern: 'Email or mobile' },
+        // Generic fallbacks
+        { type: 'email' },
       ];
 
-      const filledPass = await fillField(page, password, passwordStrategies);
-      if (filledPass) {
-        console.log(`[AutoRenew] Filled password using strategy: ${filledPass}`);
+      const filledUser = await fillField(page, username, userIdStrategies);
+      if (filledUser) {
+        console.log(`[AutoRenew] Filled username using strategy: ${filledUser}`);
       } else {
         // Debug: dump all visible inputs across all frames
-        console.warn('[AutoRenew] Password field not found. Dumping visible form fields...');
-        await dumpVisibleInputs(page, 'Password inputs dump');
+        console.warn('[AutoRenew] Username field not found. Dumping visible form fields...');
+        await dumpVisibleInputs(page, 'Username inputs dump');
 
         throw new Error(
-          'Could not find password field on eBay sign-in page. ' +
-            'Auto-renewal requires manual inspection of the sign-in flow. See visible inputs above.'
+          'Could not find username/email field on eBay sign-in page. ' +
+            'The page structure may have changed. See visible inputs above. Manual bootstrap required.'
         );
       }
 
+      // Wait for field to register
       await new Promise<void>((resolve) => {
         setTimeout(() => resolve(), 1_500);
       });
 
-      // Click sign-in submit
-      console.log('[AutoRenew] Clicking sign-in submit...');
-      const clickedSubmit = await clickButton(page, ['Sign in', 'Sign In', 'Log in', 'Continue']);
+      // ── Step 3: Click Continue / Sign-in button ──────────────────────────────
+      console.log('[AutoRenew] Clicking continue/sign-in button...');
 
-      if (clickedSubmit) {
-        console.log(`[AutoRenew] Clicked sign-in: ${clickedSubmit}`);
+      const clickedStep3 = await clickButton(page, [
+        'Continue',
+        'Sign in',
+        'Next',
+        'Log in',
+        'Continue to sign in',
+      ]);
+
+      if (clickedStep3) {
+        console.log(`[AutoRenew] Clicked button: ${clickedStep3}`);
       } else {
-        throw new Error('Could not find sign-in submit button on eBay password page.');
+        throw new Error(
+          'Could not find sign-in/continue button on eBay sign-in page. ' +
+            'The page structure may have changed. Manual bootstrap required.'
+        );
       }
-    } else {
-      // Neither research page nor password page — something unexpected
-      console.warn(`[AutoRenew] Unexpected URL after clicking continue: ${urlAfterContinue}`);
-      // Dump visible inputs across all frames for debugging
-      await dumpVisibleInputs(page, 'Unexpected page inputs dump');
 
-      throw new Error(
-        `Unexpected page after clicking continue: ${urlAfterContinue}. ` +
-          'Manual bootstrap may be required.'
-      );
+      // ── Step 4: Wait for password page (two-step eBay sign-in) ──────────────
+      console.log('[AutoRenew] Waiting for password page or redirect...');
+
+      // Wait for page transition — eBay two-step sign-in redirects to password page
+      // Give it up to 15 seconds for the page to navigate
+      const passwordPageLoaded = await waitForUrlContains(page, 'pass', 15_000);
+
+      // Check current URL to determine next step
+      let urlAfterContinue = page.url();
+
+      // Auto-solve captcha if encountered after clicking continue. Do not reinject here:
+      // the intended post-captcha page may be the password step rather than Research.
+      await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
+      await new Promise<void>((resolve) => {
+        setTimeout(() => resolve(), 3_000);
+      });
+
+      urlAfterContinue = page.url();
+
+      if (urlAfterContinue.includes('/sh/research')) {
+        console.log('[AutoRenew] Already at research page — session may have been valid!');
+      } else if (
+        passwordPageLoaded ||
+        urlAfterContinue.includes('pass') ||
+        urlAfterContinue.includes('password') ||
+        urlAfterContinue.includes('SignIn') ||
+        urlAfterContinue.includes('signin')
+      ) {
+        // On password page — fill password
+        console.log('[AutoRenew] On password page — filling password...');
+
+        // Wait for password field to be visible
+        await new Promise<void>((resolve) => {
+          setTimeout(() => resolve(), 2_000);
+        });
+
+        const passwordStrategies = [
+          // Classic eBay selectors
+          { name: 'pass' },
+          { id: 'pass' },
+          { testId: 'pass' },
+          // Modern eBay
+          { placeholderPattern: 'Password' },
+          { ariaLabelPattern: 'password' },
+          // Generic
+          { type: 'password' },
+        ];
+
+        const filledPass = await fillField(page, password, passwordStrategies);
+        if (filledPass) {
+          console.log(`[AutoRenew] Filled password using strategy: ${filledPass}`);
+        } else {
+          // Debug: dump all visible inputs across all frames
+          console.warn('[AutoRenew] Password field not found. Dumping visible form fields...');
+          await dumpVisibleInputs(page, 'Password inputs dump');
+
+          throw new Error(
+            'Could not find password field on eBay sign-in page. ' +
+              'Auto-renewal requires manual inspection of the sign-in flow. See visible inputs above.'
+          );
+        }
+
+        await new Promise<void>((resolve) => {
+          setTimeout(() => resolve(), 1_500);
+        });
+
+        // Click sign-in submit
+        console.log('[AutoRenew] Clicking sign-in submit...');
+        const clickedSubmit = await clickButton(page, ['Sign in', 'Sign In', 'Log in', 'Continue']);
+
+        if (clickedSubmit) {
+          console.log(`[AutoRenew] Clicked sign-in: ${clickedSubmit}`);
+        } else {
+          throw new Error('Could not find sign-in submit button on eBay password page.');
+        }
+      } else {
+        // Neither research page nor password page — something unexpected
+        console.warn(`[AutoRenew] Unexpected URL after clicking continue: ${urlAfterContinue}`);
+        // Dump visible inputs across all frames for debugging
+        await dumpVisibleInputs(page, 'Unexpected page inputs dump');
+
+        throw new Error(
+          `Unexpected page after clicking continue: ${urlAfterContinue}. ` +
+            'Manual bootstrap may be required.'
+        );
+      }
     }
 
     // ── Step 5: Wait for redirect to research page ───────────────────────────
@@ -959,6 +1210,10 @@ async function main(): Promise<void> {
         );
       }
 
+      await dumpPageSignals(page, 'Post-login redirect failure page signals');
+      await dumpVisibleInputs(page, 'Post-login redirect failure inputs dump');
+      await dumpVisibleButtons(page, 'Post-login redirect failure buttons dump');
+
       throw new Error(
         `Auto-renewal did not reach eBay Research after login. Current URL: ${finalUrl}. ` +
           'This may indicate a changed sign-in flow or an account issue.'
@@ -966,7 +1221,10 @@ async function main(): Promise<void> {
     }
 
     // ── Step 6: Auto-solve captcha on research page if encountered ───────────
-    await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string });
+    await handleCaptchaChallenge(page as unknown as CaptchaPage & { url(): string }, {
+      intendedUrl: researchUrl,
+      reinjectIntendedUrl: true,
+    });
 
     const confirmedUrl = page.url();
     console.log(`[AutoRenew] Reached eBay Research at: ${confirmedUrl}`);

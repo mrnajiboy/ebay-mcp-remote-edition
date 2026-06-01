@@ -258,13 +258,13 @@ describe('Captcha Module', () => {
 
     it('falls back to main-page verification button evaluation without frameLocator support', async () => {
       const mockPage: CaptchaPage = {
-        evaluate: vi.fn().mockResolvedValue(true),
+        evaluate: vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
       };
 
       const result = await triggerCaptchaVerification(mockPage, 'hcaptcha');
 
       expect(result).toBe(true);
-      expect(mockPage.evaluate).toHaveBeenCalledWith(expect.any(Function), 'hcaptcha');
+      expect(mockPage.evaluate).toHaveBeenLastCalledWith(expect.any(Function), 'hcaptcha');
     });
   });
 

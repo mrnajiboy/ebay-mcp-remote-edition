@@ -133,6 +133,305 @@ function getValidationRunnerWebhookUrl(): string {
   );
 }
 
+type AirtableFields = Record<string, unknown>;
+
+interface AirtableRecord {
+  id: string;
+  createdTime?: string;
+  fields?: AirtableFields;
+}
+
+interface ValidationRecordOption {
+  recordId: string;
+  item: string;
+  label: string;
+  searchQuery: string | null;
+  directSearchQuery: string | null;
+  lastAutoCheck: string | null;
+  trackingCadence: string | null;
+}
+
+const AIRTABLE_DEFAULT_BASE_ID = 'appKrPI1uFI57Jppg';
+const AIRTABLE_DEFAULT_VALIDATION_TABLE_ID = 'tblrdwYTgTYThU6x1';
+const AIRTABLE_DEFAULT_ITEM_TABLE_ID = 'tblFwj5cEYvQ8h9kE';
+const AIRTABLE_API_BASE = 'https://api.airtable.com/v0';
+
+const AIRTABLE_VALIDATION_LIST_FIELDS = [
+  'Item',
+  'Resolved Search Query',
+  'Direct Search Query',
+  'Last Auto Check',
+  'Tracking Cadence',
+] as const;
+
+const AIRTABLE_VALIDATION_TRANSFER_FIELDS = [
+  'Active Avg. Price (USD)',
+  'Active Listings Count',
+  'Active Avg. Shipping (USD)',
+  'Active Avg. Watchers per Listing',
+  'Active Listing Price Min (USD)',
+  'Active Listing Price Max (USD)',
+  'Active Free Shipping %',
+  'Active Promoted Listings %',
+  'Active Watcher Coverage Count',
+  'Sold Avg. Price (USD)',
+  'Sold Median Price (USD)',
+  'Sold Listings Count',
+  'Sold Sell-Through %',
+  'Sold Total Revenue (USD)',
+  'Sold Avg. Shipping (USD)',
+  'Sold Price Min (USD)',
+  'Sold Price Max (USD)',
+  'Sold Free Shipping %',
+  'Sold Total Sellers',
+  'Day 1 Sold',
+  'Day 2 Sold',
+  'Day 3 Sold',
+  'Day 4 Sold',
+  'Day 5 Sold',
+  'Days Tracked',
+  'Last Auto Check',
+  'Last Data Snapshot',
+] as const;
+
+function getAirtableApiKey(): string {
+  return process.env.AIRTABLE_API_KEY?.trim() || process.env.AIRTABLE_PAT?.trim() || '';
+}
+
+function getAirtableBaseId(): string {
+  return (
+    process.env.VALIDATION_AIRTABLE_BASE_ID?.trim() ||
+    process.env.AIRTABLE_BASE_ID?.trim() ||
+    AIRTABLE_DEFAULT_BASE_ID
+  );
+}
+
+function getAirtableValidationTableId(): string {
+  return (
+    process.env.VALIDATION_AIRTABLE_TABLE_ID?.trim() ||
+    process.env.AIRTABLE_VALIDATION_TABLE_ID?.trim() ||
+    AIRTABLE_DEFAULT_VALIDATION_TABLE_ID
+  );
+}
+
+function getAirtableItemTableId(): string {
+  return (
+    process.env.VALIDATION_AIRTABLE_ITEM_TABLE_ID?.trim() ||
+    process.env.AIRTABLE_ITEM_TABLE_ID?.trim() ||
+    AIRTABLE_DEFAULT_ITEM_TABLE_ID
+  );
+}
+
+function getAirtableAuthHeaders(): Record<string, string> {
+  const apiKey = getAirtableApiKey();
+  if (!apiKey) {
+    throw new Error('AIRTABLE_API_KEY_MISSING');
+  }
+  return { Authorization: `Bearer ${apiKey}` };
+}
+
+function getAirtableTableUrl(tableId: string, params?: URLSearchParams): string {
+  const encodedTableId = encodeURIComponent(tableId);
+  const query = params?.toString();
+  return `${AIRTABLE_API_BASE}/${getAirtableBaseId()}/${encodedTableId}${query ? `?${query}` : ''}`;
+}
+
+function appendAirtableFields(params: URLSearchParams, fields: readonly string[]): void {
+  for (const field of fields) {
+    params.append('fields[]', field);
+  }
+}
+
+function coerceString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(coerceString).filter(Boolean).join(', ');
+  return '';
+}
+
+function coerceStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(coerceString)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getField(fields: AirtableFields | undefined, fieldName: string): unknown {
+  return fields && Object.prototype.hasOwnProperty.call(fields, fieldName)
+    ? fields[fieldName]
+    : null;
+}
+
+function normalizeForCompare(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
+function metricGroup(fieldName: string): 'active' | 'sold' | 'velocity' | 'meta' {
+  if (fieldName.startsWith('Active ')) return 'active';
+  if (fieldName.startsWith('Sold ')) return 'sold';
+  if (fieldName.startsWith('Day ') || fieldName === 'Days Tracked') return 'velocity';
+  return 'meta';
+}
+
+async function fetchAirtableRecords(
+  tableId: string,
+  fields: readonly string[],
+  options: { filterByFormula?: string; maxRecords?: number } = {}
+): Promise<AirtableRecord[]> {
+  const params = new URLSearchParams();
+  params.set('pageSize', '100');
+  if (options.maxRecords) params.set('maxRecords', String(options.maxRecords));
+  if (options.filterByFormula) params.set('filterByFormula', options.filterByFormula);
+  appendAirtableFields(params, fields);
+
+  const records: AirtableRecord[] = [];
+  let offset: string | undefined;
+  do {
+    if (offset) params.set('offset', offset);
+    const response = await axios.get<{ records: AirtableRecord[]; offset?: string }>(
+      getAirtableTableUrl(tableId, params),
+      { headers: getAirtableAuthHeaders(), timeout: 30_000 }
+    );
+    records.push(...(response.data.records ?? []));
+    offset = response.data.offset;
+  } while (offset && (!options.maxRecords || records.length < options.maxRecords));
+
+  return options.maxRecords ? records.slice(0, options.maxRecords) : records;
+}
+
+async function fetchAirtableItemNames(itemRecordIds: string[]): Promise<Map<string, string>> {
+  const uniqueIds = [...new Set(itemRecordIds.filter((id) => /^rec[A-Za-z0-9]+$/.test(id)))];
+  const names = new Map<string, string>();
+  for (let i = 0; i < uniqueIds.length; i += 25) {
+    const chunk = uniqueIds.slice(i, i + 25);
+    const formula = `OR(${chunk.map((id) => `RECORD_ID()='${id}'`).join(',')})`;
+    const records = await fetchAirtableRecords(getAirtableItemTableId(), ['Item'], {
+      filterByFormula: formula,
+      maxRecords: chunk.length,
+    });
+    for (const record of records) {
+      const itemName = coerceString(getField(record.fields, 'Item')).trim();
+      if (itemName) names.set(record.id, itemName);
+    }
+  }
+  return names;
+}
+
+function extractSnapshotSummary(
+  fields: AirtableFields | undefined
+): Record<string, unknown> | null {
+  const rawSnapshot = getField(fields, 'Last Data Snapshot');
+  if (typeof rawSnapshot !== 'string' || !rawSnapshot.trim()) return null;
+  try {
+    const parsed = JSON.parse(rawSnapshot) as Record<string, unknown>;
+    const effectiveContext = (parsed.effectiveContext ?? {}) as Record<string, unknown>;
+    const ebay = (parsed.ebay ?? {}) as Record<string, unknown>;
+    const sold = (parsed.sold ?? {}) as Record<string, unknown>;
+    const terapeak = (parsed.terapeak ?? {}) as Record<string, unknown>;
+    return {
+      itemName: effectiveContext.itemName ?? null,
+      effectiveSearchQuery: effectiveContext.effectiveSearchQuery ?? null,
+      validationScope: effectiveContext.validationScope ?? null,
+      queryScope: effectiveContext.queryScope ?? null,
+      activeSource:
+        terapeak.activeListingsCount !== null && terapeak.activeListingsCount !== undefined
+          ? 'ebay_research_ui'
+          : 'ebay_browse',
+      soldSource:
+        terapeak.soldListingsCount !== null && terapeak.soldListingsCount !== undefined
+          ? 'ebay_research_ui'
+          : (sold.provider ?? 'none'),
+      terapeakProvider: terapeak.provider ?? null,
+      terapeakConfidence: terapeak.confidence ?? null,
+      terapeakActiveListingsCount: terapeak.activeListingsCount ?? null,
+      terapeakSoldListingsCount: terapeak.soldListingsCount ?? null,
+      thirdPartySoldStatus: sold.status ?? null,
+      ebayActiveListingsCount: ebay.preOrderListingsCount ?? ebay.competitionLevel ?? null,
+    };
+  } catch {
+    return { parseStatus: 'failed' };
+  }
+}
+
+async function fetchValidationRecordFields(recordId: string): Promise<AirtableFields | null> {
+  const records = await fetchAirtableRecords(
+    getAirtableValidationTableId(),
+    AIRTABLE_VALIDATION_TRANSFER_FIELDS,
+    { filterByFormula: `RECORD_ID()='${recordId}'`, maxRecords: 1 }
+  );
+  return records[0]?.fields ?? null;
+}
+
+function buildValidationTransferSummary(
+  recordId: string,
+  beforeFields: AirtableFields | null,
+  afterFields: AirtableFields | null,
+  webhookStatus: number
+): Record<string, unknown> {
+  const fields = AIRTABLE_VALIDATION_TRANSFER_FIELDS.map((fieldName) => {
+    const before = getField(beforeFields ?? undefined, fieldName);
+    const after = getField(afterFields ?? undefined, fieldName);
+    return {
+      field: fieldName,
+      group: metricGroup(fieldName),
+      before,
+      after,
+      changed: normalizeForCompare(before) !== normalizeForCompare(after),
+    };
+  });
+  const changedFields = fields.filter((field) => field.changed).map((field) => field.field);
+  return {
+    recordId,
+    webhookStatus,
+    changedFieldCount: changedFields.length,
+    changedFields,
+    fields,
+    snapshotSummary: extractSnapshotSummary(afterFields ?? undefined),
+  };
+}
+
+async function listValidationRecordOptions(
+  query: string,
+  limit: number
+): Promise<ValidationRecordOption[]> {
+  const records = await fetchAirtableRecords(
+    getAirtableValidationTableId(),
+    AIRTABLE_VALIDATION_LIST_FIELDS,
+    { maxRecords: Math.min(Math.max(limit * 4, 100), 500) }
+  );
+  const linkedItemIds = records.flatMap((record) =>
+    coerceStringArray(getField(record.fields, 'Item'))
+  );
+  const itemNames = await fetchAirtableItemNames(linkedItemIds);
+  const normalizedQuery = query.trim().toLowerCase();
+
+  return records
+    .map((record) => {
+      const itemIds = coerceStringArray(getField(record.fields, 'Item'));
+      const item = itemIds.map((id) => itemNames.get(id) ?? id).join(', ') || '(no linked item)';
+      const searchQuery = coerceString(getField(record.fields, 'Resolved Search Query')).trim();
+      const directSearchQuery = coerceString(getField(record.fields, 'Direct Search Query')).trim();
+      const label = `${record.id} - ${item}`;
+      return {
+        recordId: record.id,
+        item,
+        label,
+        searchQuery: searchQuery || null,
+        directSearchQuery: directSearchQuery || null,
+        lastAutoCheck: coerceString(getField(record.fields, 'Last Auto Check')).trim() || null,
+        trackingCadence: coerceString(getField(record.fields, 'Tracking Cadence')).trim() || null,
+      };
+    })
+    .filter((option) => {
+      if (!normalizedQuery) return true;
+      return [option.label, option.searchQuery, option.directSearchQuery]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery));
+    })
+    .slice(0, limit);
+}
+
 function getResearchLiveStatus(): {
   enabled: boolean;
   display: string;
@@ -155,11 +454,15 @@ function getResearchLiveStatus(): {
   }
 
   const storageStatePath = getResearchLiveStorageStatePath();
+  const noVncPassword = readNoVncPassword();
+  const noVncEnvEnabled = ['1', 'true', 'yes'].includes(
+    (process.env.ENABLE_NOVNC ?? '').toLowerCase()
+  );
   return {
-    enabled: ['1', 'true', 'yes'].includes((process.env.ENABLE_NOVNC ?? '').toLowerCase()),
+    enabled: noVncEnvEnabled || noVncPassword !== null,
     display: process.env.DISPLAY || `:${process.env.NOVNC_DISPLAY || '99'}`,
     noVncUrl: getNoVncPublicUrl(),
-    noVncPassword: readNoVncPassword(),
+    noVncPassword,
     noVncPasswordFile: getNoVncPasswordFilePath(),
     storageStatePath,
     storageStateExists: existsSync(storageStatePath),
@@ -1036,6 +1339,9 @@ export function createApp(): express.Application {
     pre { padding: 10px; white-space: pre-wrap; word-break: break-all; }
     .warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
     .ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+    .record-options { display: grid; gap: 6px; margin: 8px 0; max-height: 180px; overflow: auto; }
+    .record-option { width: 100%; text-align: left; background: #fff; color: #111827; border: 1px solid #d1d5db; padding: 8px 10px; border-radius: 8px; }
+    .record-option small { display: block; color: #6b7280; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -1050,30 +1356,40 @@ export function createApp(): express.Application {
   </div>
 
   <div class="card">
-    <h3>1. Open / control server Chrome</h3>
+    <h3>1. Try auto-renew first</h3>
+    <p class="muted">This is the normal path: attempt credential/captcha-provider renewal and store the session automatically. If eBay blocks it, this page stays as the manual fallback.</p>
+    <button class="btn" onclick="autoRenewSession()">Attempt Auto-Renew</button>
+    <pre id="autoRenewResult" class="muted"></pre>
+  </div>
+
+  <div class="card">
+    <h3>2. Manual fallback: open / control server Chrome</h3>
     <p><a class="btn" href="${htmlEscape(status.noVncUrl)}" target="_blank" rel="noopener">Open noVNC ↗</a></p>
     <p class="muted">VNC password:</p>
     <pre>${htmlEscape(status.noVncPassword ?? '(password file not available yet — ENABLE_NOVNC may be off)')}</pre>
   </div>
 
   <div class="card">
-    <h3>2. Start a Research browser tab</h3>
+    <h3>3. Start a Research browser tab</h3>
     <p class="muted">Optional: include query + validation ID so the browser opens the exact validation-bound page. You can also use the same Airtable validation record ID below to re-run just that record after persisting the live session.</p>
     <input id="query" placeholder="Search query, e.g. stray kids skzoo plush" style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
-    <input id="validationId" placeholder="Airtable validation record ID, e.g. rec..." style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
+    <input id="validationRecordSearch" placeholder="Search validation records by item/query/record ID" style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
+    <button class="btn secondary" onclick="loadValidationRecords()">Search Records</button>
+    <div id="validationRecordOptions" class="record-options muted">Search results appear as: recordID - Item</div>
+    <input id="validationId" placeholder="Selected Airtable validation record ID, e.g. rec..." style="width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px;">
     <button class="btn secondary" onclick="openLiveBrowser()">Start / Open Server Chrome</button>
     <pre id="openResult" class="muted"></pre>
   </div>
 
   <div class="card">
-    <h3>3. Persist rescued session</h3>
+    <h3>4. Persist rescued session</h3>
     <p class="muted">After you clear login/challenge in noVNC and Research loads, click persist. This validates and stores the mirrored Playwright storage state into the configured Research session store.</p>
     <button class="btn secondary" onclick="persistLiveSession()">Persist Live Session</button>
     <pre id="persistResult" class="muted"></pre>
   </div>
 
   <div class="card">
-    <h3>4. Re-run one Airtable validation record</h3>
+    <h3>5. Re-run one Airtable validation record</h3>
     <p class="muted">Uses the Airtable validation record ID above and sends only that record through the Validation Data Runner. This writes the refreshed Terapeak/eBay metrics back to Airtable without kicking off the 200+ record sweep.</p>
     <button class="btn" onclick="runTargetedValidation()">Run Targeted Validation</button>
     <pre id="targetedValidationResult" class="muted"></pre>
@@ -1089,6 +1405,51 @@ export function createApp(): express.Application {
         body: JSON.stringify(body || {})
       });
       return await resp.json();
+    }
+    async function getJson(path) {
+      const resp = await fetch(path, { headers: { 'X-Admin-API-Key': adminKey } });
+      return await resp.json();
+    }
+    function selectValidationRecord(recordId, item, searchQuery) {
+      document.getElementById('validationId').value = recordId;
+      if (searchQuery && !document.getElementById('query').value.trim()) {
+        document.getElementById('query').value = searchQuery;
+      }
+      document.getElementById('validationRecordSearch').value = recordId + ' - ' + item;
+    }
+    async function loadValidationRecords() {
+      const container = document.getElementById('validationRecordOptions');
+      const query = document.getElementById('validationRecordSearch').value.trim();
+      container.textContent = 'Loading records...';
+      const result = await getJson('/admin/validation/records?limit=25&query=' + encodeURIComponent(query));
+      if (!result.ok) {
+        container.textContent = result.message || result.error || 'Could not load validation records.';
+        return;
+      }
+      if (!result.records.length) {
+        container.textContent = 'No matching validation records.';
+        return;
+      }
+      container.innerHTML = '';
+      result.records.forEach(function(record) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'record-option';
+        button.textContent = record.label;
+        const small = document.createElement('small');
+        small.textContent = [record.searchQuery, record.trackingCadence].filter(Boolean).join(' · ');
+        button.appendChild(small);
+        button.onclick = function() { selectValidationRecord(record.recordId, record.item, record.searchQuery); };
+        container.appendChild(button);
+      });
+    }
+    async function autoRenewSession() {
+      document.getElementById('autoRenewResult').textContent = 'Attempting auto-renew (max 120s)...';
+      const result = await postJson('/admin/research-session/auto-renew', {
+        marketplace: 'EBAY-US',
+        timeout: 120000
+      });
+      document.getElementById('autoRenewResult').textContent = JSON.stringify(result, null, 2);
     }
     async function openLiveBrowser() {
       const result = await postJson('/admin/research-session/live/open', {
@@ -1213,6 +1574,33 @@ export function createApp(): express.Application {
     }
   });
 
+  app.get('/admin/validation/records', requireAdmin, async (req, res) => {
+    const query = typeof req.query.query === 'string' ? req.query.query : '';
+    const requestedLimit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 25;
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 25, 1), 50);
+
+    try {
+      const records = await listValidationRecordOptions(query, limit);
+      res.json({ ok: true, count: records.length, records });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      serverLogger.error('[admin/validation/records] Failed to list validation records', {
+        error: message,
+      });
+      res.status(message === 'AIRTABLE_API_KEY_MISSING' ? 503 : 502).json({
+        ok: false,
+        error:
+          message === 'AIRTABLE_API_KEY_MISSING'
+            ? 'AIRTABLE_API_KEY_MISSING'
+            : 'AIRTABLE_RECORD_LIST_FAILED',
+        message:
+          message === 'AIRTABLE_API_KEY_MISSING'
+            ? 'Set AIRTABLE_API_KEY or AIRTABLE_PAT on the server to enable searchable validation records.'
+            : message,
+      });
+    }
+  });
+
   app.post('/admin/validation/run-record', requireAdmin, async (req, res) => {
     const recordId = getValidationRecordIdFromBody(req.body);
     if (!/^rec[A-Za-z0-9]+$/.test(recordId)) {
@@ -1222,6 +1610,14 @@ export function createApp(): express.Application {
         message: 'Provide an Airtable validation record ID such as recXXXXXXXXXXXXXX.',
       });
       return;
+    }
+
+    let beforeFields: AirtableFields | null = null;
+    let beforeReadError: string | null = null;
+    try {
+      beforeFields = await fetchValidationRecordFields(recordId);
+    } catch (error) {
+      beforeReadError = error instanceof Error ? error.message : String(error);
     }
 
     const webhookUrl = getValidationRunnerWebhookUrl();
@@ -1244,16 +1640,41 @@ export function createApp(): express.Application {
         validateStatus: () => true,
       });
       const ok = response.status >= 200 && response.status < 300;
+
+      let afterFields: AirtableFields | null = null;
+      let afterReadError: string | null = null;
+      try {
+        afterFields = await fetchValidationRecordFields(recordId);
+      } catch (error) {
+        afterReadError = error instanceof Error ? error.message : String(error);
+      }
+
+      const transferSummary =
+        afterFields || beforeFields
+          ? buildValidationTransferSummary(recordId, beforeFields, afterFields, response.status)
+          : null;
+
       serverLogger.info('[admin/validation/run-record] Targeted validation webhook completed', {
         recordId,
         status: response.status,
         ok,
+        changedFieldCount:
+          transferSummary && typeof transferSummary.changedFieldCount === 'number'
+            ? transferSummary.changedFieldCount
+            : null,
       });
       res.status(ok ? 200 : 502).json({
         ok,
         recordId,
         webhookStatus: response.status,
         result: response.data,
+        transferSummary,
+        airtableRead: {
+          beforeOk: beforeReadError === null,
+          afterOk: afterReadError === null,
+          beforeError: beforeReadError,
+          afterError: afterReadError,
+        },
       });
     } catch (error) {
       serverLogger.error('[admin/validation/run-record] Targeted validation webhook failed', {
@@ -1273,7 +1694,8 @@ export function createApp(): express.Application {
 
   app.post('/admin/research-session/auto-renew', requireAdmin, async (req, res) => {
     const marketplace = (req.body?.marketplace ?? 'EBAY-US').toUpperCase();
-    const timeoutMs = typeof req.body?.timeout === 'number' ? req.body.timeout : 300_000;
+    const requestedTimeoutMs = typeof req.body?.timeout === 'number' ? req.body.timeout : 120_000;
+    const timeoutMs = Math.min(Math.max(requestedTimeoutMs, 1_000), 120_000);
 
     serverLogger.info('[admin/research-session/auto-renew] Starting auto-renewal', {
       marketplace,
