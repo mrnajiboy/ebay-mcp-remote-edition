@@ -67,6 +67,129 @@ describe('server-http MCP authentication', () => {
     expect(parsed.searchParams.get('redirect_uri')).toBe('Example-App-SB-123');
   });
 
+  it('searches validation records with token matching instead of strict page-query substrings', async () => {
+    process.env.AIRTABLE_API_KEY = 'test-airtable-key';
+    const axiosGet = vi.fn(async (url: string) => {
+      const parsed = new URL(url);
+      const tableId = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+      if (tableId === 'tblrdwYTgTYThU6x1') {
+        expect(parsed.searchParams.get('maxRecords')).toBeNull();
+        return {
+          data: {
+            records: [
+              {
+                id: 'recHqknJmvVtmqmsj',
+                fields: {
+                  Item: ['recItemMonsta'],
+                  'Resolved Search Query': 'monsta x shape of love',
+                  'Direct Search Query': '',
+                  'Tracking Cadence': 'Watching',
+                },
+              },
+              {
+                id: 'recOther',
+                fields: {
+                  Item: ['recItemOther'],
+                  'Resolved Search Query': 'monsta x fatal love',
+                  'Direct Search Query': '',
+                },
+              },
+            ],
+          },
+        };
+      }
+
+      expect(tableId).toBe('tblFwj5cEYvQ8h9kE');
+      return {
+        data: {
+          records: [
+            { id: 'recItemMonsta', fields: { Item: 'MONSTA X - 11st Mini Album [SHAPE of LOVE] (Kit Ver.)' } },
+            { id: 'recItemOther', fields: { Item: 'MONSTA X - Fatal Love' } },
+          ],
+        },
+      };
+    });
+    vi.doMock('axios', () => ({ default: { get: axiosGet, post: vi.fn() } }));
+
+    const { createApp } = await import('@/server-http.js');
+    const response = await request(createApp())
+      .get('/admin/validation/records')
+      .set('x-admin-api-key', 'test-admin-api-key')
+      .query({ limit: 10, query: 'monsta x shape of love Standard Album' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.records).toHaveLength(1);
+    expect(response.body.records[0]).toMatchObject({
+      recordId: 'recHqknJmvVtmqmsj',
+      searchQuery: 'monsta x shape of love',
+    });
+  });
+
+  it('does not treat short artist tokens as arbitrary substrings in validation record search', async () => {
+    process.env.AIRTABLE_API_KEY = 'test-airtable-key';
+    vi.doMock('axios', () => ({
+      default: {
+        get: vi.fn(async (url: string) => {
+          const parsed = new URL(url);
+          const tableId = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+          if (tableId === 'tblrdwYTgTYThU6x1') {
+            return {
+              data: {
+                records: [
+                  {
+                    id: 'recActualJin',
+                    fields: {
+                      Item: ['recItemJin'],
+                      'Resolved Search Query': 'jin echo',
+                      'Direct Search Query': '',
+                    },
+                  },
+                  {
+                    id: 'recJinyoung',
+                    fields: {
+                      Item: ['recItemJinyoung'],
+                      'Resolved Search Query': 'wwd 2026 06 got7 jinyoung',
+                      'Direct Search Query': '',
+                    },
+                  },
+                  {
+                    id: 'recJoohoney',
+                    fields: {
+                      Item: ['recItemJoohoney'],
+                      'Resolved Search Query': 'joohoney 光 insanity',
+                      'Direct Search Query': '',
+                    },
+                  },
+                ],
+              },
+            };
+          }
+
+          return {
+            data: {
+              records: [
+                { id: 'recItemJin', fields: { Item: 'JIN - Echo' } },
+                { id: 'recItemJinyoung', fields: { Item: 'GOT7 JINYOUNG' } },
+                { id: 'recItemJoohoney', fields: { Item: 'JOOHONEY - INSANITY' } },
+              ],
+            },
+          };
+        }),
+        post: vi.fn(),
+      },
+    }));
+
+    const { createApp } = await import('@/server-http.js');
+    const response = await request(createApp())
+      .get('/admin/validation/records')
+      .set('x-admin-api-key', 'test-admin-api-key')
+      .query({ limit: 10, query: 'jin echo' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.records).toHaveLength(1);
+    expect(response.body.records[0].recordId).toBe('recActualJin');
+  });
+
   it('accepts a direct cookie-array payload for admin Playwright session capture', async () => {
     const validateAndStoreMock = vi.fn().mockResolvedValue({
       backend: 'cloudflare_kv',

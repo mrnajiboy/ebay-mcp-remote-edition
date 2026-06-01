@@ -267,6 +267,79 @@ function normalizeForCompare(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
+const VALIDATION_SEARCH_GENERIC_TOKENS = new Set([
+  'album',
+  'cd',
+  'ep',
+  'kpop',
+  'korea',
+  'korean',
+  'mini',
+  'new',
+  'official',
+  'sealed',
+  'set',
+  'single',
+  'standard',
+  'ver',
+  'version',
+]);
+
+function normalizeValidationSearchText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getValidationSearchTokens(value: string): string[] {
+  return normalizeValidationSearchText(value)
+    .split(' ')
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1 && !VALIDATION_SEARCH_GENERIC_TOKENS.has(token));
+}
+
+function hasEveryToken(needles: string[], haystack: Set<string>): boolean {
+  return needles.length > 0 && needles.every((token) => haystack.has(token));
+}
+
+function validationRecordMatchesQuery(
+  option: ValidationRecordOption,
+  normalizedQuery: string
+): boolean {
+  if (!normalizedQuery) return true;
+  if (option.recordId.toLowerCase() === normalizedQuery) return true;
+
+  const searchableValues = [option.label, option.searchQuery, option.directSearchQuery].filter(
+    Boolean
+  );
+  if (
+    searchableValues.some((value) =>
+      normalizeValidationSearchText(String(value)).includes(normalizedQuery)
+    )
+  ) {
+    return true;
+  }
+
+  const queryTokens = getValidationSearchTokens(normalizedQuery);
+  if (!queryTokens.length) return false;
+  const queryTokenSet = new Set(queryTokens);
+  const aggregateTokens = new Set(getValidationSearchTokens(searchableValues.join(' ')));
+
+  if (hasEveryToken(queryTokens, aggregateTokens)) return true;
+
+  return [option.searchQuery, option.directSearchQuery]
+    .filter(Boolean)
+    .map((value) => getValidationSearchTokens(String(value)))
+    .some(
+      (candidateTokens) =>
+        candidateTokens.length >= Math.min(queryTokens.length, 2) &&
+        hasEveryToken(candidateTokens, queryTokenSet)
+    );
+}
+
 function metricGroup(fieldName: string): 'active' | 'sold' | 'velocity' | 'meta' {
   if (fieldName.startsWith('Active ')) return 'active';
   if (fieldName.startsWith('Sold ')) return 'sold';
@@ -421,16 +494,16 @@ async function listValidationRecordOptions(
   query: string,
   limit: number
 ): Promise<ValidationRecordOption[]> {
+  const normalizedQuery = normalizeValidationSearchText(query);
   const records = await fetchAirtableRecords(
     getAirtableValidationTableId(),
     AIRTABLE_VALIDATION_LIST_FIELDS,
-    { maxRecords: Math.min(Math.max(limit * 4, 100), 500) }
+    normalizedQuery ? {} : { maxRecords: Math.min(Math.max(limit * 4, 100), 500) }
   );
   const linkedItemIds = records.flatMap((record) =>
     coerceStringArray(getField(record.fields, 'Item'))
   );
   const itemNames = await fetchAirtableItemNames(linkedItemIds);
-  const normalizedQuery = query.trim().toLowerCase();
 
   return records
     .map((record) => {
@@ -449,12 +522,7 @@ async function listValidationRecordOptions(
         trackingCadence: coerceString(getField(record.fields, 'Tracking Cadence')).trim() || null,
       };
     })
-    .filter((option) => {
-      if (!normalizedQuery) return true;
-      return [option.label, option.searchQuery, option.directSearchQuery]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalizedQuery));
-    })
+    .filter((option) => validationRecordMatchesQuery(option, normalizedQuery))
     .slice(0, limit);
 }
 
