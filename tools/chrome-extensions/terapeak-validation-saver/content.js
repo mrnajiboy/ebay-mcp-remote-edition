@@ -66,6 +66,39 @@
     return normalizeSearchQuery(queryMatch?.[1]);
   }
 
+  function researchQueryUrlFromUrlString(rawUrl, depth = 0) {
+    if (!rawUrl || depth > 3) return '';
+    const decodedUrl = safeDecode(rawUrl);
+    let url;
+    try {
+      url = new URL(decodedUrl, location.origin);
+    } catch {
+      return '';
+    }
+
+    const query = queryFromUrlString(url.href);
+    if (/\/sh\/research(?:\/api\/search)?$/i.test(url.pathname) && query) {
+      const researchUrl = new URL('/sh/research', 'https://www.ebay.com');
+      researchUrl.searchParams.set('marketplace', url.searchParams.get('marketplace') || 'EBAY-US');
+      researchUrl.searchParams.set('keywords', query);
+      return researchUrl.toString();
+    }
+
+    for (const key of ['url', 'ru', 'r', 'redirect', 'redirectUrl', 'returnUrl', 'continue', 'target', 'targetUrl']) {
+      const nested = researchQueryUrlFromUrlString(url.searchParams.get(key), depth + 1);
+      if (nested) return nested;
+    }
+
+    if (query) {
+      const researchUrl = new URL('/sh/research', 'https://www.ebay.com');
+      researchUrl.searchParams.set('marketplace', 'EBAY-US');
+      researchUrl.searchParams.set('keywords', query);
+      return researchUrl.toString();
+    }
+
+    return '';
+  }
+
   function queryFromDocument(pageText) {
     const inputSelectors = [
       'input[name="keywords"]',
@@ -93,9 +126,39 @@
     return queryFromUrlString(location.href) || queryFromDocument(pageText);
   }
 
+  function buildResearchQueryUrl(query) {
+    const fromUrl = researchQueryUrlFromUrlString(location.href);
+    if (fromUrl) return fromUrl;
+    const normalizedQuery = normalizeSearchQuery(query);
+    if (!normalizedQuery) return '';
+    const researchUrl = new URL('/sh/research', 'https://www.ebay.com');
+    researchUrl.searchParams.set('marketplace', 'EBAY-US');
+    researchUrl.searchParams.set('keywords', normalizedQuery);
+    return researchUrl.toString();
+  }
+
+  function detectAntiBot(pageText) {
+    const haystack = `${document.title || ''}\n${location.href}\n${pageText || ''}`;
+    const matchedSignals = [];
+    if (/pardon our interruption/i.test(haystack)) matchedSignals.push('pardon_our_interruption');
+    if (/browser made us think/i.test(haystack)) matchedSignals.push('browser_made_us_think_bot');
+    if (/captcha|h-?captcha|splashui\/captcha/i.test(haystack)) matchedSignals.push('captcha');
+    if (/distil_block|akamai|robot|bot/i.test(haystack)) matchedSignals.push('bot_challenge');
+    if (!matchedSignals.length) {
+      return { detected: false, kind: null, title: document.title || '', matchedSignals: [] };
+    }
+    return {
+      detected: true,
+      kind: matchedSignals.includes('pardon_our_interruption') ? 'ebay_pardon_interruption' : 'ebay_challenge',
+      title: document.title || '',
+      matchedSignals: [...new Set(matchedSignals)]
+    };
+  }
+
   function extractTerapeakSnapshot() {
     const pageText = text();
     const query = extractSearchQuery(pageText);
+    const antiBotDetection = detectAntiBot(pageText);
 
     return {
       capturedAt: new Date().toISOString(),
@@ -103,6 +166,8 @@
       url: location.href,
       title: document.title,
       query,
+      researchQueryUrl: buildResearchQueryUrl(query),
+      antiBotDetection,
       metrics: {
         activeListingsCount: numberAfter([
           /([\d,]+)\s+active listings?/i,
@@ -139,6 +204,7 @@
   }
 
   function hasScrapeableQuery(snapshot) {
+    if (snapshot.antiBotDetection?.detected) return Boolean(snapshot.researchQueryUrl || snapshot.query);
     const metrics = snapshot.metrics || {};
     const hasMetric = Object.values(metrics).some((value) => typeof value === 'number' && Number.isFinite(value));
     return Boolean(snapshot.query && (hasMetric || /terapeak|research|active listings?|sold listings?/i.test(snapshot.pageTextSample || '')));

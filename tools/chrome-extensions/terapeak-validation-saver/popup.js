@@ -16,7 +16,7 @@ function normalizeBaseUrl(raw) {
 }
 
 async function loadOptions() {
-  const saved = await chrome.storage.local.get(['baseUrl', 'adminKey', 'recordId', 'recordSearch']);
+  const saved = await chrome.storage.local.get(['baseUrl', 'adminKey', 'recordId', 'recordSearch', 'lastResearchQueryUrl']);
   $('baseUrl').value = saved.baseUrl || DEFAULT_BASE_URL;
   $('adminKey').value = saved.adminKey || '';
   $('recordId').value = saved.recordId || '';
@@ -38,12 +38,76 @@ async function getActiveTab() {
   return tab;
 }
 
-async function collectPageSnapshot(tabId) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeResearchQuery(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 160);
+}
+
+function buildResearchUrlFromQuery(query) {
+  const normalized = normalizeResearchQuery(query);
+  if (!normalized || /^https?:\/\//i.test(normalized) || /^rec[A-Za-z0-9]+$/.test(normalized)) return '';
+  const url = new URL('/sh/research', 'https://www.ebay.com');
+  url.searchParams.set('marketplace', MARKETPLACE);
+  url.searchParams.set('keywords', normalized);
+  return url.toString();
+}
+
+async function waitForTabLoad(tabId, timeoutMs = 30000) {
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error('Timed out waiting for Research page to load after reinjection.'));
+    }, timeoutMs);
+    function listener(updatedTabId, changeInfo) {
+      if (updatedTabId !== tabId || changeInfo.status !== 'complete') return;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+async function rememberResearchQueryUrl(snapshot) {
+  if (!snapshot?.researchQueryUrl || snapshot.antiBotDetection?.detected) return;
+  await chrome.storage.local.set({ lastResearchQueryUrl: snapshot.researchQueryUrl });
+}
+
+async function getResearchReinjectionUrl(snapshot) {
+  if (snapshot?.researchQueryUrl) return snapshot.researchQueryUrl;
+  const saved = await chrome.storage.local.get(['lastResearchQueryUrl']);
+  if (saved.lastResearchQueryUrl) return saved.lastResearchQueryUrl;
+  return buildResearchUrlFromQuery(snapshot?.query || $('recordSearch').value);
+}
+
+async function collectPageSnapshot(tabId, options = {}) {
   const response = await chrome.tabs.sendMessage(tabId, { type: 'HANKUK_COLLECT_TERAPEAK_PAGE' }).catch(async () => {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
     return chrome.tabs.sendMessage(tabId, { type: 'HANKUK_COLLECT_TERAPEAK_PAGE' });
   });
   if (!response?.ok) throw new Error('Could not collect Terapeak page snapshot.');
+
+  const snapshot = response.snapshot || {};
+  if (snapshot.antiBotDetection?.detected && options.reinjectOnAntiBot !== false) {
+    const reinjectionUrl = await getResearchReinjectionUrl(snapshot);
+    if (!reinjectionUrl) {
+      throw new Error('eBay returned Pardon/CAPTCHA, but no original Research query URL was available to re-open.');
+    }
+    setStatus(`eBay returned ${snapshot.antiBotDetection.kind || 'anti-bot'}; re-opening original Research query URL...`, 'info');
+    const loading = waitForTabLoad(tabId);
+    await chrome.tabs.update(tabId, { url: reinjectionUrl });
+    await loading;
+    await sleep(1200);
+    return collectPageSnapshot(tabId, { reinjectOnAntiBot: false });
+  }
+
+  await rememberResearchQueryUrl(snapshot);
   return response;
 }
 
@@ -179,7 +243,7 @@ function formatTerapeakInsight(result, snapshot) {
   const debug = result?.result?.debug || {};
   const providerResolution = debug.providerResolution || {};
   const terapeak = debug.providers?.terapeak || {};
-  const antiBot = terapeak.antiBotDetection || snapshot.terapeakAntiBotDetection || {};
+  const antiBot = terapeak.antiBotDetection || snapshot.antiBotDetection || snapshot.terapeakAntiBotDetection || {};
   const soldFallbackUsed = providerResolution.soldFallbackUsed || snapshot.soldFallbackUsed;
   const fallbackReason = firstNonEmpty(
     providerResolution.fallbackReason,
@@ -304,6 +368,7 @@ async function rerunRecord(snapshotOverride = null) {
     validationId: recordId,
     providerOptions: {
       skipTwitter: true,
+      disableBrowseFallback: true,
       manualTerapeakSnapshot: snapshot,
       manualTerapeakSnapshotSource: 'chrome_extension_visible_page'
     }

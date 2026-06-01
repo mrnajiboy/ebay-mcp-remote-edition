@@ -1015,4 +1015,199 @@ avgWatchersPerListing: null,
       fallbackReason: null,
     });
   });
+
+  it('honors Chrome-extension no-Browse fallback mode', async () => {
+    const { runValidation } = await import('../../../src/validation/run-validation.js');
+
+    getTerapeakValidationSignalsMock.mockResolvedValue({
+      avgWatchersPerListing: null,
+      preOrderListingsCount: null,
+      activeAvgPriceUsd: null,
+      activeListingPriceMinUsd: null,
+      activeListingPriceMaxUsd: null,
+      activeAvgShippingUsd: null,
+      activeFreeShippingPct: null,
+      activePromotedListingsPct: null,
+      activeListingsCount: null,
+      activeAvgWatchersPerListing: null,
+      activeWatcherCoverageCount: null,
+      marketPriceUsd: null,
+      researchSoldPriceUsd: null,
+      avgShippingCostUsd: null,
+      competitionLevel: null,
+      soldAvgPriceUsd: null,
+      soldMedianPriceUsd: null,
+      soldPriceMinUsd: null,
+      soldPriceMaxUsd: null,
+      soldAvgShippingUsd: null,
+      soldFreeShippingPct: null,
+      soldSellThroughPct: null,
+      soldTotalSellers: null,
+      soldTotalRevenueUsd: null,
+      previousPobAvgPriceUsd: null,
+      previousPobSellThroughPct: null,
+      currentListingsCount: null,
+      soldListingsCount: null,
+      soldVelocity: {
+        day1Sold: null,
+        day2Sold: null,
+        day3Sold: null,
+        day4Sold: null,
+        day5Sold: null,
+        daysTracked: null,
+      },
+      recentSoldCount7d: null,
+      soldBucketDebug: undefined,
+      provider: 'none',
+      confidence: 'Low',
+      queryDebug: {
+        currentQuery: 'ATEEZ GOLDEN HOUR',
+        previousPobQuery: null,
+        selectedMode: 'current_market',
+        currentResultCount: null,
+        previousPobResultCount: null,
+        notes: 'manual snapshot contained no usable metrics',
+        queryResolution: {
+          queryContextUsed: false,
+          querySource: 'provider_fallback',
+          resolvedSearchQuery: null,
+          validationScope: 'album',
+          queryScope: 'artist album',
+        },
+        writeSources: {},
+      },
+    });
+
+    getEbaySoldValidationSignalsMock.mockResolvedValue({
+      provider: 'rapidgate_sold_api',
+      confidence: 'Low',
+      soldResultsCount: null,
+      soldAveragePriceUsd: null,
+      soldMedianPriceUsd: null,
+      soldMinPriceUsd: null,
+      soldMaxPriceUsd: null,
+      soldItemsSample: [],
+      soldVelocity: {
+        day1Sold: null,
+        day2Sold: null,
+        day3Sold: null,
+        day4Sold: null,
+        day5Sold: null,
+        daysTracked: null,
+      },
+      recentSoldCount7d: null,
+      soldBucketDebug: undefined,
+      query: null,
+      queryCandidates: [],
+      queryDiagnostics: [],
+      selectedQuery: undefined,
+      selectedQueryTier: null,
+      selectedQueryFamily: null,
+      broadAlbumQuery: null,
+      subtypeSpecificQuery: null,
+      querySelectionReason: 'test',
+      responseUrl: null,
+      status: 'skipped',
+      errorMessage: undefined,
+      queryResolution: undefined,
+    });
+
+    getSocialValidationSignalsMock.mockResolvedValue({
+      twitterTrending: null,
+      youtubeViews24hMillions: null,
+      redditPostsCount7d: null,
+      debug: undefined,
+    });
+    getChartValidationSignalsMock.mockReturnValue({ chartMomentum: null });
+    getPreviousComebackResearchSignalsMock.mockResolvedValue({
+      previousAlbumTitle: null,
+      previousComebackFirstWeekSales: null,
+      perplexityHistoricalContextScore: 0,
+      historicalContextNotes: 'test',
+      confidence: 'Low',
+      notes: 'test',
+      sources: [],
+      debug: { providerStatus: 'unconfigured', parseStatus: 'unconfigured' },
+    });
+
+    const result = await runValidation({} as never, {
+      validationId: 'val-chrome-extension',
+      runType: 'manual',
+      cadence: 'Daily',
+      timestamp: '2026-04-12T00:00:00.000Z',
+      providerOptions: {
+        skipTwitter: true,
+        disableBrowseFallback: true,
+        manualTerapeakSnapshot: {
+          source: 'chrome_extension_visible_page',
+          query: 'ATEEZ GOLDEN HOUR',
+          metrics: {},
+        },
+      },
+      item: {
+        recordId: 'rec-item',
+        name: 'ATEEZ GOLDEN HOUR',
+        variation: [],
+        itemType: ['Album'],
+        releaseType: ['Album'],
+        releaseDate: '2026-04-20T00:00:00.000Z',
+        releasePeriod: [],
+        availability: [],
+        wholesalePrice: 10,
+        supplierNames: [],
+        canonicalArtists: ['ATEEZ'],
+        relatedAlbums: ['GOLDEN HOUR'],
+      },
+      validation: {
+        validationType: 'Standard Album',
+        buyDecision: 'Watching',
+        automationStatus: 'Watching',
+        autoCheckEnabled: true,
+        dDay: 0,
+        artistTier: 'A',
+        initialBudget: null,
+        reserveBudget: null,
+        queryContext: {
+          validationScope: 'album',
+          queryScope: 'artist album',
+        },
+        currentMetrics: {
+          avgWatchersPerListing: null,
+          preOrderListingsCount: null,
+          twitterTrending: false,
+          youtubeViews24hMillions: null,
+          redditPostsCount7d: null,
+          marketPriceUsd: null,
+          avgShippingCostUsd: null,
+          competitionLevel: null,
+          marketPriceTrend: 'Stable',
+          day1Sold: null,
+          day2Sold: null,
+          day3Sold: null,
+          day4Sold: null,
+          day5Sold: null,
+          daysTracked: null,
+        },
+      },
+    });
+
+    if (result.status !== 'ok') {
+      throw new Error(`unexpected result: ${JSON.stringify(result)}`);
+    }
+
+    expect(getEbayValidationSignalsMock).not.toHaveBeenCalled();
+    expect(
+      (
+        result.debug as {
+          providerResolution: {
+            activeSource: string;
+            browseFallbackDisabled: boolean;
+          };
+        }
+      ).providerResolution
+    ).toMatchObject({
+      activeSource: 'none',
+      browseFallbackDisabled: true,
+    });
+  });
 });

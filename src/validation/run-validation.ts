@@ -118,6 +118,36 @@ function hasPrimaryResearchSoldSignals(terapeak: ResolvedTerapeakSignals): boole
   );
 }
 
+function createSkippedEbayBrowseSignals(
+  request: ValidationRunRequest
+): Awaited<ReturnType<typeof getEbayValidationSignals>> {
+  return {
+    avgWatchersPerListing: null,
+    preOrderListingsCount: null,
+    marketPriceUsd: null,
+    avgShippingCostUsd: null,
+    competitionLevel: null,
+    marketPriceTrend: request.validation.currentMetrics.marketPriceTrend || 'Stable',
+    ebayQuery: '',
+    queryCandidates: [],
+    selectedQuery: undefined,
+    selectedQueryTier: null,
+    queryDiagnostics: [],
+    selectionReason:
+      'eBay Browse fallback was skipped because providerOptions.disableBrowseFallback=true.',
+    sampleSize: 0,
+    soldVelocity: {
+      day1Sold: null,
+      day2Sold: null,
+      day3Sold: null,
+      day4Sold: null,
+      day5Sold: null,
+      daysTracked: null,
+    },
+    queryResolution: buildProviderQueryResolutionDebug(request, false),
+  };
+}
+
 function createSkippedSoldSignals(): Awaited<ReturnType<typeof getEbaySoldValidationSignals>> {
   return {
     provider: 'rapidgate_sold_api',
@@ -477,7 +507,10 @@ export async function runValidation(
       ...request,
       effectiveContext,
     };
-    const ebay = await getEbayValidationSignals(api, effectiveRequest);
+    const browseFallbackDisabled = effectiveRequest.providerOptions?.disableBrowseFallback === true;
+    const ebay = browseFallbackDisabled
+      ? createSkippedEbayBrowseSignals(effectiveRequest)
+      : await getEbayValidationSignals(api, effectiveRequest);
     const terapeak = await getTerapeakValidationSignals(api, effectiveRequest);
     const primaryResearchSoldSignalsAvailable = hasPrimaryResearchSoldSignals(terapeak);
     const sold = primaryResearchSoldSignalsAvailable
@@ -658,6 +691,7 @@ export async function runValidation(
     const providerResolution = {
       activeSource,
       soldSource,
+      browseFallbackDisabled,
       soldFallbackUsed: !primaryResearchSoldSignalsAvailable && soldSource === 'rapidgate_sold_api',
       fallbackReason: primaryResearchSoldSignalsAvailable
         ? null

@@ -166,6 +166,7 @@ export interface ValidationRunRequest {
   sourceContext?: ValidationSourceContext;
   providerOptions?: {
     skipTwitter?: boolean;
+    disableBrowseFallback?: boolean;
     manualTerapeakSnapshot?: {
       capturedAt?: string;
       source?: string;

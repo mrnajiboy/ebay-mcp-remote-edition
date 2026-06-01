@@ -42,6 +42,7 @@ export const validationSourceContextSchema = z.object({
 
 export const validationProviderOptionsSchema = z.object({
   skipTwitter: z.boolean().optional(),
+  disableBrowseFallback: z.boolean().optional(),
   manualTerapeakSnapshot: z
     .object({
       capturedAt: z.string().optional(),
