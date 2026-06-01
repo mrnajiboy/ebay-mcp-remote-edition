@@ -236,6 +236,7 @@ describe('fetchEbayResearch()', () => {
   });
 
   it('marks eBay Pardon/CAPTCHA HTML as an anti-bot research challenge instead of a generic no-module parse miss', async () => {
+    vi.useRealTimers();
     process.env.EBAY_RESEARCH_COOKIES_JSON = JSON.stringify([
       { name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' },
     ]);
@@ -243,18 +244,17 @@ describe('fetchEbayResearch()', () => {
     const { fetchEbayResearch } = await import('../../../src/validation/providers/ebay-research.js');
     const pardonHtml = buildEbayPardonHtml();
 
-    axiosGetMock
-      .mockResolvedValueOnce({ status: 200, data: buildValidationPayload() })
-      .mockResolvedValueOnce({
+    axiosGetMock.mockImplementation(async (url: string) => {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.searchParams.get('keywords') === 'pokemon') {
+        return { status: 200, data: buildValidationPayload() };
+      }
+      return {
         status: 200,
         data: pardonHtml,
         headers: { 'content-type': 'text/html; charset=utf-8' },
-      })
-      .mockResolvedValueOnce({
-        status: 200,
-        data: pardonHtml,
-        headers: { 'content-type': 'text/html; charset=utf-8' },
-      });
+      };
+    });
 
     const response = await fetchEbayResearch('ATEEZ GOLDEN HOUR');
 
@@ -275,7 +275,7 @@ describe('fetchEbayResearch()', () => {
       expect.arrayContaining(['pardon_our_interruption', 'captcha_or_challenge_marker'])
     );
 
-    axiosGetMock.mockClear();
+    axiosGetMock.mockReset();
     axiosGetMock
       .mockResolvedValueOnce({ status: 200, data: buildActivePayload() })
       .mockResolvedValueOnce({ status: 200, data: buildSoldPayload() });

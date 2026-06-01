@@ -939,24 +939,25 @@ function buildValidationDebug(
   };
 }
 
+interface PlaywrightContext {
+  cookies: (urls?: string | string[]) => Promise<ResearchCookie[]>;
+  storageState: () => Promise<ResearchStorageState>;
+  close: () => Promise<void>;
+  newPage?: () => Promise<{
+    goto: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
+  }>;
+}
+
 interface PlaywrightModule {
   chromium?: {
     launch?: (options: Record<string, unknown>) => Promise<{
-      newContext: (options?: Record<string, unknown>) => Promise<{
-        cookies: (urls?: string | string[]) => Promise<ResearchCookie[]>;
-        storageState: () => Promise<ResearchStorageState>;
-        close: () => Promise<void>;
-      }>;
+      newContext: (options?: Record<string, unknown>) => Promise<PlaywrightContext>;
       close: () => Promise<void>;
     }>;
     launchPersistentContext?: (
       userDataDir: string,
       options: Record<string, unknown>
-    ) => Promise<{
-      cookies: (urls?: string | string[]) => Promise<ResearchCookie[]>;
-      storageState: () => Promise<ResearchStorageState>;
-      close: () => Promise<void>;
-    }>;
+    ) => Promise<PlaywrightContext>;
   };
 }
 
@@ -2604,6 +2605,117 @@ function buildResearchUrl(
   return url.toString();
 }
 
+function buildResearchUiUrlFromEndpointUrl(endpointUrl: string): string {
+  const endpoint = new URL(endpointUrl);
+  const uiUrl = new URL('https://www.ebay.com/sh/research');
+  for (const key of [
+    'marketplace',
+    'keywords',
+    'dayRange',
+    'endDate',
+    'startDate',
+    'categoryId',
+    'offset',
+    'limit',
+    'tabName',
+    'tz',
+  ]) {
+    const value = endpoint.searchParams.get(key);
+    if (value !== null) {
+      uiUrl.searchParams.set(key, value);
+    }
+  }
+  return uiUrl.toString();
+}
+
+async function reinjectResearchQueryUrlWithPlaywright(
+  requestUrl: string,
+  authState: ResearchAuthState
+): Promise<ResearchCookie[] | null> {
+  if (!authState.storageState) {
+    return null;
+  }
+
+  const playwrightModule = await loadPlaywrightModule();
+  if (!playwrightModule?.chromium?.launch) {
+    return null;
+  }
+
+  const browser = await playwrightModule.chromium.launch({
+    headless: true,
+    channel: getPlaywrightChromiumChannel(),
+  });
+  try {
+    const context = await browser.newContext({
+      storageState: authState.storageState ?? storageStateFromCookies(authState.cookies),
+    });
+    try {
+      if (typeof context.newPage !== 'function') {
+        return null;
+      }
+      const page = await context.newPage();
+      await page.goto(buildResearchUiUrlFromEndpointUrl(requestUrl), {
+        waitUntil: 'domcontentloaded',
+      });
+      return normalizeResearchCookies(await context.cookies('https://www.ebay.com'));
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
+async function requestResearchTabEndpoint(
+  requestUrl: string,
+  cookieHeader: string
+): Promise<{
+  status: number;
+  data: string;
+  headers?: unknown;
+}> {
+  return await axios.get<string>(requestUrl, {
+    responseType: 'text',
+    headers: {
+      accept: 'application/json, text/plain, */*',
+      cookie: cookieHeader,
+      'x-requested-with': 'XMLHttpRequest',
+      'user-agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+    },
+    validateStatus: (status) => status >= 200 && status < 500,
+  });
+}
+
+function buildResearchTabFetchResult(
+  response: {
+    status: number;
+    data: string;
+    headers?: unknown;
+  },
+  cacheKey: string
+): ResearchTabFetchResult {
+  const contentType = getResponseHeader(response.headers, 'content-type');
+  const antiBotDetection = detectEbayResearchAntiBotResponse(response.data, contentType);
+  const parsedPayload = parseResearchModules(response.data);
+  const pageErrors = extractPageErrors(parsedPayload.modules);
+  if (antiBotDetection.detected) {
+    pageErrors.unshift(buildAntiBotNote(antiBotDetection));
+  }
+  return {
+    modules: parsedPayload.modules,
+    modulesSeen: parsedPayload.modulesSeen,
+    moduleCount: parsedPayload.moduleCount,
+    parseErrors: parsedPayload.parseErrors,
+    pageErrors: uniqueStrings(pageErrors),
+    antiBotDetection,
+    responseStatus: response.status,
+    contentType,
+    cacheKey,
+    cacheEligible: response.status >= 200 && response.status < 300 && !antiBotDetection.detected,
+  };
+}
+
 function buildCookieHeader(cookies: ResearchCookie[]): string {
   const nowSeconds = Date.now() / 1000;
   return cookies
@@ -3237,17 +3349,7 @@ async function fetchResearchTab(
     );
   }
 
-  const response = await axios.get<string>(requestUrl, {
-    responseType: 'text',
-    headers: {
-      accept: 'application/json, text/plain, */*',
-      cookie: cookieHeader,
-      'x-requested-with': 'XMLHttpRequest',
-      'user-agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
-    },
-    validateStatus: (status) => status >= 200 && status < 500,
-  });
+  let response = await requestResearchTabEndpoint(requestUrl, cookieHeader);
 
   if (response.status === 401 || response.status === 403) {
     invalidateResearchAuthValidationCache(options.marketplace, authState.cookies);
@@ -3258,26 +3360,21 @@ async function fetchResearchTab(
     );
   }
 
-  const contentType = getResponseHeader(response.headers, 'content-type');
-  const antiBotDetection = detectEbayResearchAntiBotResponse(response.data, contentType);
-  const parsedPayload = parseResearchModules(response.data);
-  const pageErrors = extractPageErrors(parsedPayload.modules);
-  if (antiBotDetection.detected) {
-    pageErrors.unshift(buildAntiBotNote(antiBotDetection));
+  let result = buildResearchTabFetchResult(response, cacheKey);
+  if (
+    result.antiBotDetection.detected &&
+    authState.storageState &&
+    authState.sessionStrategy !== 'env_cookies'
+  ) {
     invalidateResearchAuthValidationCache(options.marketplace, authState.cookies);
+    const refreshedCookies = await reinjectResearchQueryUrlWithPlaywright(requestUrl, authState);
+    const refreshedCookieHeader = refreshedCookies ? buildCookieHeader(refreshedCookies) : '';
+    if (refreshedCookies && refreshedCookieHeader) {
+      authState.cookies = refreshedCookies;
+      response = await requestResearchTabEndpoint(requestUrl, refreshedCookieHeader);
+      result = buildResearchTabFetchResult(response, cacheKey);
+    }
   }
-  const result: ResearchTabFetchResult = {
-    modules: parsedPayload.modules,
-    modulesSeen: parsedPayload.modulesSeen,
-    moduleCount: parsedPayload.moduleCount,
-    parseErrors: parsedPayload.parseErrors,
-    pageErrors: uniqueStrings(pageErrors),
-    antiBotDetection,
-    responseStatus: response.status,
-    contentType,
-    cacheKey,
-    cacheEligible: response.status >= 200 && response.status < 300 && !antiBotDetection.detected,
-  };
 
   return result;
 }
