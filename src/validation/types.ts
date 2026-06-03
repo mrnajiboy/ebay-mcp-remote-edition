@@ -166,6 +166,7 @@ export interface ValidationRunRequest {
   sourceContext?: ValidationSourceContext;
   providerOptions?: {
     skipTwitter?: boolean;
+    skipPerplexity?: boolean;
     disableBrowseFallback?: boolean;
     manualTerapeakSnapshot?: {
       capturedAt?: string;
@@ -530,8 +531,8 @@ export interface PreviousComebackResearchSignals {
   notes: string;
   sources?: string[];
   debug?: {
-    providerStatus: 'ok' | 'unconfigured' | 'no_evidence' | 'error';
-    parseStatus: 'ok' | 'fallback' | 'error' | 'unconfigured';
+    providerStatus: 'ok' | 'unconfigured' | 'no_evidence' | 'error' | 'skipped';
+    parseStatus: 'ok' | 'fallback' | 'error' | 'unconfigured' | 'skipped';
     query: string | null;
     promptFocus: string[];
     citations: string[];

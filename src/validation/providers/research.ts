@@ -446,8 +446,8 @@ function buildFallbackResearchSignals(input: {
   confidence?: ValidationSignalConfidence;
   query?: string | null;
   promptFocus?: string[];
-  providerStatus: 'unconfigured' | 'no_evidence' | 'error';
-  parseStatus: 'error' | 'unconfigured' | 'fallback';
+  providerStatus: 'unconfigured' | 'no_evidence' | 'error' | 'skipped';
+  parseStatus: 'error' | 'unconfigured' | 'fallback' | 'skipped';
   rawResponseText?: string | null;
   errorMessage?: string | null;
 }): PreviousComebackResearchSignals {
@@ -491,6 +491,17 @@ export async function getPreviousComebackResearchSignals(
   const primaryAlbum =
     effectiveContext.searchAlbum ?? effectiveContext.searchEvent ?? effectiveContext.searchItem;
   const { query, promptFocus, userPrompt } = buildPerplexityPrompt(request);
+
+  if (request.providerOptions?.skipPerplexity === true) {
+    return buildFallbackResearchSignals({
+      notes:
+        'Perplexity historical research skipped because the Airtable historical context fields are already filled.',
+      providerStatus: 'skipped',
+      parseStatus: 'skipped',
+      query,
+      promptFocus,
+    });
+  }
 
   if (!hasPerplexityKey) {
     return buildFallbackResearchSignals({

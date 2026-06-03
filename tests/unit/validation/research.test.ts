@@ -81,6 +81,24 @@ describe('getPreviousComebackResearchSignals()', () => {
     vi.unstubAllGlobals();
   });
 
+  it('skips Perplexity when providerOptions.skipPerplexity is true', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getPreviousComebackResearchSignals } = await import(
+      '../../../src/validation/providers/research.js'
+    );
+
+    const result = await getPreviousComebackResearchSignals(
+      buildRequest({ providerOptions: { skipPerplexity: true } })
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.perplexityHistoricalContextScore).toBe(0);
+    expect(result.debug?.providerStatus).toBe('skipped');
+    expect(result.debug?.parseStatus).toBe('skipped');
+  });
+
   it('ignores misleading numeric strings that are not clearly sales figures', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
