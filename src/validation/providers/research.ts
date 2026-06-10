@@ -487,6 +487,8 @@ export async function getPreviousComebackResearchSignals(
   request: ValidationRunRequest
 ): Promise<PreviousComebackResearchSignals> {
   const hasPerplexityKey = (process.env.PERPLEXITY_API_KEY ?? '').trim().length > 0;
+  const isPerplexityResearchEnabled =
+    (process.env.PERPLEXITY_RESEARCH_ENABLED ?? '').trim().toLowerCase() === 'true';
   const effectiveContext = getValidationEffectiveContext(request);
   const primaryAlbum =
     effectiveContext.searchAlbum ?? effectiveContext.searchEvent ?? effectiveContext.searchItem;
@@ -496,6 +498,17 @@ export async function getPreviousComebackResearchSignals(
     return buildFallbackResearchSignals({
       notes:
         'Perplexity historical research skipped because the Airtable historical context fields are already filled.',
+      providerStatus: 'skipped',
+      parseStatus: 'skipped',
+      query,
+      promptFocus,
+    });
+  }
+
+  if (!isPerplexityResearchEnabled) {
+    return buildFallbackResearchSignals({
+      notes:
+        'Perplexity historical research disabled by default. Live market, Terapeak, and social signals remain active.',
       providerStatus: 'skipped',
       parseStatus: 'skipped',
       query,

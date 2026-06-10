@@ -73,12 +73,31 @@ describe('getPreviousComebackResearchSignals()', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv('PERPLEXITY_API_KEY', 'test-key');
+    vi.stubEnv('PERPLEXITY_RESEARCH_ENABLED', 'true');
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+  });
+
+  it('does not call Perplexity unless PERPLEXITY_RESEARCH_ENABLED is explicitly true', async () => {
+    vi.stubEnv('PERPLEXITY_RESEARCH_ENABLED', '');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getPreviousComebackResearchSignals } = await import(
+      '../../../src/validation/providers/research.js'
+    );
+
+    const result = await getPreviousComebackResearchSignals(buildRequest());
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.perplexityHistoricalContextScore).toBe(0);
+    expect(result.debug?.providerStatus).toBe('skipped');
+    expect(result.debug?.parseStatus).toBe('skipped');
+    expect(result.historicalContextNotes).toContain('disabled by default');
   });
 
   it('skips Perplexity when providerOptions.skipPerplexity is true', async () => {
