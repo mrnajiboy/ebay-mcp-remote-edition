@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v5.0.0...ebay-mcp-remote-edition-v5.1.0) (2026-06-18)
+
+
+### Features
+
+* add eBay Research noVNC rescue lane ([80fb17a](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/80fb17a0979c7e62da5d27bcf78aaa895e054a95))
+* add targeted Terapeak validation picker ([58c9110](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/58c911059a3b46fb7d85aba31103995b3c7c4779))
+* add targeted validation rerun control ([f476aa8](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/f476aa88856849c2b85b66f9934f560d52f5ead5))
+* fix validations ([fe420a5](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/fe420a57291e9d025582255ede1dc0a85161acbd))
+
+
+### Bug Fixes
+
+* add ebay sold-search validation fallback ([059a8f2](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/059a8f2a6b75e069ece10599e02e256a184764fa))
+* advertise reachable noVNC rescue URL ([ce4a448](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/ce4a44816a8d1d432bb323d9d7a5ca31b67bdc2c))
+* autofill validation search from Research URL ([6cc1d05](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6cc1d056508b887230d9df3ef44d0e7e05225399))
+* dedupe eBay Research Playwright sessions ([280c571](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/280c5719301d1cf39b53cd181bd73faec822e910))
+* improve validation record search ([52bd2d1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/52bd2d1d8097b5293d55132ba767314d9f978fdf))
+* retry Research tab after anti-bot HTML ([0472e1d](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/0472e1d7c8d133eb4d1a2b633c6b86be9eda58a3))
+* surface Terapeak fallback diagnostics ([51b4da8](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/51b4da867373096930f22a27739752b301a65729))
+* warm ebay home before Research retry ([1c6ae64](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/1c6ae646d50432db25e90a377ae0fdab7b858975))
+
+
+### Performance Improvements
+
+* change third_party to rapidgate for more clarity. ([89cede7](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/89cede777e5746516aa929c940d2731382deb085))
+* update naming scheme from SOLD_API to RAPIDGATE API for clarity. ([ae082e4](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/ae082e475f41cee7af88a412a5fff1b50d2ced55))
+* updated naming and prettified ([a8b4171](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/a8b41711e160de15ec2a36b84e9889dd15615b31))
+
+
+### Documentation
+
+* add admin research-session/live rescue page documentation ([2ee6364](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/2ee6364c8e2724231aa892668473254dce991560))
+* added examples ([2fda482](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/2fda482f97df5b836540244e0353a0a2f64ecc09))
+* update API status snapshot [skip ci] ([6118ba3](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6118ba31e8d72c929018cb5d80986a24ab239d9b))
+* update API status snapshot [skip ci] ([6bfb4c1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6bfb4c1fd43c8707c36d4e9b083469a0cfaf336c))
+* update API status snapshot [skip ci] ([6c60153](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/6c60153010e8de049bb07cbc63dd123531008ab4))
+
 ## [5.0.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v4.7.0...ebay-mcp-remote-edition-v5.0.0) (2026-05-31)
 
 
