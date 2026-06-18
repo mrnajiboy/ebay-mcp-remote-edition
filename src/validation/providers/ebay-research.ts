@@ -347,6 +347,7 @@ const RESEARCH_AUTH_VALIDATION_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESEARCH_SESSION_STORE_TTL_S = 179 * 24 * 60 * 60;
 const RESEARCH_SESSION_FALLBACK_TTL_S = 30 * 24 * 60 * 60;
 const RESEARCH_STORAGE_STATE_ENV_KEY = 'EBAY_RESEARCH_STORAGE_STATE_JSON';
+const PLAYWRIGHT_CLOSE_TIMEOUT_MS = 5_000;
 const EBAY_HOSTNAME_PATTERN = /(^|\.)ebay\.[a-z.]+$/i;
 const RESEARCH_SESSION_ALLOW_FILESYSTEM_FALLBACK =
   process.env.EBAY_RESEARCH_SESSION_ALLOW_FILESYSTEM_FALLBACK?.trim().toLowerCase() === 'true';
@@ -369,9 +370,12 @@ type ResearchAuthValidationCache = Record<
   }
 >;
 
+type ResearchAuthInflightResolution = Record<string, Promise<ResearchAuthState> | undefined>;
+
 const researchResponseCache = new Map<string, ResearchCacheEntry>();
 let researchAuthCache: ResearchAuthCache = {};
 let researchAuthValidationCache: ResearchAuthValidationCache = {};
+let researchAuthInflightResolution: ResearchAuthInflightResolution = {};
 
 export class EbayResearchAuthError extends Error {
   constructor(message: string) {
@@ -948,17 +952,63 @@ interface PlaywrightContext {
   }>;
 }
 
+interface PlaywrightProcessLike {
+  pid?: number;
+  killed?: boolean;
+  kill: (signal?: string) => boolean;
+}
+
+interface PlaywrightBrowser {
+  newContext: (options?: Record<string, unknown>) => Promise<PlaywrightContext>;
+  close: () => Promise<void>;
+  process?: () => PlaywrightProcessLike | null;
+}
+
 interface PlaywrightModule {
   chromium?: {
-    launch?: (options: Record<string, unknown>) => Promise<{
-      newContext: (options?: Record<string, unknown>) => Promise<PlaywrightContext>;
-      close: () => Promise<void>;
-    }>;
+    launch?: (options: Record<string, unknown>) => Promise<PlaywrightBrowser>;
     launchPersistentContext?: (
       userDataDir: string,
       options: Record<string, unknown>
     ) => Promise<PlaywrightContext>;
   };
+}
+
+async function closePlaywrightResource(
+  label: string,
+  close: () => Promise<void>,
+  processLike?: PlaywrightProcessLike | null
+): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      close(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`${label} close timed out after ${PLAYWRIGHT_CLOSE_TIMEOUT_MS}ms`));
+        }, PLAYWRIGHT_CLOSE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logResearchSession(`${label} close failed: ${message}`);
+    if (processLike && !processLike.killed) {
+      try {
+        const killed = processLike.kill('SIGKILL');
+        logResearchSession(
+          `${label} process kill attempted after close failure: pid=${processLike.pid ?? 'unknown'} killed=${killed}`
+        );
+      } catch (killError) {
+        logResearchSession(
+          `${label} process kill failed: ${killError instanceof Error ? killError.message : String(killError)}`
+        );
+      }
+    }
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 async function loadPlaywrightModule(): Promise<PlaywrightModule | null> {
@@ -2662,10 +2712,14 @@ async function reinjectResearchQueryUrlWithPlaywright(
       });
       return normalizeResearchCookies(await context.cookies('https://www.ebay.com'));
     } finally {
-      await context.close();
+      await closePlaywrightResource('research query reinjection context', () => context.close());
     }
   } finally {
-    await browser.close();
+    await closePlaywrightResource(
+      'research query reinjection browser',
+      () => browser.close(),
+      browser.process?.()
+    );
   }
 }
 
@@ -2781,10 +2835,14 @@ async function resolveStorageStateCookies(
           storageState: sanitizedRefreshedState,
         };
       } finally {
-        await context.close();
+        await closePlaywrightResource('research storage hydration context', () => context.close());
       }
     } finally {
-      await browser.close();
+      await closePlaywrightResource(
+        'research storage hydration browser',
+        () => browser.close(),
+        browser.process?.()
+      );
     }
   } catch (error) {
     notes.push(
@@ -2828,7 +2886,7 @@ async function readPlaywrightProfileState(
       ),
     };
   } finally {
-    await context.close();
+    await closePlaywrightResource('research Playwright profile context', () => context.close());
   }
 }
 
@@ -2838,6 +2896,22 @@ async function resolveResearchAuthState(marketplace: string): Promise<ResearchAu
     return cachedAuthState.value;
   }
 
+  const inflightResolution = researchAuthInflightResolution[marketplace];
+  if (inflightResolution) {
+    logResearchSession(`Reusing in-flight auth resolution for ${marketplace}`);
+    return await inflightResolution;
+  }
+
+  const resolution = resolveResearchAuthStateUncached(marketplace).finally(() => {
+    if (researchAuthInflightResolution[marketplace] === resolution) {
+      delete researchAuthInflightResolution[marketplace];
+    }
+  });
+  researchAuthInflightResolution[marketplace] = resolution;
+  return await resolution;
+}
+
+async function resolveResearchAuthStateUncached(marketplace: string): Promise<ResearchAuthState> {
   const notes: string[] = [];
   const envStorageStateRaw = process.env[RESEARCH_STORAGE_STATE_ENV_KEY]?.trim();
   const envCookiesRaw = process.env.EBAY_RESEARCH_COOKIES_JSON?.trim();
@@ -3810,6 +3884,7 @@ export async function inspectEbayResearchSessionPersistence(
 export function clearEbayResearchAuthCache(): void {
   researchAuthCache = {};
   researchAuthValidationCache = {};
+  researchAuthInflightResolution = {};
 }
 
 export async function inspectEbayResearchAuthState(

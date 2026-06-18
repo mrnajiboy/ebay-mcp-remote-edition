@@ -616,6 +616,38 @@ describe('fetchEbayResearch()', () => {
     expect(secondResponse.sold.soldRows).toHaveLength(1);
   });
 
+  it('deduplicates concurrent auth resolution so parallel validations share one Playwright hydration', async () => {
+    process.env.EBAY_RESEARCH_STORAGE_STATE_JSON = JSON.stringify({
+      cookies: [{ name: 'sid', value: 'cookie-a', domain: '.ebay.com', path: '/' }],
+      origins: [],
+    });
+
+    const { fetchEbayResearch } = await import('../../../src/validation/providers/ebay-research.js');
+
+    axiosGetMock.mockImplementation(async (url: string) => {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.searchParams.get('keywords') === 'pokemon') {
+        return { status: 200, data: buildValidationPayload() };
+      }
+      if (parsedUrl.searchParams.get('tabName') === 'SOLD') {
+        return { status: 200, data: buildSoldPayload() };
+      }
+      return { status: 200, data: buildActivePayload() };
+    });
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      fetchEbayResearch('ATEEZ GOLDEN HOUR'),
+      fetchEbayResearch('BABYMONSTER CHOOM POB'),
+    ]);
+
+    expect(firstResponse.debug.sessionStrategy).toBe('storage_state');
+    expect(secondResponse.debug.sessionStrategy).toBe('storage_state');
+    expect(chromiumLaunchMock).toHaveBeenCalledTimes(1);
+    expect(browserNewContextMock).toHaveBeenCalledTimes(1);
+    expect(browserContextCloseMock).toHaveBeenCalledTimes(1);
+    expect(browserCloseMock).toHaveBeenCalledTimes(1);
+  });
+
   it('prefers KV-backed storage state over environment cookie fallbacks', async () => {
     process.env.EBAY_RESEARCH_COOKIES_JSON = JSON.stringify([
       { name: 'sid', value: 'cookie-env', domain: '.ebay.com', path: '/' },
