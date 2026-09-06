@@ -64,7 +64,7 @@ These credentials are obtained from the [eBay Developer Portal](https://develope
 - **Example:** `YourAppId-YourAppId-SB-abc-def-ghi` or `YourAppId-YourAppId-PR-abc-def-ghi`
 - **Required:** Yes (for OAuth user token flow)
 - **Important:** The RuName is **NOT** a full URL. The public Redirect URL is **NOT** a RuName. They serve different purposes and must not be used as fallbacks for each other.
-- **Compatibility:** `EBAY_REDIRECT_URI` is a legacy environment variable name. Prefer `EBAY_RUNAME` (or `EBAY_SANDBOX_RUNAME` / `EBAY_PRODUCTION_RUNAME`) for the RuName and use `PUBLIC_BASE_URL` to configure the browser callback URL.
+- **Hosted production:** Set `EBAY_PRODUCTION_REDIRECT_URI` to exactly `PUBLIC_BASE_URL/oauth/callback`. Hosted production uses that public URL in both the authorization request and authorization-code exchange, and rejects a missing, local, or mismatched value. `EBAY_PRODUCTION_RUNAME` is retained for compatibility/metadata, not as a production callback fallback. Sandbox/local flows retain RuName fallback compatibility.
 
 #### `EBAY_ENVIRONMENT`
 
@@ -126,7 +126,7 @@ Hosted HTTP uses `pnpm run start:http` after `pnpm run build` or `pnpm run dev:h
 | `PORT` | HTTP listen port; defaults to `3000`. Hosted platforms commonly inject this. |
 | `MCP_HOST` | Bind host; defaults to `0.0.0.0`. |
 | `EBAY_ENVIRONMENT` / `EBAY_DEFAULT_ENVIRONMENT` | Root and legacy route environment selection. `EBAY_ENVIRONMENT` wins; source fallback is `production`. |
-| `EBAY_PRODUCTION_CLIENT_ID`, `EBAY_PRODUCTION_CLIENT_SECRET`, `EBAY_PRODUCTION_RUNAME`, `EBAY_PRODUCTION_REDIRECT_URI` | Production-specific credential overrides. Prefer `EBAY_PRODUCTION_RUNAME`; `EBAY_PRODUCTION_REDIRECT_URI` is a legacy variable name and is not the public callback URL. |
+| `EBAY_PRODUCTION_CLIENT_ID`, `EBAY_PRODUCTION_CLIENT_SECRET`, `EBAY_PRODUCTION_RUNAME`, `EBAY_PRODUCTION_REDIRECT_URI` | Production-specific credential overrides. Hosted production requires `EBAY_PRODUCTION_REDIRECT_URI` to equal `PUBLIC_BASE_URL/oauth/callback`; it is the public callback URL sent in authorization and code-exchange requests. |
 | `EBAY_SANDBOX_CLIENT_ID`, `EBAY_SANDBOX_CLIENT_SECRET`, `EBAY_SANDBOX_RUNAME`, `EBAY_SANDBOX_REDIRECT_URI` | Sandbox-specific credential overrides. Prefer `EBAY_SANDBOX_RUNAME`; `EBAY_SANDBOX_REDIRECT_URI` is a legacy variable name and is not the public callback URL. |
 | `EBAY_CONFIG_FILE` | Path to a JSON file with `production` and/or `sandbox` credential objects. |
 | `OAUTH_START_KEY` | Optional shared secret for `/oauth/start`; implementation accepts `X-OAuth-Start-Key: <key>` or `?key=<key>`. |

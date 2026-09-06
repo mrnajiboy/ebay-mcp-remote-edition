@@ -72,7 +72,7 @@ Both modes use the same eBay tool registry. Local STDIO is best when one trusted
 2. Create an application, copy **App ID (Client ID)** and **Cert ID (Client Secret)**
 3. Under **User Tokens → Add RuName**, register your public HTTPS OAuth callback URL and copy the generated **RuName** string
 
-> **`EBAY_RUNAME` and the public Redirect URL are distinct.** `EBAY_RUNAME` is the eBay-generated RuName string used as eBay's OAuth `redirect_uri` identifier (for example, `YourApp-YourApp-SB-abcdefghi`). The public Redirect URL is the real browser callback URL you register in eBay, such as `https://your-server.com/oauth/callback` or `https://ebay-local.test:3000/oauth/callback`; it is derived from `PUBLIC_BASE_URL` in this project. Do not use either value as a fallback for the other.
+> **Hosted production requires an explicit public callback URL.** Set `EBAY_PRODUCTION_REDIRECT_URI` to exactly `PUBLIC_BASE_URL/oauth/callback`; the hosted production OAuth start and token exchange both use that URL. `EBAY_PRODUCTION_RUNAME` remains available for eBay app metadata/compatibility, but is not used as a production callback fallback. Sandbox and local flows may still use their eBay-generated RuName when no callback URL is configured.
 
 ### HTTPS callback URL (required by eBay)
 
@@ -226,8 +226,8 @@ EBAY_REDIRECT_URI=                  # legacy env name; not the public callback U
 # Recommended when serving both environments from one host
 EBAY_PRODUCTION_CLIENT_ID=
 EBAY_PRODUCTION_CLIENT_SECRET=
-EBAY_PRODUCTION_RUNAME=
-EBAY_PRODUCTION_REDIRECT_URI=
+EBAY_PRODUCTION_RUNAME=             # retained for eBay app metadata/compatibility
+EBAY_PRODUCTION_REDIRECT_URI=https://your-server.com/oauth/callback
 EBAY_SANDBOX_CLIENT_ID=
 EBAY_SANDBOX_CLIENT_SECRET=
 EBAY_SANDBOX_RUNAME=
@@ -298,7 +298,7 @@ Mount a JSON file with credentials (e.g., Render Secret File at `/etc/secrets/eb
   "production": {
     "clientId": "PROD_CLIENT_ID",
     "clientSecret": "PROD_CLIENT_SECRET",
-    "redirectUri": "YOUR_PRODUCTION_RUNAME",
+    "redirectUri": "https://your-server.com/oauth/callback",
     "ruName": "YOUR_PRODUCTION_RUNAME"
   },
   "sandbox": {

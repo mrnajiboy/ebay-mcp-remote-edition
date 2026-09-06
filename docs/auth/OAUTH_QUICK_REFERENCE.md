@@ -6,7 +6,7 @@ Use this CLEAN format (no excessive URL encoding):
 https://auth.ebay.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&response_type=code&redirect_uri=YOUR_REDIRECT_URI&scope=SCOPES_SEPARATED_BY_PLUS
 ```
 
-In eBay OAuth, the `redirect_uri` query value is the eBay-generated RuName identifier, not the public HTTPS callback URL. The public Redirect URL / callback URL is registered in the eBay Developer Portal and served by this project at `/oauth/callback` under `PUBLIC_BASE_URL`. These values have distinct purposes and are not fallbacks for each other.
+For hosted **production** OAuth, this server sends the configured public callback URL as `redirect_uri`. Set `EBAY_PRODUCTION_REDIRECT_URI` to exactly `PUBLIC_BASE_URL/oauth/callback`; the authorization request and token exchange use the same value. The production flow rejects local, missing, or mismatched callback configuration. Sandbox/local flows retain RuName fallback compatibility when no callback URL is configured.
 
 ## Common Scopes
 **Basic scope (required):**

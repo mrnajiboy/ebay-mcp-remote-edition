@@ -246,6 +246,37 @@ describe('EbayOAuthClient', () => {
       expect(oauthClient.hasUserTokens()).toBe(true);
     });
 
+    it('uses the configured callback URL for exchange when both callback URL and RuName exist', async () => {
+      const callbackUrl = 'https://ebay-mcp.example.test/oauth/callback';
+      const client = new EbayOAuthClient({
+        ...config,
+        redirectUri: callbackUrl,
+        ruName: 'Example-App-SB-123',
+      });
+      let exchangedRedirectUri: string | null = null;
+
+      nock('https://api.sandbox.ebay.com')
+        .post('/identity/v1/oauth2/token', (body) => {
+          exchangedRedirectUri =
+            typeof body === 'object' && body !== null && 'redirect_uri' in body
+              ? String(body.redirect_uri)
+              : null;
+          return true;
+        })
+        .reply(200, {
+          access_token: 'exchanged_access_token',
+          token_type: 'Bearer',
+          expires_in: 7200,
+          refresh_token: 'exchanged_refresh_token',
+          refresh_token_expires_in: 47304000,
+        });
+
+      await client.exchangeCodeForToken('authorization_code_12345');
+
+      expect(exchangedRedirectUri).toBe(callbackUrl);
+      expect(client.getUserTokens()?.ruName).toBe('Example-App-SB-123');
+    });
+
     it('should throw error if redirect URI is not configured', async () => {
       const configWithoutRedirect = { ...config, redirectUri: undefined };
       const clientWithoutRedirect = new EbayOAuthClient(configWithoutRedirect);

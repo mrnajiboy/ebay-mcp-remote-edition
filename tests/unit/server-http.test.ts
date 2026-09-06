@@ -67,6 +67,43 @@ describe('server-http MCP authentication', () => {
     expect(parsed.searchParams.get('redirect_uri')).toBe('Example-App-SB-123');
   });
 
+  it('starts production OAuth with the deployed public callback URL, not its RuName', async () => {
+    process.env.PUBLIC_BASE_URL = 'https://ebay-mcp.thousandstory.fyi';
+    process.env.EBAY_PRODUCTION_CLIENT_ID = 'test-production-client-id';
+    process.env.EBAY_PRODUCTION_CLIENT_SECRET = 'test-production-client-secret';
+    process.env.EBAY_PRODUCTION_RUNAME = 'Example-App-PR-123';
+    process.env.EBAY_PRODUCTION_REDIRECT_URI = 'https://ebay-mcp.thousandstory.fyi/oauth/callback';
+
+    const { createApp } = await import('@/server-http.js');
+
+    const response = await request(createApp()).get('/production/oauth/start');
+
+    expect(response.status).toBe(302);
+    const parsed = new URL(response.headers.location);
+    expect(parsed.origin).toBe('https://auth.ebay.com');
+    expect(parsed.searchParams.get('client_id')).toBe('test-production-client-id');
+    expect(parsed.searchParams.get('redirect_uri')).toBe(
+      'https://ebay-mcp.thousandstory.fyi/oauth/callback'
+    );
+  });
+
+  it('rejects a local production callback configuration', async () => {
+    process.env.PUBLIC_BASE_URL = 'https://ebay-mcp.example.test';
+    process.env.EBAY_PRODUCTION_CLIENT_ID = 'test-production-client-id';
+    process.env.EBAY_PRODUCTION_CLIENT_SECRET = 'test-production-client-secret';
+    process.env.EBAY_PRODUCTION_RUNAME = 'Example-App-PR-123';
+    process.env.EBAY_PRODUCTION_REDIRECT_URI = 'https://ebay-local.test:3000/oauth/callback';
+
+    const { createApp } = await import('@/server-http.js');
+
+    const response = await request(createApp()).get('/production/oauth/start');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: 'Production OAuth callback must match PUBLIC_BASE_URL/oauth/callback',
+    });
+  });
+
   it('searches validation records with token matching instead of strict page-query substrings', async () => {
     process.env.AIRTABLE_API_KEY = 'test-airtable-key';
     const axiosGet = vi.fn(async (url: string) => {
