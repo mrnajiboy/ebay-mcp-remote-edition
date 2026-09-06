@@ -38,10 +38,10 @@ export class EbayOAuthClient {
 
   private getEffectiveRedirectUri(): string | undefined {
     return (
-      this.userTokens?.ruName ||
       this.userTokens?.redirectUri ||
-      this.config.ruName ||
-      this.config.redirectUri
+      this.userTokens?.ruName ||
+      this.config.redirectUri ||
+      this.config.ruName
     );
   }
 
@@ -236,7 +236,7 @@ export class EbayOAuthClient {
         clientId: effectiveCredentials.clientId,
         clientSecret: effectiveCredentials.clientSecret,
         redirectUri: this.config.redirectUri,
-        ruName: redirectUriForExchange,
+        ruName: this.config.ruName,
         userAccessToken: tokenData.access_token,
         userRefreshToken: tokenData.refresh_token,
         tokenType: tokenData.token_type,

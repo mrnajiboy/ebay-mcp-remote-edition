@@ -565,10 +565,6 @@ function getResearchLiveStatus(): {
   };
 }
 
-function getEbayOAuthRedirectUri(ebayConfig: ReturnType<typeof getEbayConfig>): string | undefined {
-  return ebayConfig.ruName || ebayConfig.redirectUri;
-}
-
 function isLocalDevelopmentBaseUrl(baseUrl: string): boolean {
   if (!baseUrl) {
     return false;
@@ -589,6 +585,48 @@ function isLocalDevelopmentBaseUrl(baseUrl: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Resolves the redirect_uri sent to eBay for a hosted OAuth flow.
+ *
+ * Production uses the deployed callback URL, which must exactly match the
+ * server's PUBLIC_BASE_URL-derived callback. This avoids selecting a legacy
+ * RuName that may still be associated with a local developer callback in the
+ * eBay Developer Portal. Sandbox retains its RuName fallback for local setup.
+ */
+function getHostedEbayOAuthRedirectUri(
+  ebayConfig: ReturnType<typeof getEbayConfig>,
+  environment: EbayEnvironment,
+  serverUrl: string
+): string | undefined {
+  const redirectUri = ebayConfig.redirectUri?.trim();
+  if (environment !== 'production') {
+    return redirectUri || ebayConfig.ruName;
+  }
+
+  const expectedCallbackUrl = getExpectedOAuthCallbackUrl(serverUrl);
+  if (
+    !redirectUri ||
+    redirectUri !== expectedCallbackUrl ||
+    isLocalDevelopmentBaseUrl(redirectUri)
+  ) {
+    throw new Error('Production OAuth callback must match PUBLIC_BASE_URL/oauth/callback');
+  }
+
+  let callbackUrl: URL;
+  try {
+    callbackUrl = new URL(redirectUri);
+  } catch (cause) {
+    throw new Error('Production OAuth callback must match PUBLIC_BASE_URL/oauth/callback', {
+      cause,
+    });
+  }
+  if (callbackUrl.protocol !== 'https:') {
+    throw new Error('Production OAuth callback must match PUBLIC_BASE_URL/oauth/callback');
+  }
+
+  return redirectUri;
 }
 
 function htmlEscape(value: string): string {
@@ -1141,7 +1179,13 @@ export function createApp(): express.Application {
     }
 
     const ebayConfig = getEbayConfig(environment);
-    const ebayRedirectUri = ebayConfig.ruName || ebayConfig.redirectUri;
+    let ebayRedirectUri: string | undefined;
+    try {
+      ebayRedirectUri = getHostedEbayOAuthRedirectUri(ebayConfig, environment, getServerBaseUrl());
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
     if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayRedirectUri) {
       res.status(500).json({ error: `Missing eBay configuration for ${environment}` });
       return;
@@ -2320,7 +2364,7 @@ function mountEnvRouter(
       }
 
       const ebayConfig = getEbayConfig(environment);
-      const ebayRedirectUri = getEbayOAuthRedirectUri(ebayConfig);
+      const ebayRedirectUri = getHostedEbayOAuthRedirectUri(ebayConfig, environment, serverUrl);
       if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayRedirectUri) {
         res.status(500).json({
           error: 'server_error',
@@ -2481,7 +2525,7 @@ function mountEnvRouter(
       const environment = resolveEnv(req);
       const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : undefined;
       const ebayConfig = getEbayConfig(environment);
-      const ebayRedirectUri = getEbayOAuthRedirectUri(ebayConfig);
+      const ebayRedirectUri = getHostedEbayOAuthRedirectUri(ebayConfig, environment, serverUrl);
       if (!ebayConfig.clientId || !ebayConfig.clientSecret || !ebayRedirectUri) {
         res.status(500).json({ error: `Missing eBay configuration for ${environment}` });
         return;
