@@ -3,7 +3,7 @@ import {
   processImageForUpload,
   validateImageForEbay as _validateImageForEbay,
 } from '@/utils/image-processor.js';
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import * as fs from 'fs';
 
 /**
@@ -16,7 +16,13 @@ export class MediaApi {
   constructor(private client: EbayApiClient) {}
 
   private async getAccessToken(): Promise<string> {
-    return await this.client.getOAuthClient().getAccessToken();
+    const oauthClient = this.client.getOAuthClient();
+    if (!oauthClient.getUserTokens()) {
+      throw new Error(
+        'eBay Picture Services requires seller user OAuth credentials with the sell.inventory scope; app access tokens cannot upload listing images.'
+      );
+    }
+    return await oauthClient.getAccessToken();
   }
 
   private getMediaBaseUrl(): string {
@@ -72,17 +78,7 @@ export class MediaApi {
         }
       );
 
-      const responseData = createResponse.data as Record<string, unknown>;
-      const imageId =
-        typeof responseData.id === 'string'
-          ? responseData.id
-          : createResponse.headers.location?.split('/').pop();
-
-      if (!imageId) {
-        throw new Error('No image ID returned from create endpoint');
-      }
-
-      return await this.getImage(imageId);
+      return await this.resolveCreatedImage(createResponse);
     } catch (primaryError) {
       // Fallback: if eBay rejects (e.g., image too small), download → Sharp enlarge → upload via file
       if (axios.isAxiosError(primaryError)) {
@@ -106,13 +102,7 @@ export class MediaApi {
             const processed = await processImageForUpload(imageBuffer);
 
             // Upload via file endpoint
-            return await this.uploadProcessedImage(
-              processed.buffer,
-              processed.metadata,
-              token,
-              baseUrl,
-              description
-            );
+            return await this.uploadProcessedImage(processed.buffer, token, baseUrl);
           } catch {
             // If fallback also fails, throw the original error (more actionable)
             throw primaryError;
@@ -155,7 +145,7 @@ export class MediaApi {
    */
   async createImageFromFile(
     filePath: string,
-    description?: string
+    _description?: string
   ): Promise<{ id: string; imageUrl: string; description?: string }> {
     if (!filePath || typeof filePath !== 'string') {
       throw new Error('filePath is required and must be a string');
@@ -175,13 +165,7 @@ export class MediaApi {
       // convert to JPEG, and optimize. Uses sharp library.
       const processed = await processImageForUpload(fileBuffer);
 
-      return await this.uploadProcessedImage(
-        processed.buffer,
-        processed.metadata,
-        token,
-        baseUrl,
-        description
-      );
+      return await this.uploadProcessedImage(processed.buffer, token, baseUrl);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
@@ -215,70 +199,54 @@ export class MediaApi {
    */
   private async uploadProcessedImage(
     buffer: Buffer,
-    metadata: { width: number; height: number; format: string; size: number },
     token: string,
-    baseUrl: string,
-    description?: string
+    baseUrl: string
   ): Promise<{ id: string; imageUrl: string; description?: string }> {
-    // Build multipart/form-data body correctly:
-    // --boundary\r\n
-    // Content-Disposition: imageFile\r\n
-    // Content-Type: image/jpeg\r\n\r\n
-    // [IMAGE BINARY DATA]
-    // --boundary\r\n
-    // Content-Disposition: description\r\n\r\n
-    // [description text]
-    // --boundary--\r\n
-    const boundary = `----FormBoundary${Date.now()}`;
-    const fileName = `image_${Date.now()}.jpg`;
-
-    const parts: Buffer[] = [];
-
-    // Image file part — headers + binary data
-    const imageHeaders =
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="imageFile"; filename="${fileName}"\r\n` +
-      `Content-Type: image/jpeg\r\n\r\n`;
-    parts.push(Buffer.from(imageHeaders, 'utf-8'));
-    parts.push(buffer);
-
-    // Description part (optional)
-    if (description) {
-      const descPart =
-        `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="description"\r\n\r\n` +
-        `${description}\r\n`;
-      parts.push(Buffer.from(descPart, 'utf-8'));
-    }
-
-    // Closing boundary
-    parts.push(Buffer.from(`--${boundary}--\r\n`, 'utf-8'));
-
-    const multipartBody = Buffer.concat(parts);
-
     const createResponse = await axios.post(
       `${baseUrl}${this.basePath}/image/create_image_from_file`,
-      multipartBody,
+      buffer,
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Type': 'image/jpeg',
+          Accept: 'application/json',
           Prefer: 'return=representation',
         },
         timeout: 30000,
       }
     );
 
-    const responseData = createResponse.data as Record<string, unknown>;
+    return await this.resolveCreatedImage(createResponse);
+  }
+
+  /**
+   * The Media API's create responses include maxDimensionImageUrl. Use it directly:
+   * imageUrl can be a gallery thumbnail (for example, 80x80), while the max-dimension
+   * URL is the listing-safe rendition of the uploaded original.
+   */
+  private async resolveCreatedImage(
+    response: Pick<AxiosResponse, 'data' | 'headers'>
+  ): Promise<{ id: string; imageUrl: string; description?: string }> {
+    const data = response.data as Record<string, unknown>;
+    const location = response.headers.location;
     const imageId =
-      typeof responseData.id === 'string'
-        ? responseData.id
-        : createResponse.headers.location?.split('/').pop();
+      (typeof data.id === 'string' && data.id) ||
+      (typeof data.imageId === 'string' && data.imageId) ||
+      (typeof location === 'string' ? location.split('/').pop() : undefined);
+    const imageUrl =
+      (typeof data.maxDimensionImageUrl === 'string' && data.maxDimensionImageUrl) ||
+      (typeof data.imageUrl === 'string' && data.imageUrl);
 
-    if (!imageId) {
-      throw new Error('No image ID returned from create endpoint');
+    if (imageUrl) {
+      return {
+        id: imageId || '',
+        imageUrl,
+        description: typeof data.description === 'string' ? data.description : undefined,
+      };
     }
-
+    if (!imageId) {
+      throw new Error('No image URL or image ID returned from create endpoint');
+    }
     return await this.getImage(imageId);
   }
 
@@ -306,15 +274,13 @@ export class MediaApi {
       });
 
       const data = response.data as Record<string, unknown>;
-      let imageUrl = data.imageUrl as string | undefined;
-      // eBay Media API returns $_1.JPG thumbnail URL. Convert to full-size (s-l1600.jpg)
-      // which is required for listing images (500px minimum).
-      if (imageUrl?.includes('$_1.JPG')) {
-        imageUrl = imageUrl.replace('$_1.JPG', 's-l1600.jpg');
-      }
+      const imageUrl =
+        (typeof data.maxDimensionImageUrl === 'string' && data.maxDimensionImageUrl) ||
+        (typeof data.imageUrl === 'string' && data.imageUrl) ||
+        '';
       return {
-        id: data.id as string,
-        imageUrl: imageUrl || '',
+        id: (typeof data.id === 'string' && data.id) || imageId,
+        imageUrl,
         description: typeof data.description === 'string' ? data.description : undefined,
       };
     } catch (error) {
