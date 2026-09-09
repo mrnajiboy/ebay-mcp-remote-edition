@@ -1,5 +1,6 @@
 import type { EbayApiClient } from '../client.js';
 import {
+  getImageMetadata,
   processImageForUpload,
   validateImageForEbay as _validateImageForEbay,
 } from '@/utils/image-processor.js';
@@ -74,7 +75,7 @@ export class MediaApi {
         }
       );
 
-      return await this.resolveCreatedImage(createResponse);
+      return await this.verifyHostedRendition(await this.resolveCreatedImage(createResponse));
     } catch (primaryError) {
       // Fallback: if eBay rejects (e.g., image too small), download → Sharp enlarge → upload via file
       if (axios.isAxiosError(primaryError)) {
@@ -271,7 +272,60 @@ export class MediaApi {
       }
     );
 
-    return await this.resolveCreatedImage(createResponse);
+    return await this.verifyHostedRendition(await this.resolveCreatedImage(createResponse));
+  }
+
+  /**
+   * Verify that the eBay-hosted rendition is a decodable listing image, not
+   * a nominal-success placeholder thumbnail. This is intentionally performed
+   * after every media create response before the MCP handler reports success.
+   */
+  private async verifyHostedRendition(image: {
+    id: string;
+    imageUrl: string;
+    description?: string;
+  }): Promise<{ id: string; imageUrl: string; description?: string }> {
+    if (!image.imageUrl) {
+      throw new Error('eBay returned no hosted image URL to verify');
+    }
+
+    let response: AxiosResponse<ArrayBuffer>;
+    try {
+      response = await axios.get<ArrayBuffer>(image.imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+        maxContentLength: 10 * 1024 * 1024,
+        maxBodyLength: 10 * 1024 * 1024,
+      });
+    } catch (error) {
+      throw new Error(
+        `Unable to download eBay-hosted image for verification: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+        { cause: error }
+      );
+    }
+
+    let metadata: Awaited<ReturnType<typeof getImageMetadata>>;
+    try {
+      metadata = await getImageMetadata(Buffer.from(response.data));
+    } catch (error) {
+      throw new Error(
+        `eBay-hosted image is not decodable: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+        { cause: error }
+      );
+    }
+
+    if (metadata.width < 500 || metadata.height < 500) {
+      throw new Error(
+        `eBay-hosted image failed verification: ${metadata.width}x${metadata.height}; ` +
+          'both dimensions must be at least 500px'
+      );
+    }
+
+    return image;
   }
 
   /**
@@ -287,21 +341,30 @@ export class MediaApi {
       (typeof data.id === 'string' && data.id) ||
       (typeof data.imageId === 'string' && data.imageId) ||
       (typeof location === 'string' ? location.split('/').pop() : undefined);
-    const imageUrl =
-      (typeof data.maxDimensionImageUrl === 'string' && data.maxDimensionImageUrl) ||
-      (typeof data.imageUrl === 'string' && data.imageUrl);
+    const maxDimensionImageUrl =
+      typeof data.maxDimensionImageUrl === 'string' ? data.maxDimensionImageUrl : undefined;
+    const imageUrl = typeof data.imageUrl === 'string' ? data.imageUrl : undefined;
 
-    if (imageUrl) {
+    if (maxDimensionImageUrl) {
       return {
         id: imageId || '',
+        imageUrl: maxDimensionImageUrl,
+        description: typeof data.description === 'string' ? data.description : undefined,
+      };
+    }
+    // A create response can contain only a thumbnail imageUrl while GET /image/{id}
+    // exposes maxDimensionImageUrl. Always perform this read-back when possible.
+    if (imageId) {
+      return await this.getImage(imageId);
+    }
+    if (imageUrl) {
+      return {
+        id: '',
         imageUrl,
         description: typeof data.description === 'string' ? data.description : undefined,
       };
     }
-    if (!imageId) {
-      throw new Error('No image URL or image ID returned from create endpoint');
-    }
-    return await this.getImage(imageId);
+    throw new Error('No image URL or image ID returned from create endpoint');
   }
 
   /**
