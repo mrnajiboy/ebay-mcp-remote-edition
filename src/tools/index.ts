@@ -2518,10 +2518,12 @@ export async function executeTool(
       const imageUrls = args.imageUrls as string[] | undefined;
       const imageFiles = args.imageFiles as string[] | undefined;
       const description = args.description as string | undefined;
+      const forceLocalProcessing = args.forceLocalProcessing === true;
       const results: {
         success: boolean;
         id?: string;
         imageUrl?: string;
+        uploadMode?: 'url-ingest' | 'binary-sharp';
         error?: string;
         sourceUrl?: string;
         sourceFile?: string;
@@ -2532,7 +2534,12 @@ export async function executeTool(
         for (const filePath of imageFiles) {
           try {
             const result = await api.media.createImageFromFile(filePath, description);
-            results.push({ success: true, id: result.id, imageUrl: result.imageUrl });
+            results.push({
+              success: true,
+              id: result.id,
+              imageUrl: result.imageUrl,
+              uploadMode: 'binary-sharp',
+            });
           } catch (e) {
             results.push({
               success: false,
@@ -2546,8 +2553,15 @@ export async function executeTool(
       else if (imageUrls && imageUrls.length > 0) {
         for (const imageUrl of imageUrls) {
           try {
-            const result = await api.media.createImageFromUrl(imageUrl, description);
-            results.push({ success: true, id: result.id, imageUrl: result.imageUrl });
+            const result = forceLocalProcessing
+              ? await api.media.createImageFromUrlWithLocalProcessing(imageUrl, description)
+              : await api.media.createImageFromUrl(imageUrl, description);
+            results.push({
+              success: true,
+              id: result.id,
+              imageUrl: result.imageUrl,
+              uploadMode: forceLocalProcessing ? 'binary-sharp' : 'url-ingest',
+            });
           } catch (e) {
             results.push({
               success: false,

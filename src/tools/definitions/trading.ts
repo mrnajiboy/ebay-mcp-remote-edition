@@ -173,7 +173,7 @@ export const tradingTools: ToolDefinition[] = [
   {
     name: 'ebay_upload_images',
     description:
-      'Upload images to eBay Picture Services using the Commerce Media API and get eBay-hosted image URLs for use in listings.\n\nTwo modes:\n1. **From URL** — Provide imageUrls (public URLs). eBay fetches and hosts them.\n2. **From file** — Provide imageFiles (local file paths). Files are uploaded via multipart/form-data.\n\nSupports: JPG, GIF, PNG, BMP, TIFF, AVIF, HEIC, WEBP. Max 10MB per image.\n\nReturns a result for each uploaded image including the eBay-hosted URL and image ID.',
+      "Upload images to eBay Picture Services using the Commerce Media API and get eBay-hosted image URLs for use in listings.\n\nTwo modes:\n1. **From URL** — Provide imageUrls (public URLs). eBay fetches and hosts them by default. Set forceLocalProcessing=true to make the hosted MCP server download the URL, process it with Sharp, then upload JPEG binary through eBay's authenticated file endpoint.\n2. **From file** — Provide imageFiles (local file paths). Files are processed with Sharp and uploaded as JPEG binary.\n\nSupports: JPG, GIF, PNG, BMP, TIFF, AVIF, HEIC, WEBP. Max 10MB per image.\n\nReturns a result for each uploaded image including the eBay-hosted URL, image ID, and uploadMode.",
     inputSchema: {
       imageUrls: z
         .array(z.string().describe('Public URL of the image to upload'))
@@ -183,6 +183,12 @@ export const tradingTools: ToolDefinition[] = [
         .array(z.string().describe('Local file path of the image to upload'))
         .optional()
         .describe('Array of local file paths to upload (use imageFiles OR imageUrls, not both)'),
+      forceLocalProcessing: z
+        .boolean()
+        .optional()
+        .describe(
+          'For imageUrls only: force hosted-server download, Sharp processing, and authenticated binary upload instead of eBay URL ingestion. Use when direct URL ingestion creates placeholders or ImageProcessingError.'
+        ),
       description: z.string().optional().describe('Optional description for the uploaded images'),
     },
     annotations: { readOnlyHint: false },
