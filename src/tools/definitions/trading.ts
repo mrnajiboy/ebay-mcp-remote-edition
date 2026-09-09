@@ -129,7 +129,7 @@ export const tradingTools: ToolDefinition[] = [
   {
     name: 'ebay_revise_listing',
     description:
-      'Revise an existing fixed-price listing. Update quantity, price, title, description, or any other field.\n\nUses the Trading API (ReviseFixedPriceItem). Only send the fields you want to change.\n\nExamples:\n- Update quantity: { "Quantity": 10 }\n- Update price: { "StartPrice": 14.99 }\n- Update title: { "Title": "New Title" }\n- Multiple fields: { "Quantity": 10, "StartPrice": 14.99 }\n\nRequired: User OAuth token.',
+      'Revise an existing fixed-price listing. Update quantity, price, title, description, or other supported fields.\n\nUses the Trading API (ReviseFixedPriceItem). For inventory-based listings, Title, Description, Quantity, and StartPrice use an Inventory API fallback. A PictureDetails-only revision is also supported for inventory-based listings: it re-syncs the complete current PictureURL array to product.imageUrls, but rejects any URL that differs from the active listing or any companion field.\n\nExamples:\n- Update quantity: { "Quantity": 10 }\n- Update price: { "StartPrice": 14.99 }\n- Re-sync current pictures only: { "PictureDetails": { "PictureURL": ["https://i.ebayimg.com/...", "https://i.ebayimg.com/..."] } }\n\nRequired: User OAuth token.',
     inputSchema: {
       itemId: z.string().describe('The eBay item ID to revise'),
       fields: z

@@ -150,6 +150,74 @@ function extractListingSku(listing: Record<string, unknown>): string | undefined
   return typeof nestedSku === 'string' && nestedSku.trim() ? nestedSku : undefined;
 }
 
+function extractListingPictureUrls(listing: Record<string, unknown>): string[] | undefined {
+  const item = listing.Item as Record<string, unknown> | undefined;
+  const pictureDetails = (listing.PictureDetails ?? item?.PictureDetails) as
+    | Record<string, unknown>
+    | undefined;
+  const pictureUrl = pictureDetails?.PictureURL;
+  if (typeof pictureUrl === 'string' && pictureUrl.trim()) return [pictureUrl];
+  if (
+    Array.isArray(pictureUrl) &&
+    pictureUrl.length > 0 &&
+    pictureUrl.every((url) => typeof url === 'string' && url.trim())
+  ) {
+    return pictureUrl as string[];
+  }
+  return undefined;
+}
+
+function isActiveListing(listing: Record<string, unknown>): boolean {
+  const item = listing.Item as Record<string, unknown> | undefined;
+  const sellingStatus = (listing.SellingStatus ?? item?.SellingStatus) as
+    | Record<string, unknown>
+    | undefined;
+  const status = sellingStatus?.ListingStatus ?? listing.ListingStatus ?? item?.ListingStatus;
+  return typeof status === 'string' && status.toUpperCase() === 'ACTIVE';
+}
+
+function parseExactPictureDetailsUrls(
+  fields: Record<string, unknown>,
+  currentUrls: string[] | undefined
+): string[] {
+  const fieldNames = Object.keys(fields);
+  if (fieldNames.length !== 1 || fieldNames[0] !== 'PictureDetails') {
+    throw new Error(
+      'PictureDetails inventory fallback only permits a complete PictureDetails revision with no other fields'
+    );
+  }
+
+  const pictureDetails = fields.PictureDetails;
+  if (!pictureDetails || typeof pictureDetails !== 'object' || Array.isArray(pictureDetails)) {
+    throw new Error('PictureDetails must be an object containing only a PictureURL array');
+  }
+
+  const detailRecord = pictureDetails as Record<string, unknown>;
+  const detailFields = Object.keys(detailRecord);
+  if (detailFields.length !== 1 || detailFields[0] !== 'PictureURL') {
+    throw new Error('PictureDetails inventory fallback only permits the PictureURL field');
+  }
+
+  const suppliedUrls = detailRecord.PictureURL;
+  if (
+    !Array.isArray(suppliedUrls) ||
+    suppliedUrls.length === 0 ||
+    !suppliedUrls.every((url) => typeof url === 'string' && url.trim())
+  ) {
+    throw new Error('PictureDetails.PictureURL must be a non-empty array of URLs');
+  }
+  if (
+    currentUrls?.length !== suppliedUrls.length ||
+    currentUrls.some((url, index) => url !== suppliedUrls[index])
+  ) {
+    throw new Error(
+      'PictureDetails URLs must exactly match the active listing URLs, in the same order; refusing to change listing media'
+    );
+  }
+
+  return suppliedUrls as string[];
+}
+
 function extractOfferList(response: unknown): Record<string, unknown>[] {
   if (Array.isArray(response)) return response as Record<string, unknown>[];
   if (!response || typeof response !== 'object') return [];
@@ -217,6 +285,48 @@ async function reviseInventoryBackedListing(
     throw new Error(
       `Trading revise failed (${tradingErrorMessage}) and Inventory API fallback could not find SKU for listing ${itemId}`
     );
+  }
+
+  if (Object.prototype.hasOwnProperty.call(fields, 'PictureDetails')) {
+    if (!isActiveListing(listing)) {
+      throw new Error(
+        `PictureDetails inventory fallback requires an active listing; ${itemId} is not active`
+      );
+    }
+
+    const pictureUrls = parseExactPictureDetailsUrls(fields, extractListingPictureUrls(listing));
+    const offersResponse = await api.inventory.getOffers(sku, undefined, 50);
+    const inventoryOffer = extractOfferList(offersResponse).find((offer) => {
+      const offerListing = offer.listing as Record<string, unknown> | undefined;
+      const listingId =
+        offer.listingId ?? offer.ListingID ?? offerListing?.listingId ?? offerListing?.ListingID;
+      return (
+        (typeof listingId === 'string' || typeof listingId === 'number') &&
+        String(listingId) === itemId
+      );
+    });
+    if (!inventoryOffer) {
+      throw new Error(
+        `PictureDetails inventory fallback could not confirm inventory-backed offer for active listing ${itemId}`
+      );
+    }
+
+    const inventoryItem = (await api.inventory.getInventoryItem(sku)) as Record<string, unknown>;
+    inventoryItem.product = {
+      ...(inventoryItem.product as Record<string, unknown> | undefined),
+      imageUrls: pictureUrls,
+    };
+    await api.inventory.createOrReplaceInventoryItem(sku, inventoryItem);
+
+    return {
+      Ack: 'Success',
+      mode: 'inventory-api-picture-details-resync',
+      ItemID: itemId,
+      sku,
+      updatedFields: ['PictureDetails'],
+      imageUrls: pictureUrls,
+      tradingFallbackReason: tradingErrorMessage,
+    };
   }
 
   const offersResponse = await api.inventory.getOffers(sku, undefined, 50);
@@ -2497,6 +2607,14 @@ export async function executeTool(
     case 'ebay_revise_listing': {
       const itemId = args.itemId as string;
       const fields = args.fields as Record<string, unknown>;
+      if (Object.prototype.hasOwnProperty.call(fields, 'PictureDetails')) {
+        return await reviseInventoryBackedListing(
+          api,
+          itemId,
+          fields,
+          'PictureDetails revisions are intentionally routed through the inventory-backed safety path'
+        );
+      }
       try {
         return await api.trading.reviseListing(itemId, fields);
       } catch (error) {

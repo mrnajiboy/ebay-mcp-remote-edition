@@ -128,4 +128,192 @@ describe('trading tool handlers', () => {
     );
     expect(api.inventory.updateOffer).not.toHaveBeenCalled();
   });
+
+  it('re-syncs only exact current PictureDetails URLs for inventory-backed listings', async () => {
+    const pictureUrls = [
+      'https://i.ebayimg.com/images/g/one/s-l1600.jpg',
+      'https://i.ebayimg.com/images/g/two/s-l1600.jpg',
+      'https://i.ebayimg.com/images/g/three/s-l1600.jpg',
+      'https://i.ebayimg.com/images/g/four/s-l1600.jpg',
+    ];
+    const inventoryItem = {
+      sku: 'SKU123',
+      product: {
+        title: 'BABYMONSTER Album',
+        brand: 'Hankuk Expo',
+        imageUrls: ['https://i.ebayimg.com/images/g/old/s-l1600.jpg'],
+      },
+      availability: { shipToLocationAvailability: { quantity: 1 } },
+    };
+    const api = {
+      trading: {
+        reviseListing: vi.fn(),
+        getListing: vi.fn().mockResolvedValue({
+          ItemID: 'ITEM123',
+          SKU: 'SKU123',
+          SellingStatus: { ListingStatus: 'Active' },
+          PictureDetails: { PictureURL: pictureUrls },
+        }),
+      },
+      inventory: {
+        getOffers: vi.fn().mockResolvedValue({
+          offers: [{ offerId: 'OFFER123', listing: { listingId: 'ITEM123' } }],
+        }),
+        getOffer: vi.fn(),
+        getInventoryItem: vi.fn().mockResolvedValue(inventoryItem),
+        createOrReplaceInventoryItem: vi.fn().mockResolvedValue(undefined),
+        updateOffer: vi.fn(),
+      },
+    } as any;
+
+    const result = await executeTool(api, 'ebay_revise_listing', {
+      itemId: 'ITEM123',
+      fields: { PictureDetails: { PictureURL: pictureUrls } },
+    });
+
+    expect(api.trading.reviseListing).not.toHaveBeenCalled();
+    expect(api.inventory.getOffers).toHaveBeenCalledWith('SKU123', undefined, 50);
+    expect(api.inventory.createOrReplaceInventoryItem).toHaveBeenCalledWith('SKU123', {
+      sku: 'SKU123',
+      product: {
+        title: 'BABYMONSTER Album',
+        brand: 'Hankuk Expo',
+        imageUrls: pictureUrls,
+      },
+      availability: { shipToLocationAvailability: { quantity: 1 } },
+    });
+    expect(api.inventory.getOffer).not.toHaveBeenCalled();
+    expect(api.inventory.updateOffer).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      Ack: 'Success',
+      mode: 'inventory-api-picture-details-resync',
+      updatedFields: ['PictureDetails'],
+      imageUrls: pictureUrls,
+    });
+  });
+
+  it('refuses PictureDetails URLs that do not exactly match the active listing', async () => {
+    const activeUrls = ['https://i.ebayimg.com/images/g/one/s-l1600.jpg'];
+    const api = {
+      trading: {
+        reviseListing: vi.fn(),
+        getListing: vi.fn().mockResolvedValue({
+          ItemID: 'ITEM123',
+          SKU: 'SKU123',
+          SellingStatus: { ListingStatus: 'Active' },
+          PictureDetails: { PictureURL: activeUrls },
+        }),
+      },
+      inventory: {
+        getInventoryItem: vi.fn(),
+        createOrReplaceInventoryItem: vi.fn(),
+      },
+    } as any;
+
+    await expect(
+      executeTool(api, 'ebay_revise_listing', {
+        itemId: 'ITEM123',
+        fields: {
+          PictureDetails: { PictureURL: ['https://i.ebayimg.com/images/g/other/s-l1600.jpg'] },
+        },
+      })
+    ).rejects.toThrow('must exactly match the active listing URLs');
+
+    expect(api.trading.reviseListing).not.toHaveBeenCalled();
+    expect(api.inventory.getInventoryItem).not.toHaveBeenCalled();
+    expect(api.inventory.createOrReplaceInventoryItem).not.toHaveBeenCalled();
+  });
+
+  it('refuses a PictureDetails revision combined with another field', async () => {
+    const pictureUrls = ['https://i.ebayimg.com/images/g/one/s-l1600.jpg'];
+    const api = {
+      trading: {
+        reviseListing: vi.fn(),
+        getListing: vi.fn().mockResolvedValue({
+          ItemID: 'ITEM123',
+          SKU: 'SKU123',
+          SellingStatus: { ListingStatus: 'Active' },
+          PictureDetails: { PictureURL: pictureUrls },
+        }),
+      },
+      inventory: {
+        getInventoryItem: vi.fn(),
+        createOrReplaceInventoryItem: vi.fn(),
+      },
+    } as any;
+
+    await expect(
+      executeTool(api, 'ebay_revise_listing', {
+        itemId: 'ITEM123',
+        fields: { PictureDetails: { PictureURL: pictureUrls }, Title: 'Do not update' },
+      })
+    ).rejects.toThrow('only permits a complete PictureDetails revision with no other fields');
+
+    expect(api.trading.reviseListing).not.toHaveBeenCalled();
+    expect(api.inventory.getInventoryItem).not.toHaveBeenCalled();
+    expect(api.inventory.createOrReplaceInventoryItem).not.toHaveBeenCalled();
+  });
+
+  it('refuses PictureDetails re-sync for a non-active listing before any inventory write', async () => {
+    const pictureUrls = ['https://i.ebayimg.com/images/g/one/s-l1600.jpg'];
+    const api = {
+      trading: {
+        reviseListing: vi.fn(),
+        getListing: vi.fn().mockResolvedValue({
+          ItemID: 'ITEM123',
+          SKU: 'SKU123',
+          SellingStatus: { ListingStatus: 'Ended' },
+          PictureDetails: { PictureURL: pictureUrls },
+        }),
+      },
+      inventory: {
+        getOffers: vi.fn(),
+        getInventoryItem: vi.fn(),
+        createOrReplaceInventoryItem: vi.fn(),
+      },
+    } as any;
+
+    await expect(
+      executeTool(api, 'ebay_revise_listing', {
+        itemId: 'ITEM123',
+        fields: { PictureDetails: { PictureURL: pictureUrls } },
+      })
+    ).rejects.toThrow('requires an active listing');
+
+    expect(api.trading.reviseListing).not.toHaveBeenCalled();
+    expect(api.inventory.getOffers).not.toHaveBeenCalled();
+    expect(api.inventory.getInventoryItem).not.toHaveBeenCalled();
+    expect(api.inventory.createOrReplaceInventoryItem).not.toHaveBeenCalled();
+  });
+
+  it('refuses PictureDetails re-sync when no matching inventory-backed offer exists', async () => {
+    const pictureUrls = ['https://i.ebayimg.com/images/g/one/s-l1600.jpg'];
+    const api = {
+      trading: {
+        reviseListing: vi.fn(),
+        getListing: vi.fn().mockResolvedValue({
+          ItemID: 'ITEM123',
+          SKU: 'SKU123',
+          SellingStatus: { ListingStatus: 'Active' },
+          PictureDetails: { PictureURL: pictureUrls },
+        }),
+      },
+      inventory: {
+        getOffers: vi.fn().mockResolvedValue({ offers: [] }),
+        getInventoryItem: vi.fn(),
+        createOrReplaceInventoryItem: vi.fn(),
+      },
+    } as any;
+
+    await expect(
+      executeTool(api, 'ebay_revise_listing', {
+        itemId: 'ITEM123',
+        fields: { PictureDetails: { PictureURL: pictureUrls } },
+      })
+    ).rejects.toThrow('could not confirm inventory-backed offer');
+
+    expect(api.trading.reviseListing).not.toHaveBeenCalled();
+    expect(api.inventory.getInventoryItem).not.toHaveBeenCalled();
+    expect(api.inventory.createOrReplaceInventoryItem).not.toHaveBeenCalled();
+  });
 });
