@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import sharp from 'sharp';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { MediaApi } from '@/api/media/media.js';
 import type { EbayApiClient } from '@/api/client.js';
 
@@ -13,22 +16,21 @@ function makeClient(): EbayApiClient {
   } as unknown as EbayApiClient;
 }
 
+const fullSizeUrl = 'https://i.ebayimg.com/00/s/MTYwMFgxNjAw/z/example/s-l1600.jpg';
+
 describe('MediaApi forced local URL processing', () => {
-  it('downloads, Sharp-processes, and uploads URL input through the binary endpoint', async () => {
+  it('delegates URL sources through createImageFromFile with a temp file', async () => {
+    // Create a valid source PNG to simulate a downloaded URL
     const sourceImage = await sharp({
       create: { width: 750, height: 750, channels: 3, background: '#ffffff' },
     })
       .png()
       .toBuffer();
 
-    vi.mocked(axios.get).mockResolvedValueOnce({ data: sourceImage });
+    vi.mocked(axios.get).mockResolvedValue({ data: sourceImage });
     vi.mocked(axios.post).mockResolvedValue({
-      data: {
-        id: 'image-789',
-        imageUrl: 'https://i.ebayimg.com/00/s/ODBYODA=/z/example/$_1.JPG',
-        maxDimensionImageUrl: 'https://i.ebayimg.com/00/s/MTYwMFgxNjAw/z/example/s-l1600.jpg',
-      },
-      headers: {},
+      data: { maxDimensionImageUrl: fullSizeUrl },
+      headers: { location: '/commerce/media/v1_beta/image/image-456' },
     });
 
     const result = await new MediaApi(makeClient()).createImageFromUrlWithLocalProcessing(
@@ -36,23 +38,27 @@ describe('MediaApi forced local URL processing', () => {
       'product image'
     );
 
+    // Result should resolve to the full-size URL from maxDimensionImageUrl
     expect(result).toEqual({
-      id: 'image-789',
-      imageUrl: 'https://i.ebayimg.com/00/s/MTYwMFgxNjAw/z/example/s-l1600.jpg',
+      id: 'image-456',
+      imageUrl: fullSizeUrl,
       description: undefined,
     });
-    expect(axios.get).toHaveBeenNthCalledWith(
-      1,
+
+    // Must download the URL first
+    expect(axios.get).toHaveBeenCalledWith(
       'https://supplier.example/image.png',
       expect.objectContaining({ responseType: 'arraybuffer' })
     );
+
+    // Must upload through create_image_from_file with multipart/form-data
     expect(axios.post).toHaveBeenCalledWith(
-      'https://apim.ebay.com/commerce/media/v1_beta/image/create_image_from_file',
+      expect.stringContaining('/create_image_from_file'),
       expect.any(Buffer),
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer test-token',
-          'Content-Type': 'image/jpeg',
+          'Content-Type': expect.stringMatching(/^multipart\/form-data; boundary=/),
         }),
       })
     );

@@ -5,6 +5,8 @@ import {
 } from '@/utils/image-processor.js';
 import axios, { type AxiosResponse } from 'axios';
 import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Commerce Media API (v1_beta) - Upload and manage images via eBay Picture Services
@@ -131,29 +133,44 @@ export class MediaApi {
    */
   async createImageFromUrlWithLocalProcessing(
     imageUrl: string,
-    _description?: string
+    description?: string
   ): Promise<{ id: string; imageUrl: string; description?: string }> {
     if (!imageUrl || typeof imageUrl !== 'string') {
       throw new Error('imageUrl is required and must be a string');
     }
 
-    const token = await this.getAccessToken();
-    const baseUrl = this.getMediaBaseUrl();
+    // Download the source image
     const downloadResponse = await axios.get(imageUrl, {
       responseType: 'arraybuffer',
       timeout: 30000,
       maxContentLength: 10 * 1024 * 1024,
       maxBodyLength: 10 * 1024 * 1024,
     });
-    const processed = await processImageForUpload(Buffer.from(downloadResponse.data));
-    return await this.uploadProcessedImage(processed.buffer, token, baseUrl);
+    const rawBuffer = Buffer.from(downloadResponse.data);
+
+    // Write to a temp file so createImageFromFile can read + Sharp process + upload
+    const ext = path.extname(new URL(imageUrl).pathname) || '.jpg';
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ebay-media-'));
+    const tmpFile = path.join(tmpDir, `source${ext}`);
+    fs.writeFileSync(tmpFile, rawBuffer);
+
+    try {
+      return await this.createImageFromFile(tmpFile, description);
+    } finally {
+      // Clean up temp files
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        // non-fatal cleanup
+      }
+    }
   }
 
   /**
    * Upload an image from a local file to eBay Picture Services.
    *
    * Endpoint: POST /commerce/media/v1/image/create_image_from_file
-   * Content-Type: image/jpeg with the processed image as the raw request body
+   * Content-Type: multipart/form-data with the JPEG buffer as field 'imageFile'
    *
    * Supported formats: JPG, GIF, PNG, BMP, TIFF, AVIF, HEIC, WEBP
    * Max file size: 10MB per image
@@ -209,6 +226,9 @@ export class MediaApi {
   /**
    * Upload a processed image buffer to eBay Picture Services.
    *
+   * Endpoint: POST /commerce/media/v1_beta/image/create_image_from_file
+   * Content-Type: multipart/form-data with the JPEG buffer as field 'imageFile'
+   *
    * @param buffer - Sharp-processed JPEG image buffer
    * @param token - OAuth access token
    * @param baseUrl - Media API base URL
@@ -219,13 +239,31 @@ export class MediaApi {
     token: string,
     baseUrl: string
   ): Promise<{ id: string; imageUrl: string; description?: string }> {
+    const boundary = `----FormBoundary${Date.now()}`;
+    const fileName = `image_${Date.now()}.jpg`;
+
+    const parts: Buffer[] = [];
+
+    // Image file part — headers + binary data
+    const imageHeaders =
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="imageFile"; filename="${fileName}"\r\n` +
+      `Content-Type: image/jpeg\r\n\r\n`;
+    parts.push(Buffer.from(imageHeaders, 'utf-8'));
+    parts.push(buffer);
+
+    // Closing boundary
+    parts.push(Buffer.from(`\r\n--${boundary}--\r\n`, 'utf-8'));
+
+    const multipartBody = Buffer.concat(parts);
+
     const createResponse = await axios.post(
       `${baseUrl}${this.basePath}/image/create_image_from_file`,
-      buffer,
+      multipartBody,
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'image/jpeg',
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
           Accept: 'application/json',
           Prefer: 'return=representation',
         },
