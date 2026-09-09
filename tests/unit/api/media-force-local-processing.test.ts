@@ -21,16 +21,13 @@ describe('MediaApi forced local URL processing', () => {
       .png()
       .toBuffer();
 
-    vi.mocked(axios.get)
-      .mockResolvedValueOnce({ data: sourceImage })
-      .mockResolvedValueOnce({
-        data: {
-          id: 'image-789',
-          imageUrl: 'https://i.ebayimg.com/00/s/MTYwMFgxNjAw/z/example/s-l1600.jpg',
-        },
-      });
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: sourceImage });
     vi.mocked(axios.post).mockResolvedValue({
-      data: { id: 'image-789' },
+      data: {
+        id: 'image-789',
+        imageUrl: 'https://i.ebayimg.com/00/s/ODBYODA=/z/example/$_1.JPG',
+        maxDimensionImageUrl: 'https://i.ebayimg.com/00/s/MTYwMFgxNjAw/z/example/s-l1600.jpg',
+      },
       headers: {},
     });
 
@@ -55,7 +52,7 @@ describe('MediaApi forced local URL processing', () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer test-token',
-          'Content-Type': expect.stringMatching(/^multipart\/form-data; boundary=/),
+          'Content-Type': 'image/jpeg',
         }),
       })
     );
