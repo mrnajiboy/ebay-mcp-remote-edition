@@ -2,6 +2,41 @@ import { describe, expect, it, vi } from 'vitest';
 import { executeTool } from '../../../src/tools/index.js';
 
 describe('trading tool handlers', () => {
+  it('routes forceLocalProcessing URL uploads through the Sharp binary path', async () => {
+    const api = {
+      media: {
+        createImageFromUrl: vi.fn(),
+        createImageFromUrlWithLocalProcessing: vi
+          .fn()
+          .mockResolvedValue({ id: 'image-123', imageUrl: 'https://i.ebayimg.com/full.jpg' }),
+        createImageFromFile: vi.fn(),
+      },
+    } as any;
+
+    const result = await executeTool(api, 'ebay_upload_images', {
+      imageUrls: ['https://supplier.example/image.jpg'],
+      forceLocalProcessing: true,
+    });
+
+    expect(api.media.createImageFromUrlWithLocalProcessing).toHaveBeenCalledWith(
+      'https://supplier.example/image.jpg',
+      undefined
+    );
+    expect(api.media.createImageFromUrl).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      uploaded: 1,
+      failed: 0,
+      results: [
+        {
+          success: true,
+          id: 'image-123',
+          imageUrl: 'https://i.ebayimg.com/full.jpg',
+          uploadMode: 'binary-sharp',
+        },
+      ],
+    });
+  });
+
   it('falls back to Inventory API for inventory-backed revise listing price changes', async () => {
     const tradingError = new Error(
       'Inventory-based listing management is not currently supported by this tool. Please refer to the tool used to create this listing.'
@@ -24,7 +59,9 @@ describe('trading tool handlers', () => {
         getListing: vi.fn().mockResolvedValue({ ItemID: 'ITEM123', SKU: 'SKU123' }),
       },
       inventory: {
-        getOffers: vi.fn().mockResolvedValue({ offers: [{ offerId: 'OFFER123', listing: { listingId: 'ITEM123' } }] }),
+        getOffers: vi.fn().mockResolvedValue({
+          offers: [{ offerId: 'OFFER123', listing: { listingId: 'ITEM123' } }],
+        }),
         getOffer: vi.fn().mockResolvedValue(offer),
         getInventoryItem: vi.fn().mockResolvedValue(inventoryItem),
         createOrReplaceInventoryItem: vi.fn().mockResolvedValue(undefined),

@@ -131,6 +131,31 @@ export class MediaApi {
   }
 
   /**
+   * Force a public URL through the hosted server's local Sharp pipeline before
+   * authenticated Media API upload. Use when eBay URL ingestion returns a
+   * nominal success but later produces a placeholder rendition.
+   */
+  async createImageFromUrlWithLocalProcessing(
+    imageUrl: string,
+    _description?: string
+  ): Promise<{ id: string; imageUrl: string; description?: string }> {
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      throw new Error('imageUrl is required and must be a string');
+    }
+
+    const token = await this.getAccessToken();
+    const baseUrl = this.getMediaBaseUrl();
+    const downloadResponse = await axios.get(imageUrl, {
+      responseType: 'arraybuffer',
+      timeout: 30000,
+      maxContentLength: 10 * 1024 * 1024,
+      maxBodyLength: 10 * 1024 * 1024,
+    });
+    const processed = await processImageForUpload(Buffer.from(downloadResponse.data));
+    return await this.uploadProcessedImage(processed.buffer, token, baseUrl);
+  }
+
+  /**
    * Upload an image from a local file to eBay Picture Services.
    *
    * Endpoint: POST /commerce/media/v1/image/create_image_from_file

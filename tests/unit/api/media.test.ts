@@ -78,6 +78,35 @@ describe('MediaApi', () => {
     }
   });
 
+  it('forces URL sources through Sharp and the authenticated binary endpoint', async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: await sharp({ create: { width: 750, height: 750, channels: 3, background: '#ffffff' } })
+        .png()
+        .toBuffer(),
+    });
+    vi.mocked(axios.post).mockResolvedValue({
+      data: { maxDimensionImageUrl: fullSizeUrl },
+      headers: { location: '/commerce/media/v1_beta/image/image-789' },
+    });
+
+    const result = await new MediaApi(makeClient()).createImageFromUrlWithLocalProcessing(
+      'https://supplier.example/image.jpg'
+    );
+
+    expect(result).toEqual({ id: 'image-789', imageUrl: fullSizeUrl, description: undefined });
+    expect(axios.get).toHaveBeenCalledWith(
+      'https://supplier.example/image.jpg',
+      expect.objectContaining({ responseType: 'arraybuffer' })
+    );
+    expect(axios.post).toHaveBeenCalledWith(
+      'https://apim.ebay.com/commerce/media/v1_beta/image/create_image_from_file',
+      expect.any(Buffer),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Content-Type': 'image/jpeg' }),
+      })
+    );
+  });
+
   it('rejects app-token fallback before making a Media API request', async () => {
     await expect(
       new MediaApi(makeClient(false)).createImageFromUrl('https://supplier.example/image.jpg')
