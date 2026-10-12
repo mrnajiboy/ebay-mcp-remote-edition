@@ -1,7 +1,7 @@
 # eBay API Status (cached)
 
 The eBay API Status RSS feed is currently unavailable. Last attempt:
-*2026-10-05T16:53:30.109Z*
+*2026-10-12T17:29:19.684Z*
 
 **Error:** Feed unavailable (HTTP 403)
 
