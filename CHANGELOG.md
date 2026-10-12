@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.1](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v5.1.0...ebay-mcp-remote-edition-v5.1.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* delegate forceLocalProcessing through createImageFromFile (temp file) ([8592b05](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/8592b055a8be3d4231f7c107d875d113625de769))
+* force binary media upload for hosted URLs ([8a53291](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/8a53291a743305a787955308a81c4f1769df066e))
+* safely resync inventory listing picture details ([74a7437](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/74a74377501e166291c5deae87f36661b73239e5))
+* send sharpened JPEG as raw binary body, not multipart/form-data ([5af61ed](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/5af61ed7cb5fcdaf0ab63c4f3d40e734df978e7f))
+* use deployed callback for production OAuth ([#40](https://github.com/mrnajiboy/ebay-mcp-remote-edition/issues/40)) ([01d5e59](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/01d5e5947da64e17a8e9f0d6106cf32a0e845925))
+* verify eBay image renditions before success ([29bcf43](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/29bcf4356f433a46ffbc5b230bde26ea573e6e8d))
+
+
+### Documentation
+
+* update API status snapshot [skip ci] ([bc4f4f2](https://github.com/mrnajiboy/ebay-mcp-remote-edition/commit/bc4f4f28532d1601a31362778eb1141e759d492f))
+
 ## [5.1.0](https://github.com/mrnajiboy/ebay-mcp-remote-edition/compare/ebay-mcp-remote-edition-v5.0.0...ebay-mcp-remote-edition-v5.1.0) (2026-06-18)
 
 
