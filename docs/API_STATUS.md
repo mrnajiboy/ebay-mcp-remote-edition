@@ -1,11 +1,27 @@
-# eBay API Status (cached)
+# eBay API Status (latest)
 
-The eBay API Status RSS feed is currently unavailable. Last attempt:
-*2026-10-19T15:20:14.746Z*
-
-**Error:** Feed unavailable (HTTP 403)
-
+Auto-updated snapshot from the [eBay API Status RSS feed](https://developer.ebay.com/rss/api-status).
 Full list: [developer.ebay.com/support/api-status](https://developer.ebay.com/support/api-status).
+
+*Last updated: 2026-10-26T14:54:48.528Z*
+
+| Title | API | Site | Status | Last updated | Link |
+|-------|-----|------|--------|--------------|------|
+| Buy Feed API | Buy Feed API | Production | Resolved | Wed Oct 21 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-daily-item-feed-file-generation-for-october-19-2026-is-delayed) |
+| Negotiation API | Negotiation API | Production | Resolved | Thu Oct 15 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-sendoffertointerestedbuyers-negotiation-api-returning-500-internal-error) |
+| Inventory API | Inventory API | Production | Resolved | Tue Oct 06 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-publishoffer-call-returning-error-lot-size-is-invalid-need-to-be-greater-than-1-and-less-than-450000) |
+| Trading API | Trading API | Production | Resolved | Mon Sep 21 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-trading-api-addfixedpriceitem-and-revisefixedpriceitem-requests-failing-with-system-error-1) |
+| Analytics API | Analytics API | Production | Resolved | Wed Sep 16 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getratelimits-api-returns-http-204-no-content) |
+| Marketplace Account Deletion | Marketplace Account Deletion | Production | Resolved | Mon Sep 14 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-error-while-saving-marketplace-account-deletion-endpoint-details) |
+| GetItem | GetItem | Production | Resolved | Thu Sep 10 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-trading-api-getitem-does-not-return-less-than-itemcompatibilitylist-greater-than-1) |
+| Trading API | Trading API | Production | Resolved | Fri Sep 04 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-trading-api-getitem-does-not-return-less-than-itemcompatibilitylist-greater-than) |
+| Trading API | Trading API | Production | Resolved | Thu Aug 27 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-trading-api-addfixedpriceitem-and-revisefixedpriceitem-requests-failing-with-system-error) |
+| Marketing API | Marketing API | Production | Resolved | Mon Jul 27 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getcampaigns-api-is-not-returning-ads-data) |
+| Developer Portal | Developer Portal | Sandbox | Resolved | Wed Jul 22 2026 | [Details](https://developer.ebay.com/support/api-status/Sandbox/resolved-issue-with-sandbox-keyset-creation-and-visibility) |
+| GetMyMessages API | GetMyMessages API | Production | Resolved | Wed Jul 22 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getmymessages-api-returns-auto-translated-message-text-while-web-ui-shows-original-text) |
+| Taxonomy API | Taxonomy API | Production | Resolved | Wed Jul 15 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-fetchitemaspects-taxonomy-api-is-returning-error-code-500) |
+| Trading API | Trading API | Production | Resolved | Sun Jul 05 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-system-errors-in-revisefixedpriceitem-and-verifyaddfixedpriceitem-apis) |
+| Finance API | Finance API | Production | Resolved | Tue Jun 30 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getpayouts-api-missing-payouts-created-after-2026-06-26t08-27-54-000z) |
 
 ---
 
