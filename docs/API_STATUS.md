@@ -3,10 +3,11 @@
 Auto-updated snapshot from the [eBay API Status RSS feed](https://developer.ebay.com/rss/api-status).
 Full list: [developer.ebay.com/support/api-status](https://developer.ebay.com/support/api-status).
 
-*Last updated: 2026-10-26T14:54:48.528Z*
+*Last updated: 2026-11-02T17:56:19.346Z*
 
 | Title | API | Site | Status | Last updated | Link |
 |-------|-----|------|--------|--------------|------|
+| Trading API | Trading API | Production | Resolved | Fri Oct 30 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getsellerlist-and-getsellerevents-api-calls-failed-with-system-error) |
 | Buy Feed API | Buy Feed API | Production | Resolved | Wed Oct 21 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-daily-item-feed-file-generation-for-october-19-2026-is-delayed) |
 | Negotiation API | Negotiation API | Production | Resolved | Thu Oct 15 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-sendoffertointerestedbuyers-negotiation-api-returning-500-internal-error) |
 | Inventory API | Inventory API | Production | Resolved | Tue Oct 06 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-publishoffer-call-returning-error-lot-size-is-invalid-need-to-be-greater-than-1-and-less-than-450000) |
@@ -21,7 +22,6 @@ Full list: [developer.ebay.com/support/api-status](https://developer.ebay.com/su
 | GetMyMessages API | GetMyMessages API | Production | Resolved | Wed Jul 22 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getmymessages-api-returns-auto-translated-message-text-while-web-ui-shows-original-text) |
 | Taxonomy API | Taxonomy API | Production | Resolved | Wed Jul 15 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-fetchitemaspects-taxonomy-api-is-returning-error-code-500) |
 | Trading API | Trading API | Production | Resolved | Sun Jul 05 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-system-errors-in-revisefixedpriceitem-and-verifyaddfixedpriceitem-apis) |
-| Finance API | Finance API | Production | Resolved | Tue Jun 30 2026 | [Details](https://developer.ebay.com/support/api-status/Production/resolved-getpayouts-api-missing-payouts-created-after-2026-06-26t08-27-54-000z) |
 
 ---
 
